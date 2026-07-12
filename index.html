@@ -540,13 +540,14 @@
       <table class="log-table" style="min-width:100%;">
         <thead>
           <tr>
-            <th style="width:12%;">Section</th>
-            <th style="width:10%;">Term</th>
-            <th style="width:23%;">Report Card Type</th>
-            <th style="width:18%;">Release Date</th>
-            <th style="width:17%;">End Date</th>
-            <th style="width:10%;">Status</th>
-            <th style="width:10%;">Actions</th>
+            <th style="width:11%;">Section</th>
+            <th style="width:9%;">Term</th>
+            <th style="width:11%;">Grade</th>
+            <th style="width:20%;">Report Card Type</th>
+            <th style="width:16%;">Release Date</th>
+            <th style="width:15%;">End Date</th>
+            <th style="width:9%;">Status</th>
+            <th style="width:9%;">Actions</th>
           </tr>
         </thead>
         <tbody id="reportCardReleaseTableBody"></tbody>
@@ -570,6 +571,12 @@
             <option value="">Select Academic Term</option>
             <option value="term1">Term 1</option>
             <option value="term2">Term 2</option>
+          </select>
+        </div>
+        <div class="field" style="flex:1;min-width:180px;">
+          <label>Grade (Optional - leave on "All Grades" to apply to every Grade)</label>
+          <select id="rcGrade" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+            <option value="">All Grades</option>
           </select>
         </div>
       </div>
