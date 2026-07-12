@@ -1030,6 +1030,7 @@ function selectCertChild(studentId){
   const flat = allStudentsFlatRaw();
   const s = flat.find(x=> x.id===studentId);
   if(!s) return;
+  certParentSelectedStudentId = s.id;
   certState.section = s.section || null;
   certState.stage = s.stage || null;
   certState.grade = s.grade || null;
@@ -2179,18 +2180,27 @@ function certReportTypeOptions(termPeriod, stage, grade){
    are real choices the parent still makes, so those are left untouched. Only
    fires when nothing valid is already selected, so it never overrides a
    sibling the parent has already switched to. */
+// Remembers which child a multi-linked parent last explicitly picked via the "My children"
+// dropdown (selectCertChild), across the studentId resets that selectValue() does every time
+// the parent picks a Term/Report Type — without this, changing either would silently snap
+// certState back to their alphabetically-first child instead of staying on the sibling they
+// were actually looking at.
+let certParentSelectedStudentId = null;
+
 function autoSelectCertChildForParent(){
   if(!isLinkedParentViewer()) return;
   if(certState.studentId && scopeStudentAllowed(certState.studentId)) return;
   const scope = currentUser.effective.studentScope;
   const flat = allStudentsFlatRaw();
-  const first = scope.map(id=> flat.find(s=> s.id===id)).filter(Boolean).sort((a,b)=> a.name.localeCompare(b.name))[0];
-  if(!first) return;
-  certState.section = first.section || null;
-  certState.stage = first.stage || null;
-  certState.grade = first.grade || null;
-  certState.term = first.classroom || null;
-  certState.studentId = first.id;
+  const candidates = scope.map(id=> flat.find(s=> s.id===id)).filter(Boolean).sort((a,b)=> a.name.localeCompare(b.name));
+  const preferred = certParentSelectedStudentId ? candidates.find(c=> c.id===certParentSelectedStudentId) : null;
+  const pick = preferred || candidates[0];
+  if(!pick) return;
+  certState.section = pick.section || null;
+  certState.stage = pick.stage || null;
+  certState.grade = pick.grade || null;
+  certState.term = pick.classroom || null;
+  certState.studentId = pick.id;
 }
 
 function certStepConfig(){
@@ -2334,7 +2344,7 @@ function renderCertReportsWorkspace(){
   // type via Report Card Release Configuration — checked here, before the Student picker or
   // Generate button ever render, so nothing about the report leaks out ahead of schedule.
   // Admins, staff and teachers are never gated: they always see the certificate immediately.
-  if(isParentDashboardViewer() && !isReportCardVisible(certState.section, certState.termPeriod, certState.reportType)){
+  if(isParentDashboardViewer() && !isReportCardVisible(certState.section, certState.termPeriod, certState.reportType, certState.grade)){
     document.getElementById('certReportsStudentPicker').innerHTML = '';
     document.getElementById('certReportsHolder').innerHTML = renderReportCardNotReleasedState();
     return;
@@ -2351,7 +2361,7 @@ function renderReportCardNotReleasedState(){
   const reportName = CERT_REPORT_TITLES[certState.reportType] || 'This Report Card';
   const now = Date.now();
   const upcoming = (reportCardReleases||[])
-    .filter(rc=> rc.section===certState.section && rc.termPeriod===certState.termPeriod && rc.reportType===certState.reportType)
+    .filter(rc=> rc.section===certState.section && rc.termPeriod===certState.termPeriod && rc.reportType===certState.reportType && (!rc.grade || rc.grade===certState.grade))
     .map(rc=> ({ ...rc, _releaseTs: new Date(rc.releaseDate+'T'+rc.releaseTime).getTime() }))
     .filter(rc=> !isNaN(rc._releaseTs) && rc._releaseTs > now)
     .sort((a,b)=> a._releaseTs - b._releaseTs)[0];
@@ -9654,6 +9664,7 @@ function openReportCardReleaseModal(){
   }
   loadReportCardReleases();
   renderReportCardReleaseTable();
+  populateRcGradeOptions();
   document.getElementById('reportCardReleaseOverlay').classList.add('show');
 }
 
@@ -9661,13 +9672,27 @@ function closeReportCardReleaseModal(){
   document.getElementById('reportCardReleaseOverlay').classList.remove('show');
 }
 
-// Builds the "Section — Term — Report Card" label used in the notification bell,
-// countdown bar and activity log for a stored release record.
+// Builds the "Section — Term — Grade — Report Card" label used in the notification bell,
+// countdown bar and activity log for a stored release record. Grade is optional — when left
+// blank the release applies to every Grade in the Section, so the label shows "All Grades".
 function reportCardReleaseLabel(rc){
   const sectionLabel = SECTIONS[rc.section] ? SECTIONS[rc.section].label : (rc.section||'');
   const termLabel = TERM_LABELS[rc.termPeriod] || rc.termPeriod || '';
   const typeLabel = CERT_REPORT_TITLES[rc.reportType] || rc.reportType || '';
-  return `${sectionLabel} — ${termLabel} — ${typeLabel}`;
+  const gradeLabel = rc.grade ? (GRADE_LABEL_BY_ID[rc.grade] || rc.grade) : 'All Grades';
+  return `${sectionLabel} — ${termLabel} — ${gradeLabel} — ${typeLabel}`;
+}
+
+// Repopulates the Grade select with every Grade across all Stages (flat list — Report Card
+// Release isn't scoped to a single Stage). Leaving it on "All Grades" (empty value) makes the
+// release apply to every Grade in the chosen Section, same as before this field existed.
+function populateRcGradeOptions(){
+  const sel = document.getElementById('rcGrade');
+  if(!sel) return;
+  const prevVal = sel.value;
+  sel.innerHTML = `<option value="">All Grades</option>` +
+    ALL_GRADE_IDS.map(gid=> `<option value="${gid}">${escapeHtml(GRADE_LABEL_BY_ID[gid])}</option>`).join('');
+  if(ALL_GRADE_IDS.includes(prevVal)) sel.value = prevVal;
 }
 
 // Repopulates the Report Card Type select with only the types that actually exist for the
@@ -9695,7 +9720,7 @@ function renderReportCardReleaseTable(){
   if(!tbody) return;
   
   if(reportCardReleases.length === 0){
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--ink-soft);">No Report Card Release schedules yet. Add one above.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--ink-soft);">No Report Card Release schedules yet. Add one above.</td></tr>`;
     return;
   }
   
@@ -9721,6 +9746,7 @@ function renderReportCardReleaseTable(){
       <tr>
         <td>${escapeHtml(SECTIONS[rc.section] ? SECTIONS[rc.section].label : rc.section)}</td>
         <td>${escapeHtml(TERM_LABELS[rc.termPeriod] || rc.termPeriod)}</td>
+        <td>${rc.grade ? escapeHtml(GRADE_LABEL_BY_ID[rc.grade] || rc.grade) : 'All Grades'}</td>
         <td><b>${escapeHtml(CERT_REPORT_TITLES[rc.reportType] || rc.reportType)}</b></td>
         <td>${rc.releaseDate} ${rc.releaseTime}</td>
         <td>${rc.endDate ? rc.endDate + ' ' + rc.endTime : 'No end date'}</td>
@@ -9742,6 +9768,8 @@ function addReportCardReleaseRow(){
 function saveReportCardRelease(){
   const section = document.getElementById('rcSection').value.trim();
   const termPeriod = document.getElementById('rcTermPeriod').value.trim();
+  const gradeSel = document.getElementById('rcGrade');
+  const grade = gradeSel ? gradeSel.value.trim() : ''; // optional — blank = applies to All Grades
   const reportTypeSel = document.getElementById('rcReportType');
   const reportType = reportTypeSel.value.trim();
   const releaseDate = document.getElementById('rcReleaseDate').value.trim();
@@ -9765,7 +9793,7 @@ function saveReportCardRelease(){
     }
   }
   
-  const rc = { section, termPeriod, reportType, releaseDate, releaseTime, endDate, endTime, notes };
+  const rc = { section, termPeriod, grade, reportType, releaseDate, releaseTime, endDate, endTime, notes };
   reportCardReleases.push(rc);
   reportCardReleases.sort((a,b) => (a.releaseDate + a.releaseTime).localeCompare(b.releaseDate + b.releaseTime));
   
@@ -9783,6 +9811,9 @@ function editReportCardRelease(idx){
   
   document.getElementById('rcSection').value = rc.section || '';
   document.getElementById('rcTermPeriod').value = rc.termPeriod || '';
+  populateRcGradeOptions();
+  const gradeSel = document.getElementById('rcGrade');
+  if(gradeSel) gradeSel.value = rc.grade || '';
   populateRcReportTypeOptions();
   document.getElementById('rcReportType').value = rc.reportType || '';
   document.getElementById('rcReleaseDate').value = rc.releaseDate;
@@ -9821,6 +9852,7 @@ function deleteReportCardRelease(idx){
 function resetReportCardForm(){
   document.getElementById('rcSection').value = '';
   document.getElementById('rcTermPeriod').value = '';
+  populateRcGradeOptions();
   populateRcReportTypeOptions();
   document.getElementById('rcReleaseDate').value = '';
   document.getElementById('rcReleaseTime').value = '00:00';
@@ -9835,12 +9867,13 @@ function resetReportCardForm(){
   }
 }
 
-// Matches on the exact Section + Academic Term + Report Card type — each of the three
-// is scheduled and controlled fully independently of the others.
-function isReportCardVisible(section, termPeriod, reportType){
+// Matches on Section + Academic Term + Report Card type, plus Grade if the record was scheduled
+// for a specific Grade. A release saved with "All Grades" (rc.grade blank) still matches every
+// Grade, so existing schedules created before this field was added keep working unchanged.
+function isReportCardVisible(section, termPeriod, reportType, grade){
   const now = new Date();
   for(let rc of reportCardReleases){
-    if(rc.section===section && rc.termPeriod===termPeriod && rc.reportType===reportType){
+    if(rc.section===section && rc.termPeriod===termPeriod && rc.reportType===reportType && (!rc.grade || rc.grade===grade)){
       const releaseDateTime = new Date(rc.releaseDate + 'T' + rc.releaseTime);
       const endDateTime = rc.endDate ? new Date(rc.endDate + 'T' + rc.endTime) : null;
       
@@ -10156,10 +10189,37 @@ function notifRelevantLog(){
     return visibleActivityLog().filter(e=>{
       if(!NOTIF_VISIBLE_TYPES.includes(e.type)) return false;
       if(e.type==='broadcast') return notifEntryMatchesParentScope(e, ids);
-      return notifEntryMatchesLinkedStudent(e, ids);
+      if(!notifEntryMatchesLinkedStudent(e, ids)) return false;
+      return isGradeNotifReleasedForParent(ids);
     });
   }
   return visibleActivityLog().filter(e=> NOTIF_VISIBLE_TYPES.includes(e.type));
+}
+
+// A raw grade edit fires the instant "A new Cycle grade was recorded for your child"
+// notification the moment a teacher touches ANY score field — with no regard for the
+// Report Card Release schedule that's supposed to gate when a parent finds out about new
+// results. Hold every grade-edit notification back entirely until at least one Report Card
+// Release is actually active (its window has started and hasn't ended) for the Section any
+// of this parent's linked child(ren) belong to; once the school starts releasing results,
+// notifications resume normally. Broadcasts (openNotifyParentsModal) are unaffected — those
+// are always a deliberate Admin action, never an instant grade-entry side-effect.
+function isGradeNotifReleasedForParent(studentIds){
+  if(!studentIds || !studentIds.length) return false;
+  const flat = allStudentsFlat();
+  const sections = new Set(flat.filter(s=> studentIds.includes(s.id)).map(s=> s.section).filter(Boolean));
+  if(!sections.size) return false;
+  const now = Date.now();
+  return (reportCardReleases||[]).some(rc=>{
+    if(!sections.has(rc.section)) return false;
+    const releaseTs = new Date(rc.releaseDate+'T'+rc.releaseTime).getTime();
+    if(isNaN(releaseTs) || releaseTs > now) return false;
+    if(rc.endDate){
+      const endTs = new Date(rc.endDate+'T'+(rc.endTime||'23:59')).getTime();
+      if(!isNaN(endTs) && endTs < now) return false;
+    }
+    return true;
+  });
 }
 
 /* Birthdays get their own "seen today" flag (they have no timestamp to compare
