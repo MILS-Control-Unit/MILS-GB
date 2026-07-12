@@ -132,6 +132,37 @@ let studentIdCounter = 1;
 // Each Term (1st/2nd) x Month (1st/2nd) combination is its own independent attendance table —
 // selected via the Attendance tab's own stepper, exactly like the Grade Book's Mark Entry step.
 let attendance = {};
+// approvedLeave[classKey|classroom|termPeriod|term|subject|academicTerm] = { records:{studentId:{dateStr:true}} }
+// Uses the EXACT SAME key/date-range as `attendance` above (same class/subject/month table,
+// same dates) — it is not a separate table with its own Start/End, it's a second layer of
+// records on top of the Absence table. Any date marked here for a student:
+//   1) is shown as a locked "L" cell in the Absence table instead of a checkbox, and is
+//      NOT counted in that student's absence total, and
+//   2) if that student already had an absence (checkbox) recorded for that exact day,
+//      marking it as Approved Leave cancels that absence for that day.
+let approvedLeave = {};
+// Which sub-tab of the "Absence & Approved Leave" tab is currently showing — 'absence' (the
+// original attendance-taking table) or 'leave' (the new Approved Leave table). Both sub-tabs
+// share the same stepper/class/subject/month selection (attState) and the same table shell,
+// only what's written into each cell differs.
+let attSubView = 'absence';
+
+// Styling for the new Approved Leave sub-tab bar and the locked "L" cells inside the Absence
+// table — injected here in JS since these are new UI elements that don't exist in the HTML.
+(function injectApprovedLeaveStyles(){
+  const css = `
+    .att-subtabs{ display:flex; gap:8px; margin:0 0 14px 0; }
+    .att-subtab-btn{ padding:8px 18px; border:1px solid #d0d5dd; border-radius:8px; background:#f8f9fb;
+      cursor:pointer; font-weight:700; font-size:13px; color:#475467; transition:all .15s ease; }
+    .att-subtab-btn:hover{ background:#eef1f5; }
+    .att-subtab-btn.active{ background:#2563eb; border-color:#2563eb; color:#fff; }
+    td.att-leave-cell{ text-align:center; font-weight:800; color:#b54708; background:#fffaeb; }
+  `;
+  const style = document.createElement('style');
+  style.textContent = css;
+  if(document.head) document.head.appendChild(style);
+  else document.addEventListener('DOMContentLoaded', ()=> document.head.appendChild(style));
+})();
 // teachers = [{id, displayId, name, section, subject, classes}]
 let teachers = [];
 let teacherIdCounter = 1;
@@ -209,6 +240,11 @@ function formatMilsId(rawId){
 // Attendance is tracked per Class within its own Academic Term + Month selection (attState),
 // fully independent of the Grade Book tab. Each Term × Month combination is its own table.
 function attClassKey(){ return `${attState.section}|${attState.stage}|${attState.grade}|${attState.termPeriod}|${attState.term}|${attState.subject}|${attState.academicTerm}`; }
+// Approved Leave is recorded ONCE per class (Section/Stage/Grade/Class/Term/Month) — NOT per
+// Subject like Absence is — so a day marked as Approved Leave shows up as a locked "L" in the
+// Absence table of EVERY subject for that class/month, not just the subject that was open when
+// it was recorded. This key deliberately omits attState.subject.
+function attClassLevelKey(){ return `${attState.section}|${attState.stage}|${attState.grade}|${attState.termPeriod}|${attState.term}|${attState.academicTerm}`; }
 
 function classKeyLabels(ck){
   const [sec, stg, grd] = ck.split('|');
@@ -3431,19 +3467,21 @@ function renderMarkEntryReport(){
       }
       bodyRows += `
           <td class="me-item-cell">${escapeHtml(fr.label)}</td>
-          <td>${fr.entered}</td>
-          <td>${fr.total}</td>
-          <td style="background:${fr.empty>0?'var(--red-bg)':'transparent'};color:${fr.empty>0?'var(--red)':'var(--ink-soft)'};font-weight:${fr.empty>0?'800':'400'};">${fr.empty}</td>
-          <td style="background:${c.bg};color:${c.fg};font-weight:700;">${fr.pct}%</td>
+          <td class="me-entry-count"><b>${fr.entered}</b><span>/ ${fr.total}</span></td>
+          <td class="me-missing"><span class="me-missing-badge ${fr.empty===0?'is-clear':'is-missing'}">${fr.empty}</span></td>
+          <td class="me-progress-cell" style="--me-progress:${fr.pct}%;--me-progress-color:${c.fg};">
+            <div class="me-progress-track"><span></span></div><b>${fr.pct}%</b>
+          </td>
         </tr>`;
     });
     bodyRows += `
         <tr class="me-subtotal-row">
           <td class="me-item-cell">Subject Total</td>
-          <td>${block.subjEntered}</td>
-          <td>${block.subjTotal}</td>
-          <td>${block.subjEmpty}</td>
-          <td>${block.subjPct}%</td>
+          <td class="me-entry-count"><b>${block.subjEntered}</b><span>/ ${block.subjTotal}</span></td>
+          <td class="me-missing"><span class="me-missing-badge ${block.subjEmpty===0?'is-clear':'is-missing'}">${block.subjEmpty}</span></td>
+          <td class="me-progress-cell" style="--me-progress:${block.subjPct}%;--me-progress-color:${subjColor.fg};">
+            <div class="me-progress-track"><span></span></div><b>${block.subjPct}%</b>
+          </td>
         </tr>`;
   });
 
@@ -3459,10 +3497,9 @@ function renderMarkEntryReport(){
         <tr>
           <th>Subject</th>
           <th>Item</th>
-          <th>Entered</th>
-          <th>Total</th>
-          <th>Empty</th>
-          <th>% Complete</th>
+          <th>Entries</th>
+          <th>Missing</th>
+          <th>Completion</th>
         </tr>
       </thead>
       <tbody>${bodyRows}</tbody>
@@ -4288,6 +4325,18 @@ function getAttRoster(){
   return filtered;
 }
 
+// Roster for the Approved Leave sub-tab — the WHOLE class (Section/Stage/Grade/Class), with NO
+// subject/language/religion filtering, since Approved Leave is recorded once per class and
+// applies across every subject, not just the subject currently open in the stepper.
+function getAttClassRosterFull(){
+  if(!attState.section || !attState.stage || !attState.grade) return [];
+  const ck = `${attState.section}|${attState.stage}|${attState.grade}`;
+  const roster = visibleRoster(students[ck]);
+  let filtered = attState.term ? roster.filter(s => (s.classroom||'') === attState.term) : roster;
+  filtered = filtered.filter(s => scopeStudentAllowed(s.id));
+  return filtered;
+}
+
 function subjectFilteredRoster(){
   const roster = getClassRoster();
   if(isLanguageSubject(state.subject)){
@@ -4377,12 +4426,33 @@ function getAllAttClassTargets(subject){
 // every student in that class taking it.
 function applyAttendanceDateRangeToClass(section, stage, grade, term, subject, termPeriod, academicTerm, start, end, dates, excludedList){
   const ck = `${section}|${stage}|${grade}|${termPeriod}|${term}|${subject}|${academicTerm}`;
+  // Approved Leave lives at the CLASS level (no subject) — one set of records shared by every
+  // subject's Absence table for this class/term/month. Multiple subjects each calling this
+  // function will redundantly trim it to the same date set; that's harmless (idempotent).
+  const classLevelKey = `${section}|${stage}|${grade}|${termPeriod}|${term}|${academicTerm}`;
   const prevRecords = (attendance[ck] && attendance[ck].records) || {};
   const dateSet = new Set(dates);
+
+  // Trim Approved Leave records to the same (possibly new) date range first, so we know which
+  // days are "closed" by Approved Leave before rebuilding the Absence records below.
+  const prevLeaveRecords = (approvedLeave[classLevelKey] && approvedLeave[classLevelKey].records) || {};
+  const newLeaveRecords = {};
+  Object.keys(prevLeaveRecords).forEach(studentId=>{
+    const kept = {};
+    Object.keys(prevLeaveRecords[studentId]).forEach(d=>{ if(dateSet.has(d)) kept[d]=true; });
+    if(Object.keys(kept).length) newLeaveRecords[studentId] = kept;
+  });
+  approvedLeave[classLevelKey] = { records: newLeaveRecords };
+
   const newRecords = {};
   Object.keys(prevRecords).forEach(studentId=>{
     const kept = {};
-    Object.keys(prevRecords[studentId]).forEach(d=>{ if(dateSet.has(d)) kept[d]=true; });
+    const leaveDays = newLeaveRecords[studentId] || {};
+    Object.keys(prevRecords[studentId]).forEach(d=>{
+      // A day marked Approved Leave always overrides/cancels an Absence entry for that day,
+      // in every subject — not just the subject it happened to be recorded from.
+      if(dateSet.has(d) && !leaveDays[d]) kept[d]=true;
+    });
     if(Object.keys(kept).length) newRecords[studentId] = kept;
   });
   attendance[ck] = { start, end, dates, excluded: excludedList, records: newRecords };
@@ -4411,6 +4481,10 @@ function renderAttendanceWorkspace(){
   const ready = !!(attState.termPeriod && attState.section && attState.stage && attState.grade && attState.term && attState.subject && attState.academicTerm);
   ws.style.display = ready ? '' : 'none';
   intro.style.display = ready ? 'none' : '';
+  // The Absence / Approved Leave sub-tab bar sits above BOTH the intro (stepper) state and the
+  // workspace, so it's visible right away — the person doesn't have to finish the stepper first
+  // to see that "Approved Leave" exists (it only gates on the current user's permission).
+  ensureAttSubTabsBar();
   if(!ready){ updateIntroState('attendanceIntroState', cfgs); return; }
 
   // Dates (Start/End + holidays) for every Absence table come exclusively from the Admin's
@@ -4435,6 +4509,8 @@ function renderAttendanceWorkspace(){
     <span class="crumb">${monthLabel}${monthRange ? ` <small style="opacity:.7;font-weight:600;">(${monthRange})</small>` : ''}</span>
   `;
 
+  ensureAttSubTabsBar();
+  updateAttSubTabsActive();
   renderAttendanceTable();
 }
 
@@ -4473,7 +4549,62 @@ function pushAttendanceChangeNow(){
   }
 }
 
+// ---- Absence / Approved Leave sub-tabs ----
+function canUseApprovedLeave(){
+  return !!(currentUser && currentUser.effective && currentUser.effective.approvedLeave);
+}
+// Creates (or refreshes) the "Absence" / "Approved Leave" sub-tab bar, anchored right above the
+// intro (stepper) element so it's visible whether or not the stepper has been completed yet —
+// it is NOT inside #attendanceWorkspace, which is hidden via display:none until every step is
+// picked. Rebuilt on every call (cheap) so a role switch (e.g. re-login as a Teacher) removes
+// the "Approved Leave" button immediately rather than leaving a stale one in the DOM.
+// Recording Approved Leave is restricted to Admin and HOS/Deputy — Teachers, Heads of
+// Department, and Parent/Student accounts only ever see the plain Absence table, no sub-tabs.
+function ensureAttSubTabsBar(){
+  const intro = document.getElementById('attendanceIntroState');
+  if(!intro || !intro.parentNode) return;
+  const canLeave = canUseApprovedLeave();
+  if(!canLeave && attSubView==='leave') attSubView = 'absence';
+  let bar = document.getElementById('attSubTabsBar');
+  if(!canLeave){
+    if(bar) bar.remove();
+    return;
+  }
+  if(!bar){
+    bar = document.createElement('div');
+    bar.id = 'attSubTabsBar';
+    bar.className = 'att-subtabs';
+    intro.parentNode.insertBefore(bar, intro);
+  }
+  bar.innerHTML = `
+    <button type="button" class="att-subtab-btn" data-subview="absence" onclick="switchAttSubView('absence')">Absence</button>
+    <button type="button" class="att-subtab-btn" data-subview="leave" onclick="switchAttSubView('leave')">Approved Leave</button>
+  `;
+  updateAttSubTabsActive();
+}
+function updateAttSubTabsActive(){
+  document.querySelectorAll('#attSubTabsBar .att-subtab-btn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.subview===attSubView);
+  });
+}
+function switchAttSubView(view){
+  if(view==='leave' && !canUseApprovedLeave()) return;
+  attSubView = view;
+  updateAttSubTabsActive();
+  renderAttendanceTable();
+}
+
+// Dispatcher — kept under the original name since it's called from many places (workspace
+// render, the Grade Entry Lock alert, etc.). Renders whichever sub-tab is currently active,
+// falling back to Absence if the current user isn't allowed to see Approved Leave.
 function renderAttendanceTable(){
+  if(attSubView==='leave' && !canUseApprovedLeave()) attSubView = 'absence';
+  updateAttSubTabsActive();
+  if(attSubView==='leave') renderApprovedLeaveTable();
+  else renderAbsenceTable();
+}
+
+function renderAbsenceTable(){
   const holder = document.getElementById('attTableHolder');
   if(!holder) return;
   const ck = attClassKey();
@@ -4510,6 +4641,7 @@ function renderAttendanceTable(){
   // locked right along with it — there's only one underlying figure being protected.
   const canEdit = !!(currentUser && currentUser.effective && currentUser.effective.edit) && !isCurrentUserGradeEntryLocked(attState.academicTerm);
   if(!month.records) month.records = {};
+  const leaveRecords = (approvedLeave[attClassLevelKey()] && approvedLeave[attClassLevelKey()].records) || {};
 
   const headerCols = month.dates.map((ds,idx)=>{
     const d = new Date(ds+'T00:00:00');
@@ -4521,11 +4653,17 @@ function renderAttendanceTable(){
 
   const rows = roster.map((s,i)=>{
     const rec = month.records[s.id] || {};
+    const leaveRec = leaveRecords[s.id] || {};
     let total = 0;
     const cells = month.dates.map((ds,idx)=>{
+      const weekEndCls = (idx+1)%7===0 ? ' week-end' : '';
+      // A date recorded on the Approved Leave sub-tab is CLOSED here: shown as a locked "L"
+      // cell instead of a checkbox, and not counted in the Total column below.
+      if(leaveRec[ds]){
+        return `<td class="att-day-col${weekEndCls} att-leave-cell" title="Approved Leave">L</td>`;
+      }
       const checked = !!rec[ds];
       if(checked) total++;
-      const weekEndCls = (idx+1)%7===0 ? ' week-end' : '';
       return `<td class="att-day-col${weekEndCls}"><input type="checkbox" class="att-check" ${checked?'checked':''} ${canEdit?'':'disabled'}
                 onchange="flashInlineSaved(this);toggleAttendance('${s.id}','${ds}',this.checked)"></td>`;
     }).join('');
@@ -4554,11 +4692,104 @@ function renderAttendanceTable(){
     </div>`;
 }
 
+// Approved Leave table — same class/subject/month table shell and same dates as the Absence
+// table above (attendance[ck].dates), but each checkbox here toggles a day as an excused
+// ("L") leave day instead of an absence day.
+function renderApprovedLeaveTable(){
+  const holder = document.getElementById('attTableHolder');
+  if(!holder) return;
+  if(!canUseApprovedLeave()){ renderAbsenceTable(); return; }
+  // The date columns are the same for every subject in a given Term Period + Month (they come
+  // from the same global Term & Month Dates range), so we simply reuse whichever subject's
+  // Absence table is currently open in the stepper to get that column list — Approved Leave
+  // itself is NOT subject-specific, only its calendar happens to be shared with Absence.
+  const ck = attClassKey();
+  const month = attendance[ck];
+
+  if(!month){
+    const isAdmin = !!(currentUser && currentUser.role==='admin');
+    holder.innerHTML = `
+      <div class="empty-state">
+        <div class="seal-lg">—</div>
+        <h3>No date range set yet</h3>
+        <p>${isAdmin
+          ? 'Set the Start and End dates for this Term\'s Month via Configuration ▸ Term & Month Dates — the Absence table for every class then appears here automatically.'
+          : 'The school administrator hasn\'t set the Start and End dates for this Term\'s Month yet (Configuration ▸ Term & Month Dates). Please check back once they have.'}</p>
+      </div>`;
+    return;
+  }
+
+  const roster = getAttClassRosterFull();
+  if(roster.length===0){
+    holder.innerHTML = `
+      <div class="empty-state">
+        <div class="seal-lg">?</div>
+        <h3>No students in this class yet</h3>
+        <p>Add students from the "Grade Book" tab first.</p>
+      </div>`;
+    return;
+  }
+
+  const canEdit = !!(currentUser && currentUser.effective && currentUser.effective.edit) && !isCurrentUserGradeEntryLocked(attState.academicTerm);
+  const leaveKey = attClassLevelKey();
+  if(!approvedLeave[leaveKey]) approvedLeave[leaveKey] = { records:{} };
+  if(!approvedLeave[leaveKey].records) approvedLeave[leaveKey].records = {};
+  const leaveMonth = approvedLeave[leaveKey];
+
+  const headerCols = month.dates.map((ds,idx)=>{
+    const d = new Date(ds+'T00:00:00');
+    const dd = String(d.getDate()).padStart(2,'0');
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const weekEndCls = (idx+1)%7===0 ? ' week-end' : '';
+    return `<th class="att-day-col${weekEndCls}">${ATT_DAY_NAMES[d.getDay()]}<br><small>${dd}/${mm}</small></th>`;
+  }).join('');
+
+  const rows = roster.map((s,i)=>{
+    const rec = leaveMonth.records[s.id] || {};
+    let total = 0;
+    const cells = month.dates.map((ds,idx)=>{
+      const checked = !!rec[ds];
+      if(checked) total++;
+      const weekEndCls = (idx+1)%7===0 ? ' week-end' : '';
+      return `<td class="att-day-col${weekEndCls}"><input type="checkbox" class="att-check" ${checked?'checked':''} ${canEdit?'':'disabled'}
+                onchange="flashInlineSaved(this);toggleApprovedLeave('${s.id}','${ds}',this.checked)"></td>`;
+    }).join('');
+    const fullName = escapeHtml(s.name);
+    return `
+      <tr>
+        <td>${i+1}</td>
+        <td class="name-col att-name-col" title="${fullName}">${fullName}</td>
+        ${cells}
+        <td class="total-cell att-total-col" id="attLeaveTotal-${s.id}">${total}</td>
+      </tr>`;
+  }).join('');
+
+  holder.innerHTML = `
+    <div class="table-container">
+      <p style="margin:0 0 10px;font-size:12.5px;font-weight:600;color:#667085;">Recorded once per class — applies to this student's Absence table in every subject, not just ${subjectWithIcon(attState.subject)}.</p>
+      <table class="att-table">
+        <thead>
+          <tr>
+            <th>#</th><th class="name-col att-name-col">Name</th>
+            ${headerCols}
+            <th class="att-total-col">Total</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
 function toggleAttendance(studentId, dateStr, checked){
   if(isCurrentUserGradeEntryLocked(attState.academicTerm)){ gradeEntryLockAlert(attState.academicTerm); renderAttendanceTable(); return; }
   const ck = attClassKey();
   const month = attendance[ck];
   if(!month) return;
+  // Defensive: a day already closed by Approved Leave has no checkbox rendered for it, but
+  // guard here too in case this is ever called directly for such a day.
+  const leaveKey = attClassLevelKey();
+  const leaveRec = (approvedLeave[leaveKey] && approvedLeave[leaveKey].records && approvedLeave[leaveKey].records[studentId]) || {};
+  if(leaveRec[dateStr]) return;
   if(!month.records) month.records = {};
   if(!month.records[studentId]) month.records[studentId] = {};
   if(checked) month.records[studentId][dateStr] = true;
@@ -4573,6 +4804,57 @@ function toggleAttendance(studentId, dateStr, checked){
   saveState();
   const stu = getAttRoster().find(s=>s.id===studentId);
   logActivity('edit', `Marked ${stu?stu.name:'a student'} as ${checked?'absent':'present'} on ${dateStr} — auto-updated Beh. & Attend. (${subjectWithIcon(attState.subject)})`);
+}
+
+// Toggles a day as Approved Leave (excused absence) for a student, recorded ONCE for the whole
+// class (not per Subject). Checking it here:
+//   - writes the day into approvedLeave under the class-level key, which EVERY subject's
+//     Absence table then renders as a locked "L" cell for that student (not counted in that
+//     subject's absence total), and
+//   - if that student already had this exact day recorded as an Absence in ANY subject for
+//     this class/term/month, cancels it there too (record removed, Beh. & Attend. grade link
+//     recomputed for that subject).
+// Unchecking it simply re-opens the day in every subject's Absence table as a normal, empty
+// checkbox again.
+function toggleApprovedLeave(studentId, dateStr, checked){
+  if(!canUseApprovedLeave()){ alert('Only Admin and HOS/Deputy can record Approved Leave.'); renderAttendanceTable(); return; }
+  if(isCurrentUserGradeEntryLocked(attState.academicTerm)){ gradeEntryLockAlert(attState.academicTerm); renderAttendanceTable(); return; }
+  const leaveKey = attClassLevelKey();
+  if(!approvedLeave[leaveKey]) approvedLeave[leaveKey] = { records:{} };
+  if(!approvedLeave[leaveKey].records) approvedLeave[leaveKey].records = {};
+  const leaveMonth = approvedLeave[leaveKey];
+  if(!leaveMonth.records[studentId]) leaveMonth.records[studentId] = {};
+
+  let absenceCancelledSubjects = [];
+  if(checked){
+    leaveMonth.records[studentId][dateStr] = true;
+    // Approved Leave overrides/cancels any Absence already recorded for this exact day, in
+    // EVERY subject's Absence table for this same class/term/month — not just the subject
+    // that happened to be open in the stepper when this was recorded.
+    const prefix = `${attState.section}|${attState.stage}|${attState.grade}|${attState.termPeriod}|${attState.term}|`;
+    const suffix = `|${attState.academicTerm}`;
+    Object.keys(attendance).forEach(ck2=>{
+      if(!ck2.startsWith(prefix) || !ck2.endsWith(suffix)) return;
+      const month = attendance[ck2];
+      if(month && month.records && month.records[studentId] && month.records[studentId][dateStr]){
+        delete month.records[studentId][dateStr];
+        const subj = ck2.slice(prefix.length, ck2.length - suffix.length);
+        absenceCancelledSubjects.push(subj);
+        const absTotal = Object.keys(month.records[studentId] || {}).length;
+        applyAttendanceToGrades(attState.section, attState.stage, attState.grade, attState.termPeriod, attState.academicTerm, studentId, absTotal, subj);
+      }
+    });
+  }else{
+    delete leaveMonth.records[studentId][dateStr];
+  }
+
+  const total = Object.keys(leaveMonth.records[studentId]).length;
+  const cell = document.getElementById('attLeaveTotal-'+studentId);
+  if(cell) cell.textContent = total;
+
+  saveState();
+  const stu = getAttClassRosterFull().find(s=>s.id===studentId);
+  logActivity('edit', `Marked ${stu?stu.name:'a student'} as ${checked?'on Approved Leave':'not on Approved Leave'} on ${dateStr} for the whole class${absenceCancelledSubjects.length ? ` — cancelled the recorded absence for that day in ${absenceCancelledSubjects.join(', ')}` : ''}`);
 }
 
 // ---- Attendance → Grades linking ----
@@ -4629,6 +4911,10 @@ function recomputeAttendanceLinksForCurrentClass(){
 function deleteAttendanceForStudent(id){
   Object.keys(attendance).forEach(ck=>{
     const month = attendance[ck];
+    if(month && month.records && month.records[id]) delete month.records[id];
+  });
+  Object.keys(approvedLeave).forEach(ck=>{
+    const month = approvedLeave[ck];
     if(month && month.records && month.records[id]) delete month.records[id];
   });
 }
@@ -5722,7 +6008,7 @@ function saveState(){
 }
 function saveStateLocalOnly(){
   try{
-    localStorage.setItem(LS_KEY, JSON.stringify({ students, scores, studentIdCounter, attendance, teachers, teacherIdCounter, savedAt: new Date().toISOString() }));
+    localStorage.setItem(LS_KEY, JSON.stringify({ students, scores, studentIdCounter, attendance, approvedLeave, teachers, teacherIdCounter, savedAt: new Date().toISOString() }));
     flashSaveIndicator();
     updateQuickStatsWidget();
   }catch(err){ console.warn('Auto-save failed', err); }
@@ -5737,6 +6023,7 @@ function loadState(){
     scores = payload.scores || {};
     studentIdCounter = payload.studentIdCounter || 1;
     attendance = payload.attendance || {};
+    approvedLeave = payload.approvedLeave || {};
     teachers = payload.teachers || [];
     teacherIdCounter = payload.teacherIdCounter || 1;
   }catch(err){ console.warn('Auto-load failed', err); }
@@ -5932,6 +6219,7 @@ async function pushMergedToFirestore(){
         students: mergeObjectField(remote.students, students),
         scores: mergeObjectField(remote.scores, scores),
         attendance: mergeObjectField(remote.attendance, attendance),
+        approvedLeave: mergeObjectField(remote.approvedLeave, approvedLeave),
         studentIdCounter: Math.max(remote.studentIdCounter||1, studentIdCounter||1),
         teachers: mergeArrayById(remote.teachers, teachers, 'id'),
         teacherIdCounter: Math.max(remote.teacherIdCounter||1, teacherIdCounter||1),
@@ -6004,7 +6292,7 @@ window.addEventListener('beforeunload', function(e){
 });
 
 function downloadBackup(){
-  const payload = { students, scores, studentIdCounter, attendance, teachers, teacherIdCounter, termMonthDates, examSchedules, examSeatAssignments, bellTimes, adminStructure, gradeEntryLockRules: normalizeGradeEntryLockRules(gradeEntryLockRules), reportCardReleases, examScheduleReleases, savedAt: new Date().toISOString() };
+  const payload = { students, scores, studentIdCounter, attendance, approvedLeave, teachers, teacherIdCounter, termMonthDates, examSchedules, examSeatAssignments, bellTimes, adminStructure, gradeEntryLockRules: normalizeGradeEntryLockRules(gradeEntryLockRules), reportCardReleases, examScheduleReleases, savedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -6023,6 +6311,7 @@ function restoreBackup(file){
       scores = payload.scores || {};
       studentIdCounter = payload.studentIdCounter || studentIdCounter;
       attendance = payload.attendance || {};
+      approvedLeave = payload.approvedLeave || {};
       teachers = payload.teachers || [];
       teacherIdCounter = payload.teacherIdCounter || teacherIdCounter;
       if(payload.termMonthDates && payload.termMonthDates.term1 && payload.termMonthDates.term2){
@@ -6586,6 +6875,7 @@ function confirmDeleteAllDb(){
   students = {};
   scores = {};
   attendance = {};
+  approvedLeave = {};
   studentIdCounter = 1;
   renderDatabase();
   if(currentView==='grades'){ state.term=null; state.subject=null; renderStepper(); renderWorkspace(); }
@@ -10902,17 +11192,18 @@ function getEffectivePermissions(user){
   const role = user.role || 'parent';
   if(role==='admin'){
     // Admin: Full System Access
-    return { database:true, grades:true, attendance:true, reports:true, dashboard:true, examsAnalysis:true, examSchedule:true, perfAlerts:true, classLists:true, settings:true, edit:true,
+    return { database:true, grades:true, attendance:true, approvedLeave:true, reports:true, dashboard:true, examsAnalysis:true, examSchedule:true, perfAlerts:true, classLists:true, settings:true, edit:true,
       sectionScope:null, stageScope:null, gradeScope:null, classroomScope:null };
   }
   if(role==='hos'){
     // HOS/Deputy: Can View their relevant Section and Stage - Can View or edit Grade Book, Can View or Edit Absence, Can View Certificates, Can View Dashboard, Can View Exam Analysis
-    return { database:false, grades:true, attendance:true, reports:true, dashboard:true, examsAnalysis:true, examSchedule:true, perfAlerts:true, classLists:false, settings:false, edit:true,
+    // HOS/Deputy is also one of only two roles (with Admin) allowed to record Approved Leave.
+    return { database:false, grades:true, attendance:true, approvedLeave:true, reports:true, dashboard:true, examsAnalysis:true, examSchedule:true, perfAlerts:true, classLists:false, settings:false, edit:true,
       sectionScope:user.section||null, stageScope:user.stages||[], gradeScope:null, classroomScope:null };
   }
   if(role==='hod'){
     // Head of Department: Can view OR edit their subject's grade book within their stage (and their section).
-    return { database:false, grades:true, attendance:false, reports:true, dashboard:false, examsAnalysis:false, examSchedule:false, perfAlerts:false, classLists:false, settings:false, edit:true,
+    return { database:false, grades:true, attendance:false, approvedLeave:false, reports:true, dashboard:false, examsAnalysis:false, examSchedule:false, perfAlerts:false, classLists:false, settings:false, edit:true,
       sectionScope:user.section||null, stageScope:user.stages||[], gradeScope:null, classroomScope:null, subjectScope:user.subjects||[] };
   }
   if(role==='teacher'){
@@ -10927,13 +11218,15 @@ function getEffectivePermissions(user){
     // Both Grade Book AND Absence edits are further subject to the Admin's Grade Entry Lock rules
     // (Absence writes straight into the Month's grade, so the two are locked/unlocked together) —
     // see isCurrentUserGradeEntryLocked().
+    // NOTE: a Teacher can view/edit Absence but NOT Approved Leave — recording an excused/approved
+    // absence is restricted to Admin and HOS/Deputy only.
     const scope = computeTeacherGradeScope(user);
-    return { database:false, grades:true, attendance:true, reports:false, dashboard:false, examsAnalysis:false, examSchedule:false, perfAlerts:false, classLists:false, settings:false, edit:true,
+    return { database:false, grades:true, attendance:true, approvedLeave:false, reports:false, dashboard:false, examsAnalysis:false, examSchedule:false, perfAlerts:false, classLists:false, settings:false, edit:true,
       sectionScope:user.section||null, stageScope:scope.stages, gradeScope:scope.grades, classroomScope:user.classrooms||[], subjectScope:user.subjects||[] };
   }
   // Parent/Student: Can View ONLY Certificates, Dashboard and the Exams Schedule
   const hasStudentLink = Array.isArray(user.studentIds);
-  return { database:false, grades:false, attendance:false, reports:true, dashboard:true, examsAnalysis:false, examSchedule:true, perfAlerts:false, classLists:false, settings:false, edit:false,
+  return { database:false, grades:false, attendance:false, approvedLeave:false, reports:true, dashboard:true, examsAnalysis:false, examSchedule:true, perfAlerts:false, classLists:false, settings:false, edit:false,
     // Once a specific student link exists, section/stage/classroom no longer restrict anything —
     // the exact student-ID scope below is what keeps a parent from seeing classmates' data.
     // Legacy accounts (saved before this feature existed, so `studentIds` is still undefined)
@@ -12425,6 +12718,7 @@ function applyRemotePayload(payload){
     students = mergeObjectField(payload.students, students);
     scores = mergeObjectField(payload.scores, scores);
     attendance = mergeObjectField(payload.attendance, attendance);
+    approvedLeave = mergeObjectField(payload.approvedLeave, approvedLeave);
     teachers = mergeArrayById(payload.teachers, teachers, 'id');
     studentIdCounter = Math.max(payload.studentIdCounter || 1, studentIdCounter || 1);
     teacherIdCounter = Math.max(payload.teacherIdCounter || 1, teacherIdCounter || 1);
@@ -12434,6 +12728,7 @@ function applyRemotePayload(payload){
     scores = payload.scores || {};
     studentIdCounter = payload.studentIdCounter || 1;
     attendance = payload.attendance || {};
+    approvedLeave = payload.approvedLeave || {};
     teachers = payload.teachers || [];
     teacherIdCounter = payload.teacherIdCounter || 1;
     grade3FlexibleMaximaBySubject = payload.grade3FlexibleMaxima || grade3FlexibleMaximaBySubject || {};
@@ -12805,6 +13100,23 @@ renderWorkspace();
 renderAttendanceWorkspace();
 renderDatabase();
 renderTeachersDatabase();
+renameAttendanceNavTab();
+// Renames the "Absence" nav tab button to "Absence & Approved Leave", preserving any leading
+// icon element inside the button (only the trailing text node is replaced) since the button's
+// exact markup lives in the HTML file, not here.
+function renameAttendanceNavTab(){
+  const tab = document.getElementById('navTabAttendance');
+  if(!tab) return;
+  const NEW_LABEL = 'Absence & Approved Leave';
+  let textNode = null;
+  for(let i=tab.childNodes.length-1; i>=0; i--){
+    const n = tab.childNodes[i];
+    if(n.nodeType===3 && n.textContent.trim()){ textNode = n; break; }
+  }
+  if(textNode) textNode.textContent = (textNode.textContent.match(/^\s*/)||[''])[0] + NEW_LABEL;
+  else tab.textContent = NEW_LABEL;
+  tab.title = NEW_LABEL;
+}
 /* ================== DATE / TIME / WEATHER WIDGET ================== */
 function dtwUpdateClock(){
   const now = new Date();
