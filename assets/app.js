@@ -5854,6 +5854,12 @@ async function pushMergedToFirestore(){
         grade3FlexibleMaxima: mergeObjectField(remote.grade3FlexibleMaxima, grade3FlexibleMaximaBySubject),
         gradeEntryLockRules: normalizeGradeEntryLockRules(gradeEntryLockRules),
         presenceBucket: presenceBucket || remote.presenceBucket || null,
+        // Report Card Release / Exams Schedule Release schedules — these gate what Parent/Student
+        // accounts can see, so they must reach every device, not just stay on the Admin's own
+        // browser localStorage. Whichever device pushed most recently wins (same pattern as
+        // termMonthDates/examSchedules/bellTimes above), since these are single-Admin config data.
+        reportCardReleases: reportCardReleases || remote.reportCardReleases || [],
+        examScheduleReleases: examScheduleReleases || remote.examScheduleReleases || [],
         dataVersion: newVersion,
         savedAt: new Date().toISOString()
       };
@@ -5902,7 +5908,7 @@ window.addEventListener('beforeunload', function(e){
 });
 
 function downloadBackup(){
-  const payload = { students, scores, studentIdCounter, attendance, teachers, teacherIdCounter, termMonthDates, examSchedules, examSeatAssignments, bellTimes, adminStructure, gradeEntryLockRules: normalizeGradeEntryLockRules(gradeEntryLockRules), savedAt: new Date().toISOString() };
+  const payload = { students, scores, studentIdCounter, attendance, teachers, teacherIdCounter, termMonthDates, examSchedules, examSeatAssignments, bellTimes, adminStructure, gradeEntryLockRules: normalizeGradeEntryLockRules(gradeEntryLockRules), reportCardReleases, examScheduleReleases, savedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -5946,6 +5952,14 @@ function restoreBackup(file){
       if(payload.gradeEntryLockRules || payload.gradeEntryLockConfig){
         gradeEntryLockRules = gradeEntryLockRulesFromPayload(payload) || [];
         saveGradeEntryLockConfigLocalOnly();
+      }
+      if(Array.isArray(payload.reportCardReleases)){
+        reportCardReleases = payload.reportCardReleases;
+        saveReportCardReleases();
+      }
+      if(Array.isArray(payload.examScheduleReleases)){
+        examScheduleReleases = payload.examScheduleReleases;
+        saveExamScheduleReleasesLocalOnly();
       }
       renderTable();
       renderDatabase();
@@ -12300,11 +12314,31 @@ function applyRemotePayload(payload){
     presenceBucket = payload.presenceBucket;
     try{ localStorage.setItem(PRESENCE_BUCKET_LS_KEY, presenceBucket); }catch(err){}
   }
+  if(Array.isArray(payload.reportCardReleases)){
+    reportCardReleases = payload.reportCardReleases;
+    saveReportCardReleases();
+  }
+  if(Array.isArray(payload.examScheduleReleases)){
+    examScheduleReleases = payload.examScheduleReleases;
+    saveExamScheduleReleasesLocalOnly();
+  }
   saveStateLocalOnly();
   renderDatabase();
   if(typeof renderTeachersDatabase==='function') renderTeachersDatabase();
   if(typeof renderTable==='function') renderTable();
   if(typeof renderAttendanceWorkspace==='function') renderAttendanceWorkspace();
+  // Re-render the Certificates tab live if a Parent/Student (or Admin) currently has it open,
+  // so a newly-released Report Card appears immediately without needing a manual refresh.
+  if(currentView==='certReports' && typeof renderCertReportsWorkspace==='function'){
+    if(typeof renderCertReportsStepper==='function') renderCertReportsStepper();
+    renderCertReportsWorkspace();
+  }
+  if(document.getElementById('reportCardReleaseOverlay') && document.getElementById('reportCardReleaseOverlay').classList.contains('show')){
+    renderReportCardReleaseTable();
+  }
+  if(document.getElementById('examScheduleReleaseOverlay') && document.getElementById('examScheduleReleaseOverlay').classList.contains('show')){
+    renderExamScheduleReleaseTable();
+  }
   if(currentUser){
     if(isViewerAccountBlocked()){
       showAccountBlockedScreen();
