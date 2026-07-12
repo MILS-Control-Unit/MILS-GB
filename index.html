@@ -1,0 +1,1685 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MILS Grade Book</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Aref+Ruqaa:wght@400;700&family=Tajawal:wght@300;400;500;700;800&family=Dancing+Script:wght@400;500;700&family=Forte&family=Style+Script&family=Great+Vibes&family=Satisfy&family=Cinzel:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<!-- Firebase (compat SDK — works with plain <script> tags, no build step needed) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<!-- ================= LOGIN SCREEN ================= -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-card" style="position:relative;">
+    <button type="button" class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleDarkMode()" title="Toggle dark mode">🌙 Dark</button>
+    <div class="seal"><img src="assets/images/mils-seal.jpg" alt="MILS Logo"></div>
+    <h2>MILS Grade Book</h2>
+    <div class="title-flourish"><span class="line"></span><span class="dot"></span><span class="line right"></span></div>
+    <p class="sub">Please sign in to continue</p>
+    <p class="login-quote" id="loginQuote"></p>
+    <div class="login-error" id="loginError" role="alert" aria-live="polite">Incorrect username or password.</div>
+    <div class="login-lockout" id="loginLockout" role="alert" aria-live="assertive"></div>
+    <form onsubmit="return handleLogin(event)">
+      <div class="field">
+        <label for="loginUsername">Username</label>
+        <input type="text" id="loginUsername" autocomplete="username" autofocus aria-describedby="loginError loginLockout" required>
+      </div>
+      <div class="field pw-field">
+        <label for="loginPassword">Password</label>
+        <input type="password" id="loginPassword" autocomplete="current-password" aria-describedby="loginError loginLockout" required>
+        <button type="button" class="pw-toggle" id="pwToggleBtn" onclick="togglePasswordVisibility()" title="Show/Hide password" aria-label="Show or hide password">👁</button>
+      </div>
+      <div class="check-field" style="justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="rememberMe" class="check-box">
+          <label for="rememberMe" class="check-label">Remember me</label>
+        </div>
+        <button type="button" onclick="showForgotPasswordHelp()" style="background:none;border:none;color:var(--gold-deep);font-family:'Tajawal';font-weight:700;font-size:12.5px;cursor:pointer;padding:0;">Forgot password?</button>
+      </div>
+      <button type="submit" class="btn-login" id="loginSubmitBtn"><span class="spinner"></span><span>Sign In</span></button>
+    </form>
+    <p class="login-hint" id="loginHint">Default administrator: <b>admin</b> / <b>admin123</b><br>Please change this password after first login.</p>
+  </div>
+</div>
+
+<!-- ================= FORGOT PASSWORD - STEP 1 ================= -->
+<div class="login-overlay" id="forgotPasswordStep1" style="display:none;">
+  <div class="login-card">
+    <button type="button" class="theme-toggle-btn" id="themeToggleBtn2" onclick="toggleDarkMode()" title="Toggle dark mode" style="opacity:0.5;">🌙 Dark</button>
+    <button type="button" onclick="backToLogin()" style="position:absolute;top:16px;left:16px;background:none;border:none;color:var(--ink-soft);font-size:18px;cursor:pointer;width:32px;height:32px;display:flex;align-items:center;justify-content:center;">←</button>
+    <div class="login-card seal" style="margin:10px auto 14px;width:50px;height:50px;display:flex;align-items:center;justify-content:center;font-size:32px;">🔐</div>
+    <h2 style="text-align:center;margin:0 0 8px;">Reset Your Password</h2>
+    <p style="text-align:center;color:var(--ink-soft);font-size:14px;margin:0 0 20px;">Enter your username or email address and we'll send you a link to reset your password.</p>
+    
+    <form onsubmit="return handleForgotPasswordStep1(event)">
+      <div class="field" style="margin-bottom:16px;">
+        <label>Username or Email</label>
+        <input type="text" id="forgotUsernameEmail" placeholder="Enter username or email" autocomplete="off" required style="width:100%;min-width:0;">
+        <div id="forgotStep1Error" class="field-error" style="font-size:12px;color:#e74c3c;margin-top:4px;"></div>
+      </div>
+      
+      <button type="submit" class="btn-login" style="width:100%;"><span class="spinner"></span><span>Send Reset Link</span></button>
+    </form>
+  </div>
+</div>
+
+<!-- ================= FORGOT PASSWORD - STEP 2 (CONFIRMATION) ================= -->
+<div class="login-overlay" id="forgotPasswordStep2" style="display:none;">
+  <div class="login-card" style="text-align:center;">
+    <button type="button" onclick="handleForgotPasswordRetry()" style="position:absolute;top:16px;left:16px;background:none;border:none;color:var(--ink-soft);font-size:18px;cursor:pointer;width:32px;height:32px;display:flex;align-items:center;justify-content:center;">←</button>
+    <div style="font-size:48px;margin:10px auto 16px;">✉️</div>
+    <h2 style="text-align:center;margin:0 0 8px;">Check Your Email</h2>
+    <p style="text-align:center;color:var(--ink-soft);font-size:13px;margin:0 0 4px;">We've sent a password reset link to:</p>
+    <p style="text-align:center;font-size:15px;font-weight:600;margin:0 0 20px;font-family:'Monaco','Courier New',monospace;" id="maskedEmailDisplay">***@example.com</p>
+    
+    <div style="background:var(--blue-bg);color:var(--blue);padding:14px;border-radius:6px;border-left:4px solid var(--blue);font-size:13px;line-height:1.5;margin-bottom:20px;">
+      Click the link in the email to reset your password. The link expires in 30 minutes.
+    </div>
+
+    <!-- Demo mode: show reset token -->
+    <div id="resetTokenDemo" style="display:none;background:#fff3cd;border:1px solid #ffc107;padding:12px;border-radius:6px;margin-bottom:16px;font-size:11px;word-break:break-all;">
+      <strong>Demo Mode - Reset Token:</strong><br><code id="resetTokenValue" style="font-size:9px;"></code><br>
+      <small style="color:#666;margin-top:6px;display:block;">In production, this would be sent via email. Use this token to test the password reset flow.</small>
+    </div>
+
+    <div style="text-align:left;font-size:12px;color:var(--ink-soft);background:var(--bg);padding:14px;border-radius:6px;">
+      <strong style="color:var(--ink);">Didn't receive an email?</strong>
+      <ul style="margin:8px 0 0;padding-left:20px;">
+        <li>Check your spam or junk folder</li>
+        <li>Make sure you entered the correct username/email</li>
+        <li><button type="button" onclick="handleForgotPasswordRetry()" style="background:none;border:none;color:var(--gold-deep);cursor:pointer;padding:0;font-weight:600;">Request another link</button></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ================= RESET PASSWORD ================= -->
+<div class="login-overlay" id="resetPasswordContainer" style="display:none;">
+  <div class="login-card">
+    <div class="login-card seal" style="margin:10px auto 14px;width:50px;height:50px;display:flex;align-items:center;justify-content:center;font-size:32px;">🔑</div>
+    <h2 style="text-align:center;margin:0 0 8px;">Reset Your Password</h2>
+    <p style="text-align:center;color:var(--ink-soft);font-size:14px;margin:0 0 20px;">Enter a new password below.</p>
+
+    <form onsubmit="return handlePasswordReset(event)">
+      <!-- New Password -->
+      <div class="field" style="margin-bottom:16px;">
+        <label>New Password</label>
+        <div style="position:relative;">
+          <input type="password" id="resetPassword" placeholder="Min 8 characters" oninput="validateResetPassword()" style="width:100%;min-width:0;padding-right:40px;" required>
+          <button type="button" class="pw-toggle" onclick="toggleField('resetPassword')" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;color:#999;">👁</button>
+        </div>
+        <div id="resetPasswordStrength" style="margin-top:8px;">
+          <div style="height:4px;background:#ddd;border-radius:2px;overflow:hidden;">
+            <div class="strength-fill" style="height:100%;width:0%;background:#ccc;transition:width 0.3s, background-color 0.3s;border-radius:2px;"></div>
+          </div>
+          <span id="resetStrengthLabel" style="font-size:12px;color:#999;display:block;margin-top:4px;"></span>
+        </div>
+        <div id="resetPasswordFeedback" style="font-size:12px;color:#666;margin-top:8px;background:var(--bg);padding:8px;border-radius:4px;display:none;max-height:200px;overflow-y:auto;"></div>
+        <div id="resetPasswordError" class="field-error" style="font-size:12px;color:#e74c3c;margin-top:4px;"></div>
+      </div>
+
+      <!-- Confirm Password -->
+      <div class="field" style="margin-bottom:16px;">
+        <label>Confirm Password</label>
+        <div style="position:relative;">
+          <input type="password" id="resetConfirmPassword" placeholder="Re-enter new password" oninput="validateResetPasswordMatch()" style="width:100%;min-width:0;padding-right:40px;" required>
+          <button type="button" class="pw-toggle" onclick="toggleField('resetConfirmPassword')" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;color:#999;">👁</button>
+        </div>
+        <div id="resetConfirmPasswordError" class="field-error" style="font-size:12px;color:#e74c3c;margin-top:4px;"></div>
+      </div>
+
+      <!-- Show Passwords Toggle -->
+      <label style="display:flex;align-items:center;font-size:13px;margin-bottom:16px;cursor:pointer;">
+        <input type="checkbox" id="resetShowPasswords" onchange="toggleResetPasswordsVisibility()" style="margin-right:8px;cursor:pointer;">
+        <span>Show passwords</span>
+      </label>
+
+      <!-- Form Error -->
+      <div id="resetFormError" class="field-error" style="font-size:12px;color:#e74c3c;margin-bottom:16px;text-align:center;"></div>
+
+      <button type="submit" class="btn-login" style="width:100%;"><span class="spinner"></span><span>Reset Password</span></button>
+    </form>
+  </div>
+</div>
+
+<!-- ================= WELCOME MODAL ================= -->
+<div class="overlay" id="welcomeOverlay">
+  <div class="modal" style="text-align:center;">
+    <div style="width:70px;height:70px;border-radius:50%;margin:0 auto 14px;background:#fff;box-shadow:inset 0 0 0 3px rgba(255,255,255,0.6), 0 4px 10px rgba(156,124,21,0.35), 0 0 0 2px var(--gold-light);display:flex;align-items:center;justify-content:center;overflow:hidden;"><img src="assets/images/mils-logo.jpg" alt="MILS Logo" style="width:100%;height:100%;object-fit:cover;"></div>
+    <h3 style="font-size:22px;">Welcome, <span id="welcomeName">—</span>!</h3>
+    <p style="margin:6px 0 4px;">You are signed in as</p>
+    <p style="margin:0 0 18px;"><span class="perm-pill" id="welcomeRole">—</span></p>
+    <div class="modal-actions" style="justify-content:center;">
+      <button class="btn btn-gold" onclick="closeWelcomeModal()">Get Started</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= BIRTHDAY TOAST (auto-dismissing, shown on login) ================= -->
+<div class="birthday-toast" id="birthdayToast">
+  <button class="birthday-toast-close" onclick="hideBirthdayToast()" title="Dismiss">✕</button>
+  <span class="birthday-toast-icon">🎂</span>
+  <div>
+    <div class="birthday-toast-title">Birthday Alert</div>
+    <div class="birthday-toast-msg" id="birthdayToastMsg"></div>
+  </div>
+</div>
+
+<!-- ================= CHANGE MY PASSWORD MODAL ================= -->
+<div class="overlay" id="changePasswordOverlay">
+  <div class="modal">
+    <h3>Change Password</h3>
+    <p>Update the password for your account (<b id="cpUsernameLabel">—</b>).</p>
+    <div class="login-error" id="cpError">Something went wrong.</div>
+    <form onsubmit="return submitChangePassword(event)">
+      <!-- Current Password -->
+      <div class="field" style="margin-bottom:12px;">
+        <label>Current Password</label>
+        <div style="position:relative;">
+          <input type="password" id="cpCurrentPassword" autocomplete="current-password" style="width:100%;min-width:0;padding-right:40px;" required>
+          <button type="button" class="pw-toggle" onclick="toggleField('cpCurrentPassword')" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;color:#999;">👁</button>
+        </div>
+        <div id="cpCurrentPasswordError" class="field-error" style="font-size:12px;color:#e74c3c;margin-top:4px;"></div>
+      </div>
+
+      <!-- New Password -->
+      <div class="field" style="margin-bottom:12px;">
+        <label>New Password</label>
+        <div style="position:relative;">
+          <input type="password" id="cpNewPassword" autocomplete="new-password" style="width:100%;min-width:0;padding-right:40px;" oninput="validateNewPassword()" required>
+          <button type="button" class="pw-toggle" onclick="toggleField('cpNewPassword')" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;color:#999;">👁</button>
+        </div>
+        <!-- Password Strength Indicator -->
+        <div id="cpStrengthIndicator" style="margin-top:8px;">
+          <div style="height:4px;background:#ddd;border-radius:2px;overflow:hidden;">
+            <div id="cpStrengthBar" style="height:100%;width:0%;background:#ccc;transition:width 0.3s, background-color 0.3s;border-radius:2px;"></div>
+          </div>
+          <span id="cpStrengthLabel" style="font-size:12px;color:#999;display:block;margin-top:4px;"></span>
+        </div>
+        <!-- Validation Feedback -->
+        <div id="cpValidationFeedback" style="font-size:12px;color:#666;margin-top:8px;background:#f9f9f9;padding:8px;border-radius:4px;display:none;max-height:200px;overflow-y:auto;"></div>
+        <div id="cpNewPasswordError" class="field-error" style="font-size:12px;color:#e74c3c;margin-top:4px;"></div>
+      </div>
+
+      <!-- Confirm Password -->
+      <div class="field" style="margin-bottom:12px;">
+        <label>Confirm New Password</label>
+        <div style="position:relative;">
+          <input type="password" id="cpConfirmPassword" autocomplete="new-password" style="width:100%;min-width:0;padding-right:40px;" oninput="validatePasswordMatch()" required>
+          <button type="button" class="pw-toggle" onclick="toggleField('cpConfirmPassword')" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;color:#999;">👁</button>
+        </div>
+        <div id="cpConfirmPasswordError" class="field-error" style="font-size:12px;color:#e74c3c;margin-top:4px;"></div>
+      </div>
+
+      <!-- Show All Toggle -->
+      <label style="display:flex;align-items:center;font-size:13px;margin-bottom:12px;cursor:pointer;">
+        <input type="checkbox" id="cpShowAllPasswords" onchange="toggleAllPasswordsVisibility()" style="margin-right:8px;cursor:pointer;">
+        <span>Show all passwords</span>
+      </label>
+
+      <!-- Security Notice -->
+      <div style="background:#e3f2fd;border-left:4px solid #2196f3;padding:10px;border-radius:4px;font-size:12px;color:#1565c0;margin-bottom:16px;">
+        ⓘ For security, all your other sessions will be signed out after password change.
+      </div>
+
+      <div class="modal-actions" style="margin-top:18px;">
+        <button type="button" class="btn btn-outline" onclick="closeChangePasswordModal()">Cancel</button>
+        <button type="submit" class="btn btn-gold" id="cpSubmitBtn">Change Password</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ================= MANAGE USERS MODAL ================= -->
+<div class="overlay-bg" id="usersOverlay">
+  <div class="users-modal">
+    <button class="close-x" onclick="closeUsersModal()">✕</button>
+    <h2>Manage Users &amp; Permissions</h2>
+    <p class="sub" id="usersModalSub">Add users and control their access to each tab based on their role.</p>
+
+    <div class="user-form-row" id="userFormRow">
+      <input type="hidden" id="editingUsername" value="">
+      <div class="field">
+        <label>Username</label>
+        <input type="text" id="ufUsername" placeholder="e.g. mona.teacher">
+      </div>
+      <div class="field">
+        <label>Display Name</label>
+        <input type="text" id="ufDisplayName" placeholder="e.g. Mona Adel">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="ufPassword" placeholder="Password" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label>Role</label>
+        <select id="ufRole" onchange="onRoleFormChange()">
+          <option value="admin">Admin</option>
+          <option value="hos">HOS/Deputy</option>
+          <option value="hod">Head of Department</option>
+          <option value="teacher">Teacher</option>
+          <option value="parent">Parent / Student</option>
+        </select>
+      </div>
+      <div class="field" id="ufSectionField">
+        <label>Section / Department</label>
+        <select id="ufSection">
+          <option value="en">English Section</option>
+          <option value="fr">French Section</option>
+        </select>
+      </div>
+
+      <div class="field uf-students-panel" id="ufStagesField" style="min-width:100%;flex-basis:100%;display:none;">
+        <p class="uf-section-title">Assigned Stage(s)</p>
+        <p class="foot-note" style="margin:0 0 10px;">This account will only see the stage(s) checked below (leave all unchecked = no stages yet, so nothing will show).</p>
+        <div class="perm-grid" id="ufStagesWrap">
+          <label class="perm-check"><input type="checkbox" class="uf-stage-cb" value="primary"> Primary Stage</label>
+          <label class="perm-check"><input type="checkbox" class="uf-stage-cb" value="prep"> Prep Stage</label>
+          <label class="perm-check"><input type="checkbox" class="uf-stage-cb" value="secondary"> Secondary Stage</label>
+        </div>
+      </div>
+
+      <div class="field" id="ufScopeField" style="min-width:100%;flex-basis:100%;">
+        <p class="uf-section-title" id="ufScopeTitle">Teacher access scope</p>
+        <label id="ufSubjectsLabel">Assigned Subjects (leave all unchecked = no subjects yet)</label>
+        <div class="perm-grid" id="ufSubjectsWrap"></div>
+        <div id="ufClassroomsField">
+          <label style="margin-top:10px;display:block;">Assigned Classes <span style="color:#B8B2A0;font-weight:500;">(pick from the classes already entered in Student Database)</span></label>
+          <div class="uf-classdd-wrap" id="ufClassroomsDD">
+            <button type="button" class="uf-classdd-btn" onclick="toggleUfClassroomsDD(event)">
+              <span id="ufClassroomsBtnText">Select classes…</span>
+              <span class="bc-caret">▾</span>
+            </button>
+            <div class="step-options uf-classdd-panel" id="ufClassroomsPanel"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="field uf-students-panel" id="ufStudentsField" style="min-width:100%;flex-basis:100%;display:none;">
+        <p class="uf-section-title">Which student(s) can this account see?</p>
+        <p class="foot-note" style="margin:0 0 10px;">This Parent/Student account will only see report cards, grades &amp; attendance for the student(s) checked below — never their classmates.</p>
+        <input type="text" id="ufStudentSearch" placeholder="🔍 Search by student name or ID (e.g. STU-0012)…" oninput="renderUfStudentPicker()" style="width:100%;margin-bottom:8px;">
+        <div class="perm-grid" id="ufStudentsWrap" style="max-height:200px;overflow:auto;display:block;"></div>
+        <p class="foot-note" id="ufStudentsSelectedNote" style="margin-top:8px;font-weight:700;"></p>
+      </div>
+
+      <div style="min-width:100%;flex-basis:100%;display:flex;gap:10px;margin-top:6px;">
+        <button class="btn btn-gold" onclick="saveUserFromForm()" id="ufSubmitBtn">＋ Add User</button>
+        <button class="btn btn-outline" onclick="resetUserForm()" id="ufCancelBtn" style="display:none;">Cancel</button>
+      </div>
+    </div>
+
+    <div class="perm-grid" id="usersExcelRow" style="margin-bottom:12px;border-top:1px dashed var(--border);padding-top:14px;">
+      <button class="btn btn-outline" onclick="downloadUserTemplate()">⬇ Download Users Import Template</button>
+      <button class="btn btn-ink" onclick="document.getElementById('usersExcelInput').click()">⇪ Add Users from Excel</button>
+      <input type="file" id="usersExcelInput" accept=".xlsx,.xls,.csv" onchange="importUsersExcel(this.files[0])">
+    </div>
+
+    <div class="perm-grid" id="parentLinkExcelRow" style="margin-bottom:16px;border-top:1px dashed var(--border);padding-top:14px;">
+      <div style="min-width:100%;flex-basis:100%;">
+        <p class="uf-section-title" style="margin-bottom:4px;">Bulk-link Parents to Students (Excel)</p>
+        <p class="foot-note" style="margin:0 0 8px;">For linking many Parent/Student accounts at once. Each row: a <b>Username</b> (must already exist as a Parent/Student account) and one or more <b>Student ID(s)</b> (the "STU-####" ID shown in Student Database exports) — separate multiple IDs in one cell with a semicolon.</p>
+      </div>
+      <button class="btn btn-outline" onclick="downloadParentLinkTemplate()">⬇ Download Linking Template</button>
+      <button class="btn btn-ink" onclick="document.getElementById('parentLinkExcelInput').click()">⇪ Link Parents from Excel</button>
+      <input type="file" id="parentLinkExcelInput" accept=".xlsx,.xls,.csv" onchange="importParentLinksExcel(this.files[0])">
+    </div>
+
+    <div class="users-bulk-toolbar" id="usersBulkToolbar">
+      <label>Filter by role:</label>
+      <select id="usersRoleFilter" onchange="renderUsersTable()">
+        <option value="all">All roles</option>
+        <option value="admin">Admin</option>
+        <option value="hos">HOS/Deputy</option>
+        <option value="hod">Head of Department</option>
+        <option value="teacher">Teacher</option>
+        <option value="parent">Parent / Student</option>
+      </select>
+      <span class="users-bulk-count" id="usersBulkCount">0 selected</span>
+      <button class="btn btn-outline" onclick="deleteSelectedUsers()">🗑 Delete Selected</button>
+      <button class="btn btn-outline" style="color:var(--red);border-color:var(--red);" onclick="deleteAllUsersInFilter()">🗑 Delete All (this filter)</button>
+    </div>
+    <table class="users-table">
+      <thead>
+        <tr>
+          <th style="width:32px;"><input type="checkbox" id="usersSelectAllCb" onchange="toggleAllUserRows(this.checked)"></th>
+          <th>Username</th><th>Display Name</th><th>Role</th><th>Section</th><th>Subjects / Classes</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="usersTableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ================= FIREBASE SYNC MODAL ================= -->
+<div class="overlay-bg" id="githubOverlay">
+  <div class="users-modal" style="max-width:560px;">
+    <button class="close-x" onclick="closeGithubModal()">✕</button>
+    <h2>☁ Firebase Sync</h2>
+    <p class="sub">All data entered in this system is saved live to a shared Firestore database, so it stays backed up and instantly synced across every device/browser that opens this page — no manual push/pull needed.</p>
+
+    <div class="login-error show" style="background:var(--green-bg);color:var(--green);">
+      ✓ Connected to project <b id="fbProjectLabel">—</b>. Changes made on this device sync automatically, and changes made elsewhere appear here in real time.
+    </div>
+
+    <div class="user-form-row" style="flex-direction:column;align-items:stretch;">
+      <label class="perm-check"><input type="checkbox" id="ghEnabled"> Enable automatic live sync with Firebase</label>
+    </div>
+
+    <p id="ghModalStatus" style="font-weight:800;margin:8px 0 14px;"></p>
+
+    <div class="perm-grid">
+      <button class="btn btn-gold" onclick="saveGithubSettings()">💾 Save Settings</button>
+      <button class="btn btn-ink" onclick="manualPushToGithub()">⇪ Sync Now (Push)</button>
+      <button class="btn btn-outline" onclick="manualPullFromGithub()">⇩ Pull Latest from Firebase</button>
+      <button class="btn btn-outline" onclick="disableGithubSync()">Disconnect</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= ACTIVITY & LOGIN LOG MODAL ================= -->
+<div class="overlay-bg" id="activityLogOverlay">
+  <div class="users-modal" style="max-width:820px;">
+    <button class="close-x" onclick="closeActivityLogModal()">✕</button>
+    <h2>🕒 Activity &amp; Login Log</h2>
+    <p class="sub">Every sign-in and every change made in the system — who did it, and when.</p>
+
+    <div class="log-filter-row">
+      <select id="logFilterUser" onchange="renderActivityLogTable()">
+        <option value="">All users</option>
+      </select>
+      <select id="logFilterType" onchange="renderActivityLogTable()">
+        <option value="">All activity types</option>
+        <option value="login">Login</option>
+        <option value="logout">Logout</option>
+        <option value="add">Added</option>
+        <option value="edit">Edited</option>
+        <option value="delete">Deleted</option>
+        <option value="import">Imported</option>
+      </select>
+    </div>
+
+    <div class="log-table-wrap">
+      <table class="log-table">
+        <thead>
+          <tr><th>Date &amp; Time</th><th>User</th><th>Action</th><th>Details</th></tr>
+        </thead>
+        <tbody id="activityLogTableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="perm-grid" style="margin-top:16px;">
+      <button class="btn btn-outline" onclick="downloadActivityLogExcel()">⬇ Download as Excel</button>
+      <button class="btn btn-outline" id="clearActivityLogBtn" onclick="clearActivityLog()">🗑 Clear Log</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= BLOCKED STUDENTS MODAL ================= -->
+<div class="overlay-bg" id="blockedStudentsOverlay">
+  <div class="users-modal" style="max-width:640px;">
+    <button class="close-x" onclick="closeBlockedStudentsModal()">✕</button>
+    <h2>🚫 Blocked Students</h2>
+    <p class="sub">Check any student to block their linked Parent/Student account from the whole system. Blocked accounts will see "Account is NOT active" instead of any tab, right after logging in (Admin only).</p>
+
+    <div class="field">
+      <label>Search by name or ID</label>
+      <input type="text" id="bsSearch" placeholder="Type to search..." oninput="renderBlockedStudentsPicker()" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+    </div>
+    <div id="bsStudentsWrap" style="max-height:340px;overflow:auto;border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;margin-top:8px;"></div>
+
+    <div class="field" style="margin-top:14px;">
+      <label>Currently Blocked (<span id="bsBlockedCount">0</span>)</label>
+      <div class="att-excl-chips" id="bsBlockedChips" style="margin:6px 0 0;"></div>
+    </div>
+    <p class="foot-note" id="bsSelectedNote" style="margin-top:8px;"></p>
+
+    <div class="perm-grid" style="margin-top:16px;">
+      <button class="btn btn-gold" onclick="saveBlockedStudents()">💾 Save</button>
+      <button class="btn btn-outline" onclick="closeBlockedStudentsModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= GRADE ENTRY CONTROL MODAL ================= -->
+<div class="overlay-bg" id="gradeEntryControlOverlay">
+  <div class="users-modal" style="max-width:840px;">
+    <button class="close-x" onclick="closeGradeEntryControlModal()">✕</button>
+    <h2>🔒 Grade Entry Control</h2>
+    <p class="sub">Stop Grade Book score entry — and, for Month 1 / Month 2, the matching Absence table too, since ticking/unticking a day there writes straight into that Month's grade — for everyone, for specific accounts, or for every teacher of a chosen subject, right now or starting at a scheduled date/time, and for one Mark Entry item or all of them (Admin only).</p>
+
+    <div class="modal-form">
+      <div id="geActiveSummary" style="margin-bottom:14px;"></div>
+
+      <div class="users-list" id="geRulesList" style="max-height:280px;overflow:auto;margin-bottom:14px;"></div>
+
+      <button type="button" class="btn btn-outline" onclick="openGeRuleForm()">➕ Add Lock Rule</button>
+
+      <!-- ---- Rule builder (hidden until Add / Edit) ---- -->
+      <div id="geRuleForm" style="display:none;margin-top:16px;border:1.5px dashed var(--border);border-radius:10px;padding:16px;background:var(--paper-2);">
+        <h3 id="geRuleFormTitle" style="margin:0 0 12px;font-size:15px;">New Lock Rule</h3>
+
+        <label style="display:block;font-weight:700;margin-bottom:6px;">Who is locked out?</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+          <button type="button" class="ge-target-btn" data-target="all" onclick="setGeRuleTarget('all')">🌐 All Accounts</button>
+          <button type="button" class="ge-target-btn" data-target="users" onclick="setGeRuleTarget('users')">👤 Specific Accounts</button>
+          <button type="button" class="ge-target-btn" data-target="subjects" onclick="setGeRuleTarget('subjects')">📚 Teachers of a Subject</button>
+        </div>
+
+        <div id="geTargetUsersWrap" style="display:none;">
+          <input type="text" id="geRuleUserSearch" placeholder="Search by username or display name" oninput="renderGeRuleUsersList()" style="width:100%;border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;margin-bottom:8px;">
+          <div class="users-list" id="geRuleUsersList" style="max-height:220px;overflow:auto;"></div>
+          <p class="foot-note" style="margin-top:8px;">Only accounts with Grade Book edit access are listed here (Admin, HOS/Deputy, Head of Department, Teacher).</p>
+        </div>
+
+        <div id="geTargetSubjectsWrap" style="display:none;">
+          <p class="foot-note" style="margin:0 0 8px;">Locks the account of every teacher / HOD assigned to any subject checked below.</p>
+          <div class="perm-grid" id="geRuleSubjectsWrap"></div>
+        </div>
+
+        <label style="display:block;font-weight:700;margin:16px 0 6px;">Which Mark Entry item(s)?</label>
+        <div class="perm-grid" id="geRuleItemsWrap"></div>
+        <p class="foot-note" style="margin:4px 0 0;">Leave all unchecked to lock every Mark Entry item for the selected accounts.</p>
+
+        <label style="display:block;font-weight:700;margin:16px 0 6px;">When?</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <button type="button" class="ge-when-btn" data-when="now" onclick="setGeRuleWhen('now')">⏻ Lock now</button>
+          <button type="button" class="ge-when-btn" data-when="scheduled" onclick="setGeRuleWhen('scheduled')">⏱ Schedule for later</button>
+        </div>
+        <div id="geScheduleStartWrap" style="display:none;margin-bottom:12px;">
+          <label style="display:block;margin-bottom:4px;">Start locking at</label>
+          <input type="datetime-local" id="geRuleStartAt" style="border:1.5px solid var(--border);border-radius:8px;padding:8px 10px;font-family:'Tajawal';">
+        </div>
+
+        <label class="perm-check" style="margin-bottom:8px;">
+          <input type="checkbox" id="geRuleHasEnd" onchange="onGeRuleHasEndToggle(this.checked)">
+          Automatically unlock at a set date/time
+        </label>
+        <div id="geScheduleEndWrap" style="display:none;margin-bottom:12px;">
+          <input type="datetime-local" id="geRuleEndAt" style="border:1.5px solid var(--border);border-radius:8px;padding:8px 10px;font-family:'Tajawal';">
+        </div>
+
+        <label style="display:block;margin:10px 0 4px;">Note (optional)</label>
+        <input type="text" id="geRuleNote" placeholder="e.g. Closed for Term 1 finalization" style="width:100%;border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;">
+
+        <div class="perm-grid" style="margin-top:16px;">
+          <button class="btn btn-gold" onclick="commitGeRuleForm()">✓ Add to List</button>
+          <button class="btn btn-outline" onclick="closeGeRuleForm()">Cancel</button>
+        </div>
+      </div>
+
+      <p class="foot-note" style="margin-top:14px;">Parent / Student accounts are never listed here because they already cannot enter grades.</p>
+
+      <div class="perm-grid" style="margin-top:16px;">
+        <button class="btn btn-gold" onclick="saveGradeEntryControl()">💾 Save</button>
+        <button class="btn btn-outline" onclick="closeGradeEntryControlModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= REPORT CARD RELEASE MODAL ================= -->
+<div class="overlay-bg" id="reportCardReleaseOverlay">
+  <div class="users-modal" style="max-width:800px;">
+    <button class="close-x" onclick="closeReportCardReleaseModal()">✕</button>
+    <h2>📋 Report Card Release Configuration</h2>
+    <p class="sub">Schedule when each Report Card becomes visible to Parents and Students (Admin only)</p>
+
+    <div class="perm-grid" style="margin-bottom:20px;">
+      <button class="btn btn-gold" onclick="addReportCardReleaseRow()">+ Add Release Schedule</button>
+    </div>
+
+    <div class="log-table-wrap">
+      <table class="log-table" style="min-width:100%;">
+        <thead>
+          <tr>
+            <th style="width:12%;">Section</th>
+            <th style="width:10%;">Term</th>
+            <th style="width:23%;">Report Card Type</th>
+            <th style="width:18%;">Release Date</th>
+            <th style="width:17%;">End Date</th>
+            <th style="width:10%;">Status</th>
+            <th style="width:10%;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="reportCardReleaseTableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="modal-form" style="margin-top:20px;">
+      <h3 style="margin-top:0;">Add New Release Schedule</h3>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <div class="field" style="flex:1;min-width:180px;">
+          <label>Section</label>
+          <select id="rcSection" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+            <option value="">Select Section</option>
+            <option value="en">English Section</option>
+            <option value="fr">French Section</option>
+          </select>
+        </div>
+        <div class="field" style="flex:1;min-width:180px;">
+          <label>Academic Term</label>
+          <select id="rcTermPeriod" onchange="populateRcReportTypeOptions()" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+            <option value="">Select Academic Term</option>
+            <option value="term1">Term 1</option>
+            <option value="term2">Term 2</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>Report Card Type</label>
+        <select id="rcReportType" disabled style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+          <option value="">Select Academic Term first</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <div class="field" style="flex:1;min-width:180px;">
+          <label>Release Date</label>
+          <input type="date" id="rcReleaseDate" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+        </div>
+        <div class="field" style="flex:1;min-width:180px;">
+          <label>Release Time</label>
+          <input type="time" id="rcReleaseTime" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;" value="00:00">
+        </div>
+      </div>
+      <div class="field">
+        <label>End Date (Optional - leave empty for no end date)</label>
+        <input type="date" id="rcEndDate" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+      </div>
+      <div class="field">
+        <label>End Time</label>
+        <input type="time" id="rcEndTime" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;" value="23:59">
+      </div>
+      <div class="field">
+        <label>Notes</label>
+        <input type="text" id="rcNotes" placeholder="e.g., Available for one week only" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+      </div>
+      <div class="perm-grid" style="margin-top:16px;">
+        <button class="btn btn-gold" onclick="saveReportCardRelease()">💾 Save Release Schedule</button>
+        <button class="btn btn-outline" onclick="resetReportCardForm()">Clear</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= EXAMS SCHEDULES RELEASE MODAL ================= -->
+<div class="overlay-bg" id="examScheduleReleaseOverlay">
+  <div class="users-modal" style="max-width:820px;">
+    <button class="close-x" onclick="closeExamScheduleReleaseModal()">✕</button>
+    <h2>📅 Exams Schedules Release Configuration</h2>
+    <p class="sub">Schedule when each Exam Schedule becomes visible to Parents/Students, by Section, Stage and Grade (Admin only)</p>
+
+    <div class="perm-grid" style="margin-bottom:20px;">
+      <button class="btn btn-gold" onclick="addExamScheduleReleaseRow()">+ Add Release Schedule</button>
+    </div>
+
+    <div class="log-table-wrap">
+      <table class="log-table" style="min-width:100%;">
+        <thead>
+          <tr>
+            <th style="width:14%;">Section</th>
+            <th style="width:22%;">Exam Schedule</th>
+            <th style="width:12%;">Stage</th>
+            <th style="width:12%;">Grade</th>
+            <th style="width:18%;">Release Date &amp; Time</th>
+            <th style="width:10%;">Status</th>
+            <th style="width:12%;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="examScheduleReleaseTableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="modal-form" style="margin-top:20px;">
+      <h3 style="margin-top:0;">Add New Release Schedule</h3>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <div class="field" style="flex:1;min-width:180px;">
+          <label>Section</label>
+          <select id="esrSection" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+            <option value="">Select Section</option>
+            <option value="en">English Section</option>
+            <option value="fr">French Section</option>
+          </select>
+        </div>
+        <div class="field" style="flex:1;min-width:180px;">
+          <label>Exam Schedule</label>
+          <select id="esrTerm" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+            <option value="">Select Exam Schedule</option>
+            <option value="term1">First Term Exam Schedule</option>
+            <option value="term2">End-of-Year Exam Schedule</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <div class="field" style="flex:1;min-width:180px;">
+          <label>Stage</label>
+          <select id="esrStage" onchange="populateEsrGradeOptions()" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+            <option value="">Select Stage</option>
+            <option value="primary">Primary Stage</option>
+            <option value="prep">Prep Stage</option>
+            <option value="secondary">Secondary Stage</option>
+          </select>
+        </div>
+        <div class="field" style="flex:1;min-width:180px;">
+          <label>Grade</label>
+          <select id="esrGrade" disabled style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+            <option value="">Select Stage first</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <div class="field" style="flex:1;min-width:180px;">
+          <label>Release Date</label>
+          <input type="date" id="esrReleaseDate" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+        </div>
+        <div class="field" style="flex:1;min-width:180px;">
+          <label>Release Time</label>
+          <input type="time" id="esrReleaseTime" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;" value="00:00">
+        </div>
+      </div>
+      <div class="field">
+        <label>Notes (optional)</label>
+        <input type="text" id="esrNotes" placeholder="e.g., Released after Admin final review" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+      </div>
+      <div class="perm-grid" style="margin-top:16px;">
+        <button class="btn btn-gold" onclick="saveExamScheduleRelease()">💾 Save Release Schedule</button>
+        <button class="btn btn-outline" onclick="resetExamScheduleReleaseForm()">Clear</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= TERM & MONTH DATES MODAL ================= -->
+<div class="overlay-bg" id="termMonthDatesOverlay">
+  <div class="users-modal" style="max-width:640px;">
+    <button class="close-x" onclick="closeTermMonthDatesModal()">✕</button>
+    <h2>🗓 Term &amp; Month Dates</h2>
+    <p class="sub">Set the Start and End date of the 1st and 2nd Month for each Term (Admin only). Set once — it will not change automatically, and stays visible to every user until the Admin updates it again.</p>
+
+    <div class="modal-form">
+      <h3 style="margin-top:0;">Term 1</h3>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <div class="field" style="flex:1;min-width:220px;">
+          <label>1st Month — Start Date</label>
+          <input type="date" id="tmdT1M1Start" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+        </div>
+        <div class="field" style="flex:1;min-width:220px;">
+          <label>1st Month — End Date</label>
+          <input type="date" id="tmdT1M1End" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+        </div>
+      </div>
+      <div class="field">
+        <label>1st Month — Exclude a Day (Holiday)</label>
+        <div class="att-excl-add-row">
+          <input type="date" id="tmdT1M1ExclInput">
+          <button type="button" class="btn btn-outline att-excl-add-btn" onclick="addTmdHoliday('term1','month1')">＋ Add</button>
+        </div>
+        <div class="att-excl-chips" id="tmdT1M1ExclChips"></div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <div class="field" style="flex:1;min-width:220px;">
+          <label>2nd Month — Start Date</label>
+          <input type="date" id="tmdT1M2Start" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+        </div>
+        <div class="field" style="flex:1;min-width:220px;">
+          <label>2nd Month — End Date</label>
+          <input type="date" id="tmdT1M2End" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+        </div>
+      </div>
+      <div class="field">
+        <label>2nd Month — Exclude a Day (Holiday)</label>
+        <div class="att-excl-add-row">
+          <input type="date" id="tmdT1M2ExclInput">
+          <button type="button" class="btn btn-outline att-excl-add-btn" onclick="addTmdHoliday('term1','month2')">＋ Add</button>
+        </div>
+        <div class="att-excl-chips" id="tmdT1M2ExclChips"></div>
+      </div>
+
+      <h3>Term 2</h3>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <div class="field" style="flex:1;min-width:220px;">
+          <label>1st Month — Start Date</label>
+          <input type="date" id="tmdT2M1Start" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+        </div>
+        <div class="field" style="flex:1;min-width:220px;">
+          <label>1st Month — End Date</label>
+          <input type="date" id="tmdT2M1End" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+        </div>
+      </div>
+      <div class="field">
+        <label>1st Month — Exclude a Day (Holiday)</label>
+        <div class="att-excl-add-row">
+          <input type="date" id="tmdT2M1ExclInput">
+          <button type="button" class="btn btn-outline att-excl-add-btn" onclick="addTmdHoliday('term2','month1')">＋ Add</button>
+        </div>
+        <div class="att-excl-chips" id="tmdT2M1ExclChips"></div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <div class="field" style="flex:1;min-width:220px;">
+          <label>2nd Month — Start Date</label>
+          <input type="date" id="tmdT2M2Start" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+        </div>
+        <div class="field" style="flex:1;min-width:220px;">
+          <label>2nd Month — End Date</label>
+          <input type="date" id="tmdT2M2End" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;">
+        </div>
+      </div>
+      <div class="field">
+        <label>2nd Month — Exclude a Day (Holiday)</label>
+        <div class="att-excl-add-row">
+          <input type="date" id="tmdT2M2ExclInput">
+          <button type="button" class="btn btn-outline att-excl-add-btn" onclick="addTmdHoliday('term2','month2')">＋ Add</button>
+        </div>
+        <div class="att-excl-chips" id="tmdT2M2ExclChips"></div>
+      </div>
+
+      <p class="foot-note">Friday and Saturday are always excluded automatically. Any holiday dates added here apply to every Section, Stage, Grade, Class and Subject for that Term's Month — no need to set them again per class.</p>
+      <div class="perm-grid" style="margin-top:16px;">
+        <button class="btn btn-gold" onclick="saveTermMonthDates()">💾 Save Dates</button>
+      </div>
+      <p class="foot-note" id="termMonthDatesStatus" style="margin-top:10px;"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ================= BELL TIMES MODAL ================= -->
+<div class="overlay-bg" id="bellTimesOverlay">
+  <div class="users-modal" style="max-width:560px;">
+    <button class="close-x" onclick="closeBellTimesModal()">✕</button>
+    <h2>🔔 Bell Times</h2>
+    <p class="sub">Set the Start and End time of each class period (Admin only). Set once — it will stay visible to every user until the Admin updates it again.</p>
+
+    <div class="modal-form">
+      <div id="bellTimesRowsHead" style="display:flex;gap:10px;padding:0 2px 6px;font-size:11.5px;font-weight:800;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.3px;">
+        <div style="flex:1;">Period</div>
+        <div style="flex:1.4;">Start</div>
+        <div style="flex:1.4;">End</div>
+        <div style="width:24px;"></div>
+      </div>
+      <div id="bellTimesRowsContainer"></div>
+      <div class="perm-grid" style="margin-top:10px;">
+        <button class="btn btn-outline" id="bellTimesAddRowBtn" onclick="addBellTimesRow()">＋ Add Period</button>
+        <button class="btn btn-gold" id="bellTimesSaveBtn" onclick="saveBellTimes()">💾 Save Bell Times</button>
+      </div>
+      <p class="foot-note" id="bellTimesStatus" style="margin-top:10px;"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ================= SCHOOL ADMIN STRUCTURE MODAL ================= -->
+<div class="overlay-bg" id="adminStructureOverlay">
+  <div class="users-modal" style="max-width:680px;">
+    <button class="close-x" onclick="closeAdminStructureModal()">✕</button>
+    <h2>🏛 School Admin Structure</h2>
+    <p class="sub">The school's administrative hierarchy — Principal, Vice Principals, Coordinators, etc. (Admin only). Set once — it stays visible to every user until the Admin updates it again. Use ↑ / ↓ to order it top-to-bottom.</p>
+
+    <div class="modal-form">
+      <div id="adminStructureRowsHead" style="display:flex;gap:10px;padding:0 2px 6px;font-size:11.5px;font-weight:800;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.3px;">
+        <div style="flex:1.3;">Name</div>
+        <div style="flex:1.3;">Position</div>
+        <div style="flex:1;">Section</div>
+        <div style="flex:1;">Stage</div>
+        <div style="width:56px;"></div>
+      </div>
+      <div id="adminStructureRowsContainer"></div>
+      <div class="perm-grid" style="margin-top:10px;">
+        <button class="btn btn-outline" id="adminStructureAddRowBtn" onclick="addAdminStructureRow()">＋ Add Member</button>
+        <button class="btn btn-gold" id="adminStructureSaveBtn" onclick="saveAdminStructure()">💾 Save Structure</button>
+      </div>
+      <p class="foot-note" id="adminStructureStatus" style="margin-top:10px;"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ================= EXAM SCHEDULE MODAL ================= -->
+<div class="overlay-bg" id="examScheduleOverlay">
+  <div class="users-modal" style="max-width:960px;">
+    <button class="close-x" onclick="closeExamScheduleModal()">✕</button>
+    <h2 id="examScheduleTitle">📅 Exam Schedule</h2>
+    <p class="sub">Pick a Grade, then set the Date, Day, Subject, and Time (From/To) for each exam (Admin only) — each Grade has its own schedule. Visible to every user in that Grade until the Admin updates it again.</p>
+    <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;">
+      <div id="examScheduleRefPreview" style="display:none;flex:0 0 280px;max-width:280px;text-align:center;">
+        <img id="examScheduleRefImg" src="" alt="Official exam schedule design reference" style="max-width:100%;border-radius:10px;border:1px solid var(--border);box-shadow:var(--shadow);">
+        <p class="foot-note" style="margin-top:6px;">Reference layout — the MILS Examination Card &amp; Schedule design used for print.</p>
+      </div>
+
+      <div class="modal-form" style="flex:1;min-width:280px;margin-bottom:0;">
+        <div id="examScheduleSeatCardsContainer" style="display:none;margin-bottom:16px;"></div>
+        <div id="examScheduleGradeRow" style="margin-bottom:14px;display:flex;gap:12px;flex-wrap:wrap;">
+          <div id="examScheduleSectionWrap" style="display:flex;flex-direction:column;gap:4px;font-size:11.5px;font-weight:800;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.3px;max-width:220px;">
+            <label for="examScheduleSectionSelect">Section</label>
+            <select id="examScheduleSectionSelect" onchange="switchExamScheduleSection(this.value)" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:'Tajawal';font-size:13px;font-weight:500;text-transform:none;color:var(--ink);background:var(--paper);"></select>
+          </div>
+          <div id="examScheduleGradeWrap" style="display:flex;flex-direction:column;gap:4px;font-size:11.5px;font-weight:800;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.3px;max-width:220px;">
+            <label for="examScheduleGradeSelect" id="examScheduleGradeSelectLabel">Grade</label>
+            <select id="examScheduleGradeSelect" onchange="handleExamScheduleGradeSelectChange(this.value)" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:'Tajawal';font-size:13px;font-weight:500;text-transform:none;color:var(--ink);background:var(--paper);"></select>
+          </div>
+        </div>
+        <div id="examScheduleExcelRow" class="perm-grid" style="margin-bottom:14px;">
+          <button class="btn btn-outline" id="examScheduleTemplateBtn" onclick="downloadExamScheduleTemplate()">⇩ Download Excel Template</button>
+          <button class="btn btn-outline" id="examScheduleUploadBtn" onclick="document.getElementById('examScheduleExcelInput').click()">⇪ Upload Excel Sheet</button>
+          <input type="file" id="examScheduleExcelInput" accept=".xlsx,.xls,.csv" style="display:none;" onchange="handleExamScheduleExcelFile(this.files[0])">
+          <button class="btn btn-outline" id="examScheduleImageBtn" onclick="document.getElementById('examScheduleImageInput').click()">🖼 Import from Image</button>
+          <input type="file" id="examScheduleImageInput" accept="image/*" style="display:none;" onchange="handleExamScheduleImageFile(this.files[0])">
+        </div>
+        <p class="foot-note" id="examScheduleImageStatus" style="margin:-8px 0 12px;"></p>
+        <div id="examScheduleRowsHead" style="display:flex;gap:8px;padding:0 2px 6px;font-size:11.5px;font-weight:800;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.3px;">
+          <div style="flex:1;">Date</div>
+          <div style="flex:0.9;">Day</div>
+          <div style="flex:1.3;">Subject</div>
+          <div style="flex:0.7;">From</div>
+          <div style="flex:0.7;">To</div>
+          <div style="flex:0.9;">Duration</div>
+          <div style="width:24px;"></div>
+        </div>
+        <div id="examScheduleRowsContainer"></div>
+        <div class="perm-grid" style="margin-top:10px;">
+          <button class="btn btn-outline" id="examScheduleAddRowBtn" onclick="addExamScheduleRow()">＋ Add Row</button>
+          <button class="btn btn-gold" id="examScheduleSaveBtn" onclick="saveExamSchedule()">💾 Save Schedule</button>
+          <button class="btn btn-outline" id="examScheduleViewBtn" onclick="openViewExamScheduleModal()" style="display:none;">👁 View Schedule</button>
+          <button class="btn btn-outline" id="examScheduleDeleteBtn" onclick="deleteExamSchedule()" style="display:none; color:var(--red); border-color:var(--red);">🗑️ Delete Schedule</button>
+        </div>
+        <p class="foot-note" id="examScheduleStatus" style="margin-top:10px;"></p>
+      </div>
+    </div>
+
+    <div id="examSeatAssignmentAdminBox" style="display:none;margin-top:18px;padding-top:14px;border-top:1px dashed var(--border);">
+      <p class="uf-section-title" style="margin-bottom:4px;">🎫 Seat &amp; Committee Assignments (Admin only)</p>
+      <p class="foot-note" style="margin:0 0 8px;">Upload each student's Seat Number, Committee No., Floor, Section and Room No. for this exam. Each Parent/Student account will only see their own child's card.</p>
+      <div class="perm-grid" style="margin-bottom:8px;">
+        <button class="btn btn-outline" onclick="downloadSeatAssignmentTemplate()">⇩ Download Seat Template</button>
+        <button class="btn btn-outline" onclick="document.getElementById('seatAssignmentExcelInput').click()">⇪ Upload Seat Assignments</button>
+        <input type="file" id="seatAssignmentExcelInput" accept=".xlsx,.xls,.csv" style="display:none;" onchange="handleSeatAssignmentExcelFile(this.files[0])">
+      </div>
+      <p class="foot-note" id="seatAssignmentStatus"></p>
+    </div>
+  </div>
+</div>
+
+<!-- View Exam Schedule Modal -->
+<div class="overlay-bg" id="viewExamScheduleOverlay">
+  <div class="users-modal" style="max-width:1000px;">
+    <button class="close-x" onclick="closeViewExamScheduleModal()">✕</button>
+    <h2>📋 Exam Schedule View</h2>
+    <div id="viewScheduleContainer"></div>
+  </div>
+</div>
+
+<div class="wrap" id="appWrap" style="display:none;">
+
+  <div class="gb-save-fab" id="gbSaveWrap" style="display:none;">
+    <span class="gb-save-status" id="gbSaveStatusText">All changes saved to Firestore</span>
+    <button type="button" class="gb-save-btn" id="gbSaveBtn" onclick="saveGradeBookNow()">
+      <span class="gb-save-spinner" id="gbSaveSpinner"></span>
+      <span id="gbSaveBtnLabel">💾 Save</span>
+    </button>
+  </div>
+
+  <div class="birthday-topbar" id="birthdayTopBar" style="display:none;">
+    <span class="birthday-topbar-icon">🎉🎂</span>
+    <span class="birthday-topbar-text" id="birthdayTopBarText"></span>
+    <button class="birthday-topbar-close" onclick="dismissBirthdayTopBar()" title="Dismiss">✕</button>
+  </div>
+
+  <div class="masthead">
+    <div style="display:flex;align-items:center;gap:16px;">
+      <div class="logo-pair">
+        <img src="assets/images/eep-logo.jpg" alt="Egypt Education Platform" class="school-logo">
+        <span class="logo-divider"></span>
+        <img src="assets/images/mils-logo.jpg" alt="Madinaty Integrated Language Schools" class="school-logo">
+      </div>
+      <div class="masthead-text">
+        <h1>MILS Grade Book</h1>
+        <p>An integrated system for recording student grades — English Section and French Section</p>
+      </div>
+    </div>
+    <div class="masthead-right">
+      <div class="masthead-right-row">
+        <button class="dark-toggle-btn" id="infoToggleBtn" onclick="toggleHeaderInfo()" title="Show clock, weather &amp; online users" style="display:none;">ⓘ</button>
+        <button class="dark-toggle-btn" id="darkToggleBtn" onclick="toggleDarkMode()" title="Toggle dark mode">🌙</button>
+        <div class="user-badge" id="userBadge">
+          <span id="userBadgeName">—</span>
+          <span class="u-role" id="userBadgeRole">—</span>
+          <button class="user-badge-pw-btn" onclick="openChangePasswordModal()" title="Change your password">🔑 Password</button>
+          <button onclick="logoutUser()">Logout</button>
+        </div>
+      </div>
+      <div class="masthead-right-row masthead-info" id="mastheadInfo">
+        <div class="dtw-widget" id="dtwWidget">
+          <div class="dtw-block">
+            <div class="dtw-clock" id="dtwClock">--:--:--</div>
+            <div class="dtw-date" id="dtwDate">—</div>
+          </div>
+          <div class="dtw-sep"></div>
+          <div class="dtw-weather" id="dtwCityWrap" title="">
+            <span class="dtw-icon" id="dtwIcon">⏳</span>
+            <div class="dtw-weather-text">
+              <div class="dtw-temp" id="dtwTemp">—</div>
+              <div class="dtw-cond" id="dtwCond">Loading weather…</div>
+            </div>
+          </div>
+        </div>
+        <div class="visitors-widget" id="visitorsWidget" onclick="toggleVisitorsDropdown(event)" title="Users currently signed in">
+          <span class="visitors-dot"></span>
+          <span id="activeVisitorsCount">0</span>
+          <span class="visitors-label">Online</span>
+          <div class="visitors-dropdown" id="visitorsDropdown">
+            <div class="visitors-dropdown-title">Active now</div>
+            <div id="activeVisitorsList"><span class="visitor-chip-empty">Loading…</span></div>
+          </div>
+        </div>
+        <div class="birthday-widget" id="birthdayWidget" onclick="toggleBirthdayDropdown(event)" title="Students celebrating a birthday today">
+          <span class="birthday-icon">🎂</span>
+          <span id="birthdayCount">0</span>
+          <span class="birthday-label">Birthdays Today</span>
+          <div class="birthday-dropdown" id="birthdayDropdown">
+            <div class="birthday-dropdown-title">🎉 Birthdays Today</div>
+            <div id="birthdayList"><span class="birthday-chip-empty">Loading…</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="masthead-right-row">
+        <span class="save-indicator" id="saveIndicator">✓ Saved</span>
+        <span id="githubSyncStatus" style="font-size:12px;font-weight:800;display:none;align-items:center;">☁ Not synced yet</span>
+        <div class="quick-stats" id="quickStatsWidget" title="Live system overview">
+          <div class="qs-item"><span class="qs-num" id="qsStudents">—</span><span class="qs-label">Students</span></div>
+          <div class="qs-item"><span class="qs-num" id="qsAvg">—</span><span class="qs-label">Avg. grade</span></div>
+          <div class="qs-item qs-pending"><span class="qs-num" id="qsPending">—</span><span class="qs-label">Pending</span></div>
+        </div>
+        <button class="ghost-btn" id="notifyParentsBtn" style="display:none;" onclick="openNotifyParentsModal()" title="Send an in-app alert to Parent/Student accounts">📢 Notify Parents</button>
+        <div class="notif-bell-wrap" id="notifBellWrap" style="display:none;">
+          <button class="notif-bell-btn" id="notifBellBtn" onclick="toggleNotifDropdown(event)" title="Notifications">
+            🔔<span class="notif-badge" id="notifBadge" style="display:none;">0</span>
+          </button>
+          <div class="notif-dropdown" id="notifDropdown">
+            <div class="notif-dropdown-title">Notifications</div>
+            <div id="notifList"><span class="notif-empty">Loading…</span></div>
+          </div>
+        </div>
+      </div>
+      <input type="file" id="restoreInput" accept=".json" onchange="restoreBackup(this.files[0])" style="display:none;">
+    </div>
+  </div>
+
+  <div class="rc-countdown" id="rcCountdownBar" style="display:none;">
+    <span class="rc-countdown-label" id="rcCountdownLabel"></span>
+    <div class="rc-countdown-track"><div class="rc-countdown-fill" id="rcCountdownFill" style="width:0%;"></div></div>
+  </div>
+
+  <div class="class-alert-bar" id="classAlertBar" style="display:none;">
+    <span class="class-alert-icon">🔔</span>
+    <span class="class-alert-text" id="classAlertText"></span>
+    <button class="class-alert-dismiss" id="classAlertDismissBtn" onclick="dismissClassAlert()">✕</button>
+  </div>
+
+  <div class="main-nav" id="mainNav">
+    <div class="nav-row-tabs">
+      <div class="nav-dropdown" id="teachersDropdownWrap">
+        <button class="nav-tab" data-view="teachers" id="navTabTeachers" onclick="toggleTeachersMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 9 12 5 2 9l10 4 10-4Z"/><path d="M6 10.5V16c0 1 2.7 3 6 3s6-2 6-3v-5.5"/><path d="M22 9v6"/></svg> Teachers ▾</button>
+        <div class="nav-dropdown-menu" id="teachersMenu">
+          <button class="opt-btn" onclick="switchView('teachers');closeTeachersMenu();">🗂 Teachers Database</button>
+          <button class="opt-btn" onclick="switchView('teacherStatistics');closeTeachersMenu();">📊 Statistics</button>
+        </div>
+      </div>
+      <div class="nav-dropdown" id="databaseDropdownWrap">
+        <button class="nav-tab active" data-view="database" id="navTabDatabase" onclick="toggleDatabaseMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Students ▾</button>
+        <div class="nav-dropdown-menu" id="databaseMenu">
+          <button class="opt-btn" onclick="switchView('database');closeDatabaseMenu();">🗂 Students Database</button>
+          <button class="opt-btn" onclick="switchView('classLists');closeDatabaseMenu();">📋 Class Lists</button>
+          <button class="opt-btn" onclick="switchView('statistics');closeDatabaseMenu();">📊 Statistics</button>
+        </div>
+      </div>
+      <button class="nav-tab" data-view="attendance" id="navTabAttendance" onclick="switchView('attendance')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9.5 14.5 5 5m0-5-5 5"/></svg> Absence</button>
+      <span class="nav-row-tick" aria-hidden="true"></span>
+      <button class="nav-tab" data-view="grades" id="navTabGrades" onclick="switchView('grades')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v18M8 7h3M8 11h3M8 15h3"/></svg> Grade Book</button>
+      <button class="nav-tab" data-view="certReports" id="navTabCertReports" onclick="switchView('certReports')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="m9 13.5-1.5 7 4.5-2.5 4.5 2.5-1.5-7"/></svg> Certificates</button>
+      <button class="nav-tab" data-view="markEntryReport" id="navTabMarkEntryReport" onclick="switchView('markEntryReport')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="M15 5l4 4"/></svg> Mark Entry Report</button>
+      <span class="nav-row-tick" aria-hidden="true"></span>
+      <div class="nav-dropdown" id="dashboardDropdownWrap">
+        <button class="nav-tab" data-view="dashboard" id="navTabDashboard" onclick="toggleDashboardMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg> Dashboard ▾</button>
+        <div class="nav-dropdown-menu" id="dashboardMenu">
+          <button class="opt-btn term-group-btn" id="dashTermGroupBtn_term1" onclick="toggleDashTermGroup(event,'term1')">Term 1 <span class="arrow">▸</span></button>
+          <div class="term-group" id="dashTermGroup_term1">
+            <button class="opt-btn" onclick="openDashboard('term1','cycle1')">Cycle 1</button>
+            <button class="opt-btn" onclick="openDashboard('term1','cycle1vs2')">Cycle 1 Vs Cycle 2</button>
+          </div>
+          <button class="opt-btn term-group-btn" id="dashTermGroupBtn_term2" onclick="toggleDashTermGroup(event,'term2')">Term 2 <span class="arrow">▸</span></button>
+          <div class="term-group" id="dashTermGroup_term2">
+            <button class="opt-btn" onclick="openDashboard('term2','cycle1')">Cycle 1</button>
+            <button class="opt-btn" onclick="openDashboard('term2','cycle1vs2')">Cycle 1 Vs Cycle 2</button>
+          </div>
+        </div>
+      </div>
+      <div class="nav-dropdown" id="examsDropdownWrap">
+        <button class="nav-tab" data-view="examsAnalysis" id="navTabExamsAnalysis" onclick="toggleExamsMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><rect x="6" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="18" y="13" width="3" height="5"/></svg> Exams Analysis ▾</button>
+        <div class="nav-dropdown-menu" id="examsMenu">
+          <button class="opt-btn term-group-btn" id="examsTermGroupBtn_term1" onclick="toggleExamsTermGroup(event,'term1')">Term 1 <span class="arrow">▸</span></button>
+          <div class="term-group" id="examsTermGroup_term1">
+            <button class="opt-btn" onclick="openExamsAnalysis('term1','cycle1')">Cycle 1</button>
+            <button class="opt-btn" onclick="openExamsAnalysis('term1','cycle2')">Cycle 2</button>
+            <button class="opt-btn" onclick="openExamsAnalysis('term1','finalexam')">First Term Exam Paper</button>
+          </div>
+          <button class="opt-btn term-group-btn" id="examsTermGroupBtn_term2" onclick="toggleExamsTermGroup(event,'term2')">Term 2 <span class="arrow">▸</span></button>
+          <div class="term-group" id="examsTermGroup_term2">
+            <button class="opt-btn" onclick="openExamsAnalysis('term2','cycle1')">Cycle 1</button>
+            <button class="opt-btn" onclick="openExamsAnalysis('term2','cycle2')">Cycle 2</button>
+            <button class="opt-btn" onclick="openExamsAnalysis('term2','finalexam')">End-of-Year Exam Paper</button>
+          </div>
+        </div>
+      </div>
+      <div class="nav-dropdown" id="perfDropdownWrap">
+        <button class="nav-tab" data-view="perfAlerts" id="navTabPerfAlerts" onclick="togglePerfMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v5a4 4 0 0 1-8 0Z"/><path d="M8 5H4v1a4 4 0 0 0 4 4M16 5h4v1a4 4 0 0 1-4 4"/><path d="M12 13v4m-3 4h6m-3-4v4"/></svg> Top &amp; At-Risk ▾</button>
+        <div class="nav-dropdown-menu" id="perfMenu">
+          <button class="opt-btn term-group-btn" id="perfTermGroupBtn_term1" onclick="togglePerfTermGroup(event,'term1')">Term 1 <span class="arrow">▸</span></button>
+          <div class="term-group" id="perfTermGroup_term1">
+            <button class="opt-btn term-group-btn" id="perfCycleGroupBtn_term1_cycle1" onclick="togglePerfCycleGroup(event,'term1','cycle1')">Cycle 1 <span class="arrow">▸</span></button>
+            <div class="term-group" id="perfCycleGroup_term1_cycle1">
+              <button class="opt-btn" onclick="openPerfAlert('term1','cycle1','top')">🌟 Top Performance Students</button>
+              <button class="opt-btn" onclick="openPerfAlert('term1','cycle1','risk')">⚠ At Risk Students</button>
+            </div>
+            <button class="opt-btn term-group-btn" id="perfCycleGroupBtn_term1_cycle2" onclick="togglePerfCycleGroup(event,'term1','cycle2')">Cycle 2 <span class="arrow">▸</span></button>
+            <div class="term-group" id="perfCycleGroup_term1_cycle2">
+              <button class="opt-btn" onclick="openPerfAlert('term1','cycle2','top')">🌟 Top Performance Students</button>
+              <button class="opt-btn" onclick="openPerfAlert('term1','cycle2','risk')">⚠ At Risk Students</button>
+            </div>
+          </div>
+          <button class="opt-btn term-group-btn" id="perfTermGroupBtn_term2" onclick="togglePerfTermGroup(event,'term2')">Term 2 <span class="arrow">▸</span></button>
+          <div class="term-group" id="perfTermGroup_term2">
+            <button class="opt-btn term-group-btn" id="perfCycleGroupBtn_term2_cycle1" onclick="togglePerfCycleGroup(event,'term2','cycle1')">Cycle 1 <span class="arrow">▸</span></button>
+            <div class="term-group" id="perfCycleGroup_term2_cycle1">
+              <button class="opt-btn" onclick="openPerfAlert('term2','cycle1','top')">🌟 Top Performance Students</button>
+              <button class="opt-btn" onclick="openPerfAlert('term2','cycle1','risk')">⚠ At Risk Students</button>
+            </div>
+            <button class="opt-btn term-group-btn" id="perfCycleGroupBtn_term2_cycle2" onclick="togglePerfCycleGroup(event,'term2','cycle2')">Cycle 2 <span class="arrow">▸</span></button>
+            <div class="term-group" id="perfCycleGroup_term2_cycle2">
+              <button class="opt-btn" onclick="openPerfAlert('term2','cycle2','top')">🌟 Top Performance Students</button>
+              <button class="opt-btn" onclick="openPerfAlert('term2','cycle2','risk')">⚠ At Risk Students</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="nav-dropdown" id="examSchedDropdownWrap">
+        <button class="nav-tab" data-view="examSchedule" id="navTabExamSched" onclick="toggleExamSchedMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><rect x="8" y="14" width="4" height="4"/></svg> Exams Schedules ▾</button>
+        <div class="nav-dropdown-menu" id="examSchedMenu">
+          <button class="opt-btn" onclick="openExamScheduleModal('term1','finalexam')">First Term Exam Schedule</button>
+          <button class="opt-btn" onclick="openExamScheduleModal('term2','finalexam')">End-of-Year Exam Schedule</button>
+        </div>
+      </div>
+    </div>
+    <span class="nav-row-tick" aria-hidden="true"></span>
+    <div class="nav-dropdown nav-row-config" id="configDropdownWrap">
+      <button class="nav-tab" data-view="config" id="navTabConfig" onclick="toggleConfigMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg> Configuration ▾</button>
+      <div class="nav-dropdown-menu" id="configMenu">
+        <button class="opt-btn" onclick="openUsersModal()">👤 Manage Users</button>
+        <button class="opt-btn" onclick="openBlockedStudentsModal()">🚫 Blocked Students</button>
+        <button class="opt-btn" onclick="openGradeEntryControlModal()">🔒 Grade Entry Control</button>
+        <button class="opt-btn" onclick="openReportCardReleaseModal()">📋 Report Card Release</button>
+        <button class="opt-btn" onclick="openExamScheduleReleaseModal()">📅 Exams Schedules Release</button>
+        <button class="opt-btn" onclick="openTermMonthDatesModal()">🗓 Term &amp; Month Dates</button>
+        <button class="opt-btn" onclick="openBellTimesModal()">🔔 Bell Times</button>
+        <button class="opt-btn" onclick="openAdminStructureModal()">🏛 School Admin Structure</button>
+        <button class="opt-btn" onclick="openActivityLogModal()">🕒 Activity &amp; Login Log</button>
+        <div style="height:1px;background:var(--border);margin:6px 2px;"></div>
+        <button class="opt-btn" onclick="downloadBackup()">⬇ Full Backup</button>
+        <button class="opt-btn" onclick="document.getElementById('restoreInput').click()">⬆ Restore Backup</button>
+        <div style="height:1px;background:var(--border);margin:6px 2px;"></div>
+        <button class="opt-btn opt-btn-danger" id="dbDeleteAllBtn" onclick="confirmDeleteAllDb()">⚠ Delete All Student Data</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="no-access" id="noAccessPanel" style="display:none;">
+    <div style="font-size:34px;">🔒</div>
+    <h3 style="margin:0;color:var(--ink);">No tabs available</h3>
+    <p style="margin:0;">Your account does not have access to any tab yet. Please contact an administrator.</p>
+  </div>
+
+  <div class="no-access" id="accountBlockedPanel" style="display:none;">
+    <div style="font-size:34px;color:var(--red);">🚫</div>
+    <h3 style="margin:0;color:var(--red);">Account is NOT active</h3>
+    <p style="margin:0;">Please contact the school administrator for more information.</p>
+  </div>
+
+  <div id="gradesView" style="display:none;">
+  <div class="stepper" id="stepper"></div>
+
+  <div class="workspace" id="workspace">
+    <div class="classbar">
+      <div class="classbar-crumbs" id="crumbs"></div>
+      <div class="classbar-count" id="studentCount">0 students</div>
+    </div>
+
+    <div class="toolbar" id="gradesToolbar">
+      <button class="btn btn-gold" onclick="toggleAddForm()">＋ Add Student</button>
+      <button class="btn btn-ink" onclick="document.getElementById('excelInput').click()">⇪ Import from Excel</button>
+      <input type="file" id="excelInput" accept=".xlsx,.xls,.csv" onchange="importExcel(this.files[0])">
+      <button class="btn btn-outline" onclick="exportExcel()">⇩ Export to Excel</button>
+      <button class="btn btn-outline" onclick="openGradeItemUploadModal()">📤 Upload Grades by Item</button>
+      <button class="btn btn-outline" onclick="openBulkGradesImportModal()" title="Import grades for one or more subjects at once">📊 Bulk Import by Subject</button>
+      <button class="btn btn-outline" onclick="showDeleteOptions()">🗑 Delete Students</button>
+    </div>
+
+    <div class="add-form" id="addForm">
+      <div class="field">
+        <label>Student Name</label>
+        <input type="text" id="newName" placeholder="e.g. Ahmed Mohamed Ali">
+      </div>
+      <div class="field">
+        <label>Class (optional)</label>
+        <input type="text" id="newClassroom" placeholder="e.g. 3/A">
+      </div>
+      <div class="field">
+        <label>Religion</label>
+        <select id="newReligion" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;min-width:140px;">
+          <option value="-">None</option>
+          <option value="Muslim">Muslim</option>
+          <option value="Christian">Christian</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Second Language</label>
+        <select id="newLang2" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;min-width:140px;">
+          <option value="-">None</option>
+          <option value="French">🇫🇷 French</option>
+          <option value="German">🇩🇪 German</option>
+          <option value="English">English</option>
+        </select>
+      </div>
+      <button class="btn btn-gold" onclick="addStudentManual()">Save Student</button>
+      <button class="btn btn-outline" onclick="toggleAddForm(false)">Cancel</button>
+    </div>
+
+    <div id="monthPill" class="month-pill" style="display:none;"></div>
+    <div class="table-card">
+      <div id="tableHolder" class="grade-table-scroll"></div>
+    </div>
+
+    <div class="legend">
+      <span><i style="background:var(--green)"></i> Excellent 85+</span>
+      <span><i style="background:var(--gold-deep)"></i> Very Good 75+</span>
+      <span><i style="background:var(--ink-2)"></i> Good 65+</span>
+      <span><i style="background:var(--amber)"></i> Pass 50+</span>
+      <span><i style="background:var(--red)"></i> Fail below 50</span>
+    </div>
+    <p class="foot-note" id="footNote">
+      Session data is stored temporarily in the browser only — use the "Full Backup" button to save all data to your device, and "Restore Backup" to continue your work later.
+    </p>
+  </div>
+
+  <div class="workspace show" id="introState">
+    <div class="empty-state">
+      <div class="seal-lg">1</div>
+      <h3>Start by selecting the Academic Term, Section, Stage, Grade, Class, Mark Entry and Subject</h3>
+      <p>Use the steps above in order to display the grade sheet for the class.</p>
+    </div>
+  </div>
+  </div><!-- /gradesView -->
+
+  <div id="attendanceView" style="display:none;">
+    <div class="stepper" id="attendanceStepper"></div>
+
+    <div class="workspace show" id="attendanceWorkspace" style="display:none;">
+      <div class="classbar">
+        <div class="classbar-crumbs" id="attendanceCrumbs"></div>
+        <button class="btn btn-outline" onclick="window.print()">🖨 Print</button>
+      </div>
+
+      <div class="table-card">
+        <div id="attTableHolder" class="grade-table-scroll"></div>
+      </div>
+      <p class="foot-note">
+        Friday and Saturday are automatically excluded from every attendance table, along with any holiday dates you add above. Absence is recorded separately for each Subject — tick a box to mark a student absent on that day — the Total column adds up all recorded absence days for this Month, and automatically updates that student's "Beh. &amp; Attend." grade for that same Subject, for the matching Term and Month in the Grade Book. You can still edit that grade by hand afterwards at any time. Checking "Apply to ALL Sections, Stages, Grades &amp; Classes" before creating/updating the table sets the same date range and excluded days for every class that teaches this Subject at once, instead of one class at a time.
+      </p>
+    </div>
+
+    <div class="workspace show" id="attendanceIntroState">
+      <div class="empty-state">
+        <div class="seal-lg">1</div>
+        <h3>Start by selecting the Academic Term, Section, Stage, Grade, Class, Subject and Month</h3>
+        <p>Use the steps above in order to display the attendance sheet for the class.</p>
+      </div>
+    </div>
+  </div><!-- /attendanceView -->
+
+  <div id="markEntryReportView" style="display:none;">
+    <div class="stepper" id="markEntryStepper"></div>
+    <div class="workspace show" id="markEntryWorkspace" style="display:none;">
+      <div class="classbar">
+        <div class="classbar-crumbs" id="markEntryCrumbs"></div>
+        <button class="btn btn-outline" onclick="window.print()">🖨 Print</button>
+      </div>
+      <div class="table-card">
+        <div id="markEntryTableHolder"></div>
+      </div>
+    </div>
+    <div class="workspace show" id="markEntryIntroState">
+      <div class="empty-state">
+        <div class="seal-lg">1</div>
+        <h3>Select the Academic Term, Section, Stage, Grade and Class to view this report</h3>
+        <p>Use the steps above in order to display the Mark Entry Report for the class.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="certReportsView" style="display:none;">
+    <div class="stepper" id="certReportsStepper"></div>
+    <div id="certChildSwitch"></div>
+    <div class="workspace show" id="certReportsWorkspace" style="display:none;">
+      <div class="classbar cert-report-toolbar">
+        <div class="classbar-crumbs" id="certReportsCrumbs"></div>
+        <button class="btn btn-outline" onclick="window.print()">🖨 Print</button>
+      </div>
+      <p class="foot-note" style="margin-top:-6px;">Pulls every mark already recorded in the Grade Book for the chosen Report Type and lays it out on the standard report card certificate below — one page per student. Leave "Class" unselected to generate certificates for every class in the Grade at once, or pick one student below to generate just theirs — then click <b>Generate</b>.</p>
+      <div class="cert-toolbar" id="certReportsStudentPicker"></div>
+      <div id="certReportsHolder"></div>
+    </div>
+    <div class="workspace show" id="certReportsIntroState">
+      <div class="empty-state">
+        <div class="seal-lg">📜</div>
+        <h3>Select Term, Section, Stage, Grade and Report Type to generate certificates</h3>
+        <p>Class is optional — pick one to print a single class, or leave it blank to print every class in that Grade. You can also narrow it down to one student afterwards.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="dashboardView" style="display:none;">
+    <div class="classbar">
+      <div class="classbar-crumbs" id="dashboardCrumbs"></div>
+    </div>
+    <div class="workspace show" id="dashboardWorkspace">
+      <div id="dashboardChildSwitch"></div>
+      <div class="db-filters" id="dashboardFilters"></div>
+      <div id="dashboardChartsArea"></div>
+    </div>
+  </div>
+
+  <div id="examsAnalysisView" style="display:none;">
+    <div class="classbar">
+      <div class="classbar-crumbs" id="examsCrumbs"></div>
+    </div>
+    <div class="workspace show" id="examsAnalysisWorkspace">
+      <div class="db-filters" id="examsFilters"></div>
+      <div id="examsTableArea"></div>
+    </div>
+  </div>
+
+  <div id="perfAlertsView" style="display:none;">
+    <div class="classbar">
+      <div class="classbar-crumbs" id="perfCrumbs"></div>
+      <button class="btn btn-outline" onclick="window.print()">🖨 Print</button>
+    </div>
+    <div class="stepper" id="perfFilterStepper"></div>
+    <div class="workspace show" id="perfAlertsWorkspace">
+      <div id="perfTableArea"></div>
+    </div>
+  </div>
+
+  <div id="classListsView" style="display:none;">
+    <div class="classbar">
+      <div class="classbar-crumbs" id="classListsCrumbs"></div>
+      <button class="btn btn-outline" onclick="window.print()">🖨 Print</button>
+    </div>
+    <div class="stepper" id="classListsStepper"></div>
+    <div class="workspace show" id="classListsIntroState">
+      <div class="empty-state">
+        <div class="seal-lg">📋</div>
+        <h3>Generate Class Lists</h3>
+        <p>Use the steps above to select Section, Stage, Grade and Class, then view the class list with student information.</p>
+      </div>
+    </div>
+    <div class="workspace show" id="classListsWorkspace" style="display:none;">
+      <div class="toolbar" style="margin-bottom:16px;">
+        <button class="btn btn-outline" onclick="downloadClassListExcel()">⬇ Download as Excel</button>
+        <button class="btn btn-outline" onclick="downloadClassListPDF()">⬇ Download as PDF</button>
+      </div>
+      <div class="clist-outer">
+        <div id="classListTableHolder"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="statisticsView" style="display:none;">
+    <div class="classbar" style="margin-bottom:14px;">
+      <div class="classbar-crumbs"><span class="crumb">📊 Statistics</span></div>
+      <div class="classbar-count" id="statsCount">Processing...</div>
+    </div>
+
+    <div class="toolbar" style="margin-bottom:16px;">
+      <button class="btn btn-outline" onclick="downloadStatisticsExcel()">⬇ Download as Excel</button>
+      <button class="btn btn-outline" onclick="downloadStatisticsPDF()">⬇ Download as PDF</button>
+    </div>
+
+    <div class="stats-container">
+      <div id="statisticsTableHolder"></div>
+    </div>
+  </div>
+
+  <div id="databaseView">
+    <div class="classbar" style="margin-bottom:14px;">
+      <div class="classbar-crumbs"><span class="crumb">Students</span></div>
+      <div class="classbar-count" id="dbCount">0 students</div>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn btn-ink" onclick="document.getElementById('dbExcelInput').click()">⇪ Bulk Import from Excel</button>
+      <input type="file" id="dbExcelInput" accept=".xlsx,.xls,.csv" onchange="importDatabaseExcel(this.files[0])">
+      <button class="btn btn-outline" onclick="downloadTemplate()">⬇ Download Blank Template</button>
+      <button class="btn btn-outline" onclick="deleteSelectedDbStudents()">🗑 Delete Selected</button>
+    </div>
+
+    <div class="db-filters">
+      <div class="field">
+        <label>Search by name or ID</label>
+        <input type="text" id="dbSearch" placeholder="Type to search..." oninput="renderDatabase()">
+      </div>
+      <div class="field">
+        <label>Section</label>
+        <select id="dbFilterSection" onchange="renderDatabase()">
+          <option value="">All</option>
+          <option value="en">English Section</option>
+          <option value="fr">French Section</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Stage</label>
+        <select id="dbFilterStage" onchange="renderDatabase()">
+          <option value="">All</option>
+          <option value="primary">Primary Stage</option>
+          <option value="prep">Prep Stage</option>
+          <option value="secondary">Secondary Stage</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Grade</label>
+        <select id="dbFilterGrade" onchange="renderDatabase()">
+          <option value="">All</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Class</label>
+        <select id="dbFilterClassroom" onchange="renderDatabase()">
+          <option value="">All</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Religion</label>
+        <select id="dbFilterReligion" onchange="renderDatabase()">
+          <option value="">All</option>
+          <option value="Muslim">Muslim</option>
+          <option value="Christian">Christian</option>
+          <option value="-">None</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Second Language</label>
+        <select id="dbFilterLang" onchange="renderDatabase()">
+          <option value="">All</option>
+          <option value="French">🇫🇷 French</option>
+          <option value="German">🇩🇪 German</option>
+          <option value="English">English</option>
+          <option value="-">None</option>
+        </select>
+      </div>
+      <button class="btn btn-outline" onclick="exportDatabase()">⇩ Export Full Database</button>
+    </div>
+
+    <div class="table-card">
+      <div id="dbTableHolder" class="db-table-scroll"></div>
+    </div>
+    <p class="foot-note">
+      To add a new student, go to the "Grade Book" tab and select the Section, Stage and Grade first, then click "Add Student".<br>
+      From here you can search and filter across all classes, edit each student's second language, and delete students.
+    </p>
+  </div>
+
+  <div id="teachersView" style="display:none;">
+    <div class="classbar" style="margin-bottom:14px;">
+      <div class="classbar-crumbs"><span class="crumb">Teachers Database</span></div>
+      <div class="classbar-count" id="teachersCount">0 teachers</div>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn btn-gold" onclick="toggleAddTeacherForm()">＋ Add Teacher</button>
+      <button class="btn btn-ink" onclick="document.getElementById('teachersExcelInput').click()">⇪ Bulk Import from Excel</button>
+      <input type="file" id="teachersExcelInput" accept=".xlsx,.xls,.csv" onchange="importTeachersExcel(this.files[0])">
+      <button class="btn btn-outline" onclick="downloadTeachersTemplate()">⬇ Download Blank Template</button>
+      <button class="btn btn-outline" onclick="exportTeachersDatabase()">⇩ Export Full Database</button>
+      <button class="btn btn-outline" onclick="deleteSelectedTeachers()">🗑 Delete Selected</button>
+      <button class="btn btn-outline" onclick="syncTeachersFromUserAccounts()" title="Add/refresh a Teachers Database row for every Manage Users account with role Teacher or Head of Department">🔄 Import from Teacher/HOD Accounts</button>
+    </div>
+
+    <div class="add-form" id="addTeacherForm">
+      <div class="field">
+        <label>Teacher Name</label>
+        <input type="text" id="newTeacherName" placeholder="e.g. Mona Ahmed Saleh">
+      </div>
+      <div class="field">
+        <label>Section</label>
+        <select id="newTeacherSection">
+          <option value="English">English</option>
+          <option value="French">French</option>
+          <option value="Both">Both</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Subject</label>
+        <input type="text" id="newTeacherSubject" list="teacherSubjectList" placeholder="e.g. Mathematics">
+        <datalist id="teacherSubjectList"></datalist>
+      </div>
+      <div class="field">
+        <label>Classes</label>
+        <select id="newTeacherClasses" multiple onfocus="populateTeacherClassesDropdown()" style="min-height: 80px;">
+          <option value="">Select classes...</option>
+        </select>
+        <small style="color: var(--ink-soft); margin-top: 4px; display: block;">Hold Ctrl (Cmd on Mac) to select multiple classes</small>
+      </div>
+      <button class="btn btn-gold" onclick="addTeacherManual()">Save Teacher</button>
+      <button class="btn btn-outline" onclick="toggleAddTeacherForm(false)">Cancel</button>
+    </div>
+
+    <div class="db-filters">
+      <div class="field">
+        <label>Search by name or ID</label>
+        <input type="text" id="teacherSearch" placeholder="Type to search..." oninput="renderTeachersDatabase()">
+      </div>
+      <div class="field">
+        <label>Section</label>
+        <select id="teacherFilterSection" onchange="renderTeachersDatabase()">
+          <option value="">All</option>
+          <option value="English">English</option>
+          <option value="French">French</option>
+          <option value="Both">Both</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Subject</label>
+        <select id="teacherFilterSubject" onchange="renderTeachersDatabase()">
+          <option value="">All</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Classes</label>
+        <select id="teacherFilterClass" onchange="renderTeachersDatabase()">
+          <option value="">All</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div id="teachersTableHolder"></div>
+    </div>
+    <p class="foot-note">
+      Add teachers one by one with the "Add Teacher" button, bulk-import them all at once from an Excel/CSV sheet using "Bulk Import from Excel" (download the blank template first to see the required columns: ID, Teachers Name, Section, Subject, Classes), or click "🔄 Import from Teacher/HOD Accounts" to pull in every Manage Users account whose role is Teacher or Head of Department. New Teacher/HOD accounts are also added here automatically the moment they're created or edited in Manage Users — the button is only needed to catch up any that were created before this linking existed.
+    </p>
+  </div>
+
+  <div id="teacherStatisticsView" style="display:none;">
+    <div class="classbar" style="margin-bottom:14px;">
+      <div class="classbar-crumbs"><span class="crumb">📊 Teachers Statistics</span></div>
+      <div class="classbar-count" id="teacherStatsCount">Processing...</div>
+    </div>
+
+    <div class="toolbar" style="margin-bottom:16px;">
+      <button class="btn btn-outline" onclick="downloadTeacherStatisticsExcel()">⬇ Download as Excel</button>
+      <button class="btn btn-outline" onclick="window.print()">🖨 Print</button>
+    </div>
+
+    <div class="stats-container">
+      <div id="teacherStatisticsTableHolder"></div>
+    </div>
+    <p class="foot-note">
+      Teachers are grouped by Section, Stage and Subject. Stage is worked out automatically by matching each teacher's assigned Classes (Teachers Database) against the Students Database — a teacher whose classes aren't found in the Students Database yet is counted under "Unspecified Stage".
+    </p>
+  </div>
+
+</div>
+
+<!-- ============ NOTIFY PARENTS (in-app broadcast) ============ -->
+<div class="overlay" id="notifyParentsOverlay" onclick="if(event.target.id==='notifyParentsOverlay') closeNotifyParentsModal()">
+  <div class="modal" style="max-width:480px;position:relative;">
+    <button class="close-x" onclick="closeNotifyParentsModal()">✕</button>
+    <h3 style="margin-top:0;">📢 Notify Parents</h3>
+    <p class="foot-note" style="margin-top:-4px;">Sends an in-app alert that appears in the notification bell (🔔) for Parent/Student accounts. This is not an email or SMS — parents will see it next time they open the page.</p>
+    <div class="modal-form" style="margin-top:14px;display:flex;flex-direction:column;gap:12px;">
+      <div class="field" style="width:100%;">
+        <label>Message</label>
+        <textarea id="notifyParentsMsg" rows="3" placeholder="e.g. Term 2 report cards have been issued and are now available." style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;resize:vertical;"></textarea>
+      </div>
+      <div class="field" style="width:100%;">
+        <label>Send To</label>
+        <select id="notifyParentsScope" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;" onchange="updateNotifyParentsScopeFields()">
+          <option value="all">All Parents</option>
+          <option value="section">A Specific Section</option>
+          <option value="grade">A Specific Grade</option>
+          <option value="class">A Specific Class</option>
+        </select>
+      </div>
+      <div class="field" id="notifyParentsSectionField" style="width:100%;display:none;">
+        <label>Section &amp; Stage</label>
+        <select id="notifyParentsSectionSelect" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;"></select>
+      </div>
+      <div class="field" id="notifyParentsGradeField" style="width:100%;display:none;">
+        <label>Grade</label>
+        <select id="notifyParentsGradeSelect" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;"></select>
+      </div>
+      <div class="field" id="notifyParentsClassField" style="width:100%;display:none;">
+        <label>Class</label>
+        <select id="notifyParentsClassSelect" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;"></select>
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:18px;">
+      <button class="btn btn-gold" onclick="sendParentBroadcast()">📢 Send Notification</button>
+      <button class="btn btn-outline" onclick="closeNotifyParentsModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="importResultOverlay">
+  <div class="modal">
+    <h3 id="importTitle">Import Complete</h3>
+    <p id="importMsg"></p>
+    <div class="modal-actions"><button class="btn btn-gold" onclick="closeOverlay()">OK</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="gradeItemUploadOverlay" onclick="if(event.target.id==='gradeItemUploadOverlay') closeGradeItemUploadModal()">
+  <div class="modal" style="max-width:480px;position:relative;">
+    <button class="close-x" onclick="closeGradeItemUploadModal()">✕</button>
+    <h3 style="margin-top:0;">📤 Upload Grades by Item</h3>
+    <p class="foot-note" style="margin-top:-4px;">Pick which mark-entry item you want to fill in from an Excel sheet. Only that item will be updated for the students already in this class list — everything else on their record stays untouched.</p>
+    <div class="modal-form" style="margin-top:14px;">
+      <div class="field" style="width:100%;">
+        <label>Item to Upload</label>
+        <select id="gradeItemSelect" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;" onchange="renderGradeItemScopeNote()"></select>
+      </div>
+    </div>
+    <p class="foot-note" id="gradeItemScopeNote" style="margin-top:8px;"></p>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:18px;">
+      <button class="btn btn-outline" style="width:100%;justify-content:center;" onclick="downloadGradeItemTemplate()">⬇ Download Template for this Item</button>
+      <button class="btn btn-gold" style="width:100%;justify-content:center;" onclick="document.getElementById('gradeItemExcelInput').click()">⇪ Choose Excel File &amp; Upload</button>
+      <input type="file" id="gradeItemExcelInput" accept=".xlsx,.xls,.csv" style="display:none;" onchange="handleGradeItemExcelFile(this.files[0])">
+    </div>
+    <p class="foot-note" style="margin-top:14px;">The file needs a <b>ID</b> or <b>Student Name</b> column to identify each student, plus a column with the item's own name (e.g. "Month 1 Q. 1") or a column titled <b>Score</b>. The downloadable template already has the right columns and current class list, so it's the easiest way to start. Rows that don't match any student in the current list are skipped and listed after the upload.</p>
+  </div>
+</div>
+
+<div class="overlay" id="deleteOptionsOverlay" onclick="if(event.target.id==='deleteOptionsOverlay') closeOverlay()">
+  <div class="modal">
+    <h3>حذف الطلاب</h3>
+    <p>اختر الطريقة التي تريدها:</p>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
+      <button class="btn btn-ink" style="width:100%;justify-content:center;" onclick="deleteSelectedStudents()">🗑 حذف الطلاب المحددين</button>
+      <button class="btn btn-outline" style="width:100%;justify-content:center;" onclick="deleteAllStudents()">⚠ حذف جميع الطلاب</button>
+      <button class="btn btn-outline" style="width:100%;justify-content:center;" onclick="closeOverlay()">إلغاء</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ BULK IMPORT GRADES BY SUBJECT ============ -->
+<div class="overlay" id="bulkGradesImportOverlay" onclick="if(event.target.id==='bulkGradesImportOverlay') closeBulkGradesImportModal()">
+  <div class="modal" style="max-width:520px;">
+    <button class="close-x" onclick="closeBulkGradesImportModal()">✕</button>
+    <h3 style="margin-top:0;">📊 Bulk Import Grades by Subject(s)</h3>
+    <p class="foot-note" style="margin-top:-4px;">Import grades for one subject, multiple subjects, or all subjects at once from an Excel file.</p>
+    
+    <div style="margin-top:16px; border:1px solid var(--border); border-radius:8px; padding:12px; background:var(--paper-2);">
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+        <button class="btn" style="flex:1; min-width:140px; background:var(--gold); color:var(--ink); border:none; cursor:pointer; padding:10px 12px; border-radius:6px;" onclick="setBulkImportMode('single')">
+          📌 Single Subject
+        </button>
+        <button class="btn" style="flex:1; min-width:140px; background:var(--gold); color:var(--ink); border:none; cursor:pointer; padding:10px 12px; border-radius:6px;" onclick="setBulkImportMode('multiple')">
+          📋 Multiple Subjects
+        </button>
+        <button class="btn" style="flex:1; min-width:140px; background:var(--gold); color:var(--ink); border:none; cursor:pointer; padding:10px 12px; border-radius:6px;" onclick="setBulkImportMode('all')">
+          ✓ All Subjects
+        </button>
+      </div>
+      <p id="bulkImportModeInfo" class="foot-note" style="margin:0; font-size:13px; color:var(--ink-soft);"></p>
+    </div>
+
+    <!-- Single Subject Mode -->
+    <div id="bulkImportSingleMode" style="display:none; margin-top:16px;">
+      <label style="display:block; margin-bottom:8px; font-weight:500;">Select Subject</label>
+      <select id="bulkImportSubjectSelect" style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;"></select>
+      <p class="foot-note" id="bulkImportSingleInfo" style="margin-top:8px;"></p>
+    </div>
+
+    <!-- Multiple Subjects Mode -->
+    <div id="bulkImportMultipleMode" style="display:none; margin-top:16px;">
+      <label style="display:block; margin-bottom:8px; font-weight:500;">Select Subjects (hold Ctrl/Cmd to select multiple)</label>
+      <select id="bulkImportMultipleSelect" multiple style="border:1.5px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'Tajawal';font-size:14px;width:100%;min-height:120px;"></select>
+      <p class="foot-note" style="margin-top:8px;">You can select 2 or more subjects. Your Excel file should have columns for Student ID/Name and each selected subject.</p>
+    </div>
+
+    <!-- All Subjects Mode -->
+    <div id="bulkImportAllMode" style="display:none; margin-top:16px;">
+      <p class="foot-note">📌 Import grades for <b id="bulkImportAllCount">0</b> subjects in one Excel file.</p>
+      <p class="foot-note">Your file should have columns: <b>Student ID</b> (or <b>Student Name</b>), then one column per subject with the subject name as the header.</p>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:18px;border-top:1px dashed var(--border);padding-top:14px;">
+      <button class="btn btn-outline" style="width:100%;justify-content:center;" onclick="downloadBulkGradesTemplate()">⬇ Download Excel Template</button>
+      <button class="btn btn-gold" style="width:100%;justify-content:center;" onclick="document.getElementById('bulkGradesExcelInput').click()">⇪ Choose Excel File &amp; Upload</button>
+      <input type="file" id="bulkGradesExcelInput" accept=".xlsx,.xls,.csv" style="display:none;" onchange="handleBulkGradesExcelFile(this.files[0])">
+    </div>
+
+    <p class="foot-note" style="margin-top:14px; border-top:1px dashed var(--border); padding-top:12px; margin-bottom:0;">
+      <b>File format:</b> First column should be <b>Student ID</b> or <b>Student Name</b>. 
+      For <b>Single</b> mode: one score column. 
+      For <b>Multiple/All</b> modes: each column header should match a subject name exactly.
+      Only matching students will be updated; non-matching rows are reported after upload.
+    </p>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
