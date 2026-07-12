@@ -8412,6 +8412,12 @@ function openExamScheduleModal(term, type){
     if(viewBtn) viewBtn.style.display = hasData ? '' : 'none';
     if(deleteBtn) deleteBtn.style.display = hasData && isAdmin ? '' : 'none';
   }
+  const subtitleEl = document.getElementById('examScheduleSubtitle');
+  if(subtitleEl){
+    subtitleEl.textContent = isAdmin
+      ? 'Pick a Grade, then set the Date, Day, Subject, and Time (From/To) for each exam (Admin only) — each Grade has its own schedule. Visible to every user in that Grade until the Admin updates it again.'
+      : 'View your exam schedule and examination card below.';
+  }
   const excelRow = document.getElementById('examScheduleExcelRow');
   if(excelRow) excelRow.style.display = isAdmin ? '' : 'none';
   const seatAdminBox = document.getElementById('examSeatAssignmentAdminBox');
@@ -8422,7 +8428,9 @@ function openExamScheduleModal(term, type){
   const refPreview = document.getElementById('examScheduleRefPreview');
   const refImg = document.getElementById('examScheduleRefImg');
   if(refPreview && refImg){
-    if(type === 'finalexam'){
+    // The print reference layout is an Admin-only design aid for filling in the schedule —
+    // a Parent/Student viewer never needs it, they just see their own Examination Card below.
+    if(type === 'finalexam' && isAdmin){
       refImg.src = EXAM_SCHEDULE_REFERENCE_IMG;
       refPreview.style.display = '';
     }else{
