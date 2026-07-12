@@ -918,9 +918,39 @@ function renderDashboard(){
   const modeLabel = DASHBOARD_MODE_LABELS[state.dashboardMode] || 'Cycle 1';
   const crumbs = document.getElementById('dashboardCrumbs');
   if(crumbs) crumbs.innerHTML = `<span class="crumb subj">${label}</span><span class="crumb subj">${modeLabel}</span>`;
+  autoSelectDashboardChildForParent();
   renderDashboardChildSwitch();
   renderDashboardFilters();
   renderDashboardCharts();
+}
+
+/* True for a Parent/Student account linked to one or more specific children —
+   used to swap the Section/Stage/Grade/Class/Student steppers out for the
+   simpler "just show my child" experience across the Dashboard. */
+function isLinkedParentViewer(){
+  if(!currentUser || currentUser.role!=='parent' || !currentUser.effective) return false;
+  const scope = currentUser.effective.studentScope;
+  return Array.isArray(scope) && scope.length>0;
+}
+
+/* A linked Parent/Student account never needs to walk the Section -> Stage ->
+   Grade -> Class -> Student stepper themselves — auto-scope the Dashboard
+   straight to their child (the first child, alphabetically, for accounts
+   linked to more than one; renderDashboardChildSwitch lets them pick a
+   sibling afterwards). Only fires when nothing valid is already selected, so
+   it never overrides a sibling the parent has already switched to. */
+function autoSelectDashboardChildForParent(){
+  if(!isLinkedParentViewer()) return;
+  if(state.dashboardStudent && scopeStudentAllowed(state.dashboardStudent)) return;
+  const scope = currentUser.effective.studentScope;
+  const flat = allStudentsFlatRaw();
+  const first = scope.map(id=> flat.find(s=> s.id===id)).filter(Boolean).sort((a,b)=> a.name.localeCompare(b.name))[0];
+  if(!first) return;
+  state.dashboardSection = first.section || null;
+  state.dashboardStage = first.stage || null;
+  state.dashboardGrade = first.grade || null;
+  state.dashboardClassroom = first.classroom || null;
+  state.dashboardStudent = first.id;
 }
 
 /* ---------- Cycle Dashboard: linked-children quick switch ----------
@@ -945,17 +975,13 @@ function renderDashboardChildSwitch(){
   if(!wrap) return;
   const children = getLinkedDashboardChildren();
   if(!children.length){ wrap.innerHTML = ''; return; }
-  const tabs = children.map(c=>{
-    const active = state.dashboardStudent===c.id;
-    const initial = (c.name||'?').trim().charAt(0).toUpperCase();
+  const options = children.map(c=>{
     const gradeObj = STAGES[c.stage] ? STAGES[c.stage].grades.find(g=>g.id===c.grade) : null;
     const gradeLabel = gradeObj ? gradeObj.label : (c.grade||'');
     const sub = [gradeLabel, c.classroom].filter(Boolean).join(' · ');
-    return `<button type="button" class="db-child-tab${active?' active':''}" onclick="selectDashboardChild('${c.id}')" title="${sub.replace(/"/g,'&quot;')}">
-      <span class="dcs-avatar">${initial}</span><span>${c.name}</span>
-    </button>`;
+    return `<option value="${c.id}" ${state.dashboardStudent===c.id?'selected':''}>${escapeHtml(c.name)}${sub?` (${sub})`:''}</option>`;
   }).join('');
-  wrap.innerHTML = `<div class="db-children-switch"><span class="dcs-label">My children:</span>${tabs}</div>`;
+  wrap.innerHTML = `<div class="db-children-switch"><span class="dcs-label">My children:</span><select onchange="selectDashboardChild(this.value)">${options}</select></div>`;
 }
 
 function selectDashboardChild(studentId){
@@ -991,17 +1017,13 @@ function renderCertChildSwitch(){
   if(!wrap) return;
   const children = getLinkedCertChildren();
   if(!children.length){ wrap.innerHTML = ''; return; }
-  const tabs = children.map(c=>{
-    const active = certState.studentId===c.id;
-    const initial = (c.name||'?').trim().charAt(0).toUpperCase();
+  const options = children.map(c=>{
     const gradeObj = STAGES[c.stage] ? STAGES[c.stage].grades.find(g=>g.id===c.grade) : null;
     const gradeLabel = gradeObj ? gradeObj.label : (c.grade||'');
     const sub = [gradeLabel, c.classroom].filter(Boolean).join(' · ');
-    return `<button type="button" class="db-child-tab${active?' active':''}" onclick="selectCertChild('${c.id}')" title="${sub.replace(/"/g,'&quot;')}">
-      <span class="dcs-avatar">${initial}</span><span>${c.name}</span>
-    </button>`;
+    return `<option value="${c.id}" ${certState.studentId===c.id?'selected':''}>${escapeHtml(c.name)}${sub?` (${sub})`:''}</option>`;
   }).join('');
-  wrap.innerHTML = `<div class="db-children-switch"><span class="dcs-label">My children:</span>${tabs}</div>`;
+  wrap.innerHTML = `<div class="db-children-switch"><span class="dcs-label">My children:</span><select onchange="selectCertChild(this.value)">${options}</select></div>`;
 }
 
 function selectCertChild(studentId){
@@ -1022,6 +1044,8 @@ function selectCertChild(studentId){
 function renderDashboardFilters(){
   const wrap = document.getElementById('dashboardFilters');
   if(!wrap) return;
+  if(isLinkedParentViewer()){ wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
   const sectionOpts = Object.keys(SECTIONS)
     .filter(k=>scopeSectionAllowed(k))
     .map(k=>`<option value="${k}" ${state.dashboardSection===k?'selected':''}>${SECTIONS[k].label}</option>`).join('');
@@ -2147,29 +2171,68 @@ function certReportTypeOptions(termPeriod, stage, grade){
   return base;
 }
 
+/* A linked Parent/Student account never needs to walk the Section -> Stage ->
+   Grade -> Class part of the Certificates stepper — auto-scope it straight to
+   their child (the first child, alphabetically, for accounts linked to more
+   than one; renderCertChildSwitch lets them pick a sibling afterwards). Only
+   fills in Section/Stage/Grade/Class/Student — Academic Term and Report Type
+   are real choices the parent still makes, so those are left untouched. Only
+   fires when nothing valid is already selected, so it never overrides a
+   sibling the parent has already switched to. */
+function autoSelectCertChildForParent(){
+  if(!isLinkedParentViewer()) return;
+  if(certState.studentId && scopeStudentAllowed(certState.studentId)) return;
+  const scope = currentUser.effective.studentScope;
+  const flat = allStudentsFlatRaw();
+  const first = scope.map(id=> flat.find(s=> s.id===id)).filter(Boolean).sort((a,b)=> a.name.localeCompare(b.name))[0];
+  if(!first) return;
+  certState.section = first.section || null;
+  certState.stage = first.stage || null;
+  certState.grade = first.grade || null;
+  certState.term = first.classroom || null;
+  certState.studentId = first.id;
+}
+
 function certStepConfig(){
   const st = certState;
-  return [
+  const linkedParent = isLinkedParentViewer();
+  const steps = [
     { key:'termPeriod', title:'Academic Term', state: st, getLabel:()=> st.termPeriod ? TERM_LABELS[st.termPeriod] : null,
-      options: [ { id:'term1', label:'Term 1' }, { id:'term2', label:'Term 2' } ] },
-    { key:'section', title:'Section', state: st, getLabel:()=> st.section ? SECTIONS[st.section].label : null,
-      options: Object.entries(SECTIONS).filter(([id])=>scopeSectionAllowed(id)).map(([id,v])=>({id,label:v.label})), requires:['termPeriod'] },
-    { key:'stage', title:'Stage', state: st, getLabel:()=> st.stage ? STAGES[st.stage].label : null,
-      options: Object.entries(STAGES).filter(([id])=>scopeStageAllowed(id)).map(([id,v])=>({id,label:v.label})), requires:['termPeriod','section'] },
-    { key:'grade', title:'Grade', state: st, getLabel:()=>{
-        if(!st.grade) return null;
-        const g = STAGES[st.stage].grades.find(g=>g.id===st.grade);
-        return g ? g.label : null;
-      }, options: ()=> st.stage ? STAGES[st.stage].grades.map(g=>({id:g.id,label:g.label})) : [], requires:['termPeriod','section','stage'] },
-    { key:'reportType', title:'Report Type', state: st, getLabel:()=> st.reportType ? CERT_REPORT_TITLES[st.reportType] : null,
-      options: ()=> certReportTypeOptions(st.termPeriod, st.stage, st.grade), requires:['termPeriod','section','stage','grade'] },
-    { key:'term', title:'Class (optional — ALL classes if left blank)', state: st, getLabel:()=> st.term ? st.term : null,
-      options: ()=> getClassesInGrade(st).filter(c=>scopeClassroomAllowed(c)).map(c=>({id:c,label:c})), requires:['termPeriod','section','stage','grade','reportType'] }
+      options: [ { id:'term1', label:'Term 1' }, { id:'term2', label:'Term 2' } ] }
   ];
+  // A linked Parent/Student account is already scoped to their own child (see
+  // autoSelectCertChildForParent), so Section/Stage/Grade/Class would just be
+  // read-only restatements of facts the parent already knows — skip them and
+  // only ask what's actually a choice: Academic Term and Report Type.
+  if(!linkedParent){
+    steps.push(
+      { key:'section', title:'Section', state: st, getLabel:()=> st.section ? SECTIONS[st.section].label : null,
+        options: Object.entries(SECTIONS).filter(([id])=>scopeSectionAllowed(id)).map(([id,v])=>({id,label:v.label})), requires:['termPeriod'] },
+      { key:'stage', title:'Stage', state: st, getLabel:()=> st.stage ? STAGES[st.stage].label : null,
+        options: Object.entries(STAGES).filter(([id])=>scopeStageAllowed(id)).map(([id,v])=>({id,label:v.label})), requires:['termPeriod','section'] },
+      { key:'grade', title:'Grade', state: st, getLabel:()=>{
+          if(!st.grade) return null;
+          const g = STAGES[st.stage].grades.find(g=>g.id===st.grade);
+          return g ? g.label : null;
+        }, options: ()=> st.stage ? STAGES[st.stage].grades.map(g=>({id:g.id,label:g.label})) : [], requires:['termPeriod','section','stage'] }
+    );
+  }
+  steps.push(
+    { key:'reportType', title:'Report Type', state: st, getLabel:()=> st.reportType ? CERT_REPORT_TITLES[st.reportType] : null,
+      options: ()=> certReportTypeOptions(st.termPeriod, st.stage, st.grade), requires: linkedParent ? ['termPeriod'] : ['termPeriod','section','stage','grade'] }
+  );
+  if(!linkedParent){
+    steps.push(
+      { key:'term', title:'Class (optional — ALL classes if left blank)', state: st, getLabel:()=> st.term ? st.term : null,
+        options: ()=> getClassesInGrade(st).filter(c=>scopeClassroomAllowed(c)).map(c=>({id:c,label:c})), requires:['termPeriod','section','stage','grade','reportType'] }
+    );
+  }
+  return steps;
 }
 function renderCertReportsStepper(){
   const holder = document.getElementById('certReportsStepper');
   if(!holder) return;
+  autoSelectCertChildForParent();
   buildStepperHTML('certReportsStepper', certStepConfig(), 'c-');
   renderCertChildSwitch();
 }
@@ -2251,7 +2314,7 @@ function renderCertReportsWorkspace(){
   const ws = document.getElementById('certReportsWorkspace');
   const intro = document.getElementById('certReportsIntroState');
   if(!ws || !intro) return;
-  const cfgs = certStepConfig().slice(0,5); // Term, Section, Stage, Grade, Report Type are required for the intro state
+  const cfgs = isLinkedParentViewer() ? certStepConfig() : certStepConfig().slice(0,5); // Term, Section, Stage, Grade, Report Type are required for the intro state (linked parents only ever see Term + Report Type)
   const ready = !!(certState.termPeriod && certState.section && certState.stage && certState.grade && certState.reportType);
   ws.style.display = ready ? '' : 'none';
   intro.style.display = ready ? 'none' : '';
@@ -2312,6 +2375,10 @@ function renderCertStudentPicker(){
   if(!holder) return;
   const roster = certRosterFor(certState.section, certState.stage, certState.grade, certState.term);
   if(certState.studentId && !roster.find(s=>s.id===certState.studentId)) certState.studentId = null;
+  if(isLinkedParentViewer()){
+    holder.innerHTML = `<button class="btn btn-gold" id="certGenerateBtn" onclick="certState.generated=true; renderCertReportsCards();">⚡ Generate</button>`;
+    return;
+  }
   const optionsHtml = roster.map(s=>
     `<option value="${s.id}" ${s.id===certState.studentId?'selected':''}>${escapeHtml(s.name)}${s.displayId?` (${s.displayId})`:''}</option>`
   ).join('');
