@@ -11279,6 +11279,13 @@ function applyPermissionsUI(){
   document.getElementById('teachersDropdownWrap').style.display = (eff.settings && currentUser.role==='admin') ? '' : 'none';
   document.getElementById('navTabGrades').style.display = eff.grades ? '' : 'none';
   document.getElementById('navTabAttendance').style.display = eff.attendance ? '' : 'none';
+  // Certificates and Mark Entry Report both share the "reports" permission (see
+  // canAccessTab()) but were never actually hidden here, so an account with that
+  // permission off could still see and click into both tabs.
+  const certReportsTab = document.getElementById('navTabCertReports');
+  if(certReportsTab) certReportsTab.style.display = eff.reports ? '' : 'none';
+  const markEntryReportTab = document.getElementById('navTabMarkEntryReport');
+  if(markEntryReportTab) markEntryReportTab.style.display = eff.reports ? '' : 'none';
   document.getElementById('dashboardDropdownWrap').style.display = eff.dashboard ? '' : 'none';
   document.getElementById('examsDropdownWrap').style.display = eff.examsAnalysis ? '' : 'none';
   const examSchedWrap = document.getElementById('examSchedDropdownWrap');
