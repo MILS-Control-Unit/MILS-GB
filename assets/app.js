@@ -2429,6 +2429,11 @@ function renderCertReportsCards(){
 
   holder.innerHTML = roster.map(student=>{
     const subjects = certApplicableSubjects(certState.stage, student, certState.section);
+    // Cycle scores are out of 5 for most grades, but Grade 7-8 Prep and Grade 10-11
+    // Secondary use an extended Max.15 Cycle scale (see perfCycleMaxFor) — the subject
+    // cell's colored band must be computed against the correct max for this grade, not
+    // a fixed Max.5 assumption, or every subject in those grades reads as "Excellent".
+    const cycMax = perfCycleMaxFor(certState.stage, certState.grade);
     const isJuniorMonthCert = certState.stage==='primary' && ['g1','g2'].includes(certState.grade) && (type==='month1' || type==='month2');
     const isJuniorCourseworkCert = certState.stage==='primary' && ['g1','g2'].includes(certState.grade) && type==='coursework';
     const isJuniorReportCardCert = certState.stage==='primary' && ['g1','g2'].includes(certState.grade) && (type==='reportcard' || type==='endyear');
@@ -2508,7 +2513,7 @@ function renderCertReportsCards(){
           const max = fmtMax(subMaxima[mKey+'E'+n+'Max']);
           return v==='' ? '' : `${v}<small class="qcell-max">/${max}</small>`;
         };
-        const cycBand = subjCycleBand(sc, mKey);
+        const cycBand = subjCycleBand(sc, mKey, cycMax);
         return `
           <tr${rowBandAttr(cycBand)}>
             <td>
@@ -2565,7 +2570,7 @@ function renderCertReportsCards(){
           const max = fmtMax(subMaxima[g3P+'E'+n+'Max']);
           return v==='' ? '' : `${v}<small class="qcell-max">/${max}</small>`;
         };
-        const cycBand = subjCycleBand(sc, mKey);
+        const cycBand = subjCycleBand(sc, mKey, cycMax);
         return `
           <tr${rowBandAttr(cycBand)}>
             <td>
@@ -2616,7 +2621,7 @@ function renderCertReportsCards(){
           const max = fmtMax(subMaxima[mKey+'E'+n+'Max']);
           return v==='' ? '' : `${v}<small class="qcell-max">/${max}</small>`;
         };
-        const cycBand = subjCycleBand(sc, mKey);
+        const cycBand = subjCycleBand(sc, mKey, cycMax);
         return `
           <tr${rowBandAttr(cycBand)}>
             <td>
@@ -2648,7 +2653,7 @@ function renderCertReportsCards(){
           const sc = (scores[subjKey()]||{})[student.id] || emptyScoreObj();
           return { sc, t: computePrimaryTotals(sc) };
         });
-        const cycBand = subjCycleBand(sc);
+        const cycBand = subjCycleBand(sc, null, cycMax);
         return `
           <tr${rowBandAttr(cycBand)}>
             <td>
@@ -2692,7 +2697,7 @@ function renderCertReportsCards(){
           const max = fmtMax(subMaxima[mKey+'E'+n+'Max']);
           return v==='' ? '' : `${v}<small class="qcell-max">/${max}</small>`;
         };
-        const cycBand = subjCycleBand(sc, mKey);
+        const cycBand = subjCycleBand(sc, mKey, cycMax);
         return `
           <tr${rowBandAttr(cycBand)}>
             <td>
@@ -2725,7 +2730,7 @@ function renderCertReportsCards(){
           const sc = (scores[subjKey()]||{})[student.id] || emptyScoreObj();
           return { sc, t: computePrimaryTotals(sc) };
         });
-        const cycBand = subjCycleBand(sc);
+        const cycBand = subjCycleBand(sc, null, cycMax);
         return `
           <tr${rowBandAttr(cycBand)}>
             <td>
@@ -2752,7 +2757,7 @@ function renderCertReportsCards(){
           const sc = (scores[subjKey()]||{})[student.id] || emptyScoreObj();
           return { sc, t: computePrimaryTotals(sc) };
         });
-        const cycBand = subjCycleBand(sc);
+        const cycBand = subjCycleBand(sc, null, cycMax);
         return `
           <tr${rowBandAttr(cycBand)}>
             <td>
@@ -2785,7 +2790,7 @@ function renderCertReportsCards(){
         const pct = Math.round((t.totalCoursework / t.maxTotal * 100) * 10) / 10;
         const g = letterGrade(pct);
         const col = courseworkColor(pct);
-        const cycBand = subjCycleBand(sc);
+        const cycBand = subjCycleBand(sc, null, cycMax);
         return `
           <tr${rowBandAttr(cycBand)}>
             <td>
@@ -2818,7 +2823,7 @@ function renderCertReportsCards(){
         const pct = Math.round((t.totalCoursework / t.maxTotal * 100) * 10) / 10;
         const g = letterGrade(pct);
         const col = courseworkColor(pct);
-        const cycBand = subjCycleBand(sc);
+        const cycBand = subjCycleBand(sc, null, cycMax);
         return `
           <tr${rowBandAttr(cycBand)}>
             <td>
@@ -2874,7 +2879,7 @@ function renderCertReportsCards(){
             yearAvgCellHtml = `<td class="qavg-cell">${Math.round(yearAvg*10)/10}</td>`;
           }
           const g = letterGrade(Math.round(gradeBasis*10)/10);
-          const cycBand = subjCycleBand(sc);
+          const cycBand = subjCycleBand(sc, null, cycMax);
           rowsHtmlArr.push(`
           <tr${rowBandAttr(cycBand)}>
             <td>
@@ -3008,7 +3013,7 @@ function renderCertReportsCards(){
             actualMarkCellsHtml = '<td></td><td></td>';
             yearAvgCellHtml = '<td></td><td></td>';
           }
-          const cycBand = subjCycleBand(sc);
+          const cycBand = subjCycleBand(sc, null, cycMax);
           rowsHtmlArr.push(isG9ReportCardCert ? `
           <tr${rowBandAttr(cycBand)}>
             <td>
@@ -3655,20 +3660,30 @@ function cycleAvgForBand(sc, mKeyOnly){
   return parseFloat(has1 ? v1 : v2);
 }
 
-// Maps a Cycle score (0-5 scale, via CYCLE_BANDS) onto the same 5 band-class names used by
-// letterGrade()/the Grading Key (excellent/vgood/good/pass/fail), so the exact same CSS
-// (subj-band-*) and color order (red→amber→yellow→green→blue, low to high) apply either way.
-function cycleSubjBand(v){
+// Maps a Cycle score onto the same 5 band-class names used by letterGrade()/the printed
+// Grading Key (excellent/vgood/good/pass/fail) — using the SAME 85/75/65/50% cutoffs shown
+// in that key, applied to the score's percentage of `max` (default 5, but Grade 7-8 Prep and
+// Grade 10-11 Secondary use Max.15 — see perfCycleMaxFor). Previously this reused CYCLE_BANDS'
+// fixed raw-score cutoffs (4.5/4/3/2), which (a) don't line up with the 85/75/65/50% cutoffs
+// printed on the certificate's own Grading Key — e.g. 4.49/5 (89.8%) showed as "V.Good" even
+// though the key defines 85%+ as "Excellent" — and (b) assumed every Cycle is out of 5, so on
+// Max.15 grades a score like 6/15 (40%, actually "Weak") cleared the >=4.5 "Excellent" cutoff.
+function cycleSubjBand(v, max){
   if(v===null || v===undefined || isNaN(v)) return null;
-  const b = cycleBandOf(v);
-  if(!b) return null;
-  return { excellent:'excellent', verygood:'vgood', good:'good', accept:'pass', weak:'fail' }[b.key] || null;
+  max = max || 5;
+  const pct = (v/max)*100;
+  if(pct>=85) return 'excellent';
+  if(pct>=75) return 'vgood';
+  if(pct>=65) return 'good';
+  if(pct>=50) return 'pass';
+  return 'fail';
 }
 
-// Convenience: given a raw score object + optional single-month key, resolves straight to the
-// band class subjCellHtml() expects.
-function subjCycleBand(sc, mKeyOnly){
-  return cycleSubjBand(cycleAvgForBand(sc, mKeyOnly));
+// Convenience: given a raw score object + optional single-month key + the Cycle max that
+// applies to this grade (5 or 15 — pass certCycleMax()/perfCycleMaxFor(stage,grade)),
+// resolves straight to the band class subjCellHtml() expects.
+function subjCycleBand(sc, mKeyOnly, max){
+  return cycleSubjBand(cycleAvgForBand(sc, mKeyOnly), max);
 }
 
 // Color Code for Grade 1 & Grade 2 Primary Total Coursework (Term Total, Max. 100)
