@@ -319,7 +319,7 @@ function makeStepConfig(st, sectionsData, stagesData){
         if(!st.grade) return null;
         const g = stagesData[st.stage].grades.find(g=>g.id===st.grade);
         return g ? g.label : null;
-      }, options: ()=> st.stage ? stagesData[st.stage].grades.map(g=>({id:g.id,label:g.label})) : [], requires:['termPeriod','section','stage'] },
+      }, options: ()=> st.stage ? stagesData[st.stage].grades.filter(g=>scopeGradeAllowed(g.id)).map(g=>({id:g.id,label:g.label})) : [], requires:['termPeriod','section','stage'] },
     { key:'term', title:'Class', state: st, getLabel:()=> st.term ? st.term : null,
       options: ()=> getClassesInGrade(st).filter(c=>scopeClassroomAllowed(c)).map(c=>({id:c,label:c})), requires:['termPeriod','section','stage','grade'] },
     { key:'academicTerm', title:'Mark Entry', state: st, getLabel:()=> markEntryLabel(st.termPeriod, st.academicTerm),
@@ -1036,7 +1036,6 @@ function selectCertChild(studentId){
   certState.grade = s.grade || null;
   certState.term = s.classroom || null;
   certState.studentId = s.id;
-  certState.generated = false;
   renderCertReportsStepper();
   renderCertReportsWorkspace();
 }
@@ -1353,8 +1352,8 @@ function renderDashboardCharts(){
 function renderCycle1View(perSubject, section, stage, grade, term, studentId){
   const withData = perSubject.filter(p=>p.hasV1);
   const bars = withData.map(p=>({ label:p.subject, values:[p.v1, p.classAvg1] }));
-  const barSvg = svgGroupedBarChart(bars, CYCLE_MAX, ['Student','Class Average'], ['var(--blue)','var(--gold)'], CYCLE_PASS_MARK, CYCLE_PASS_LABEL);
-  const radarSvg = svgRadarChart(bars, CYCLE_MAX, ['Student','Class Average'], ['var(--blue)','var(--gold)'], CYCLE_PASS_MARK, CYCLE_PASS_LABEL);
+  const barSvg = svgGroupedBarChart(bars, CYCLE_MAX, ['Student','Class Average'], ['var(--blue)','var(--gold)']);
+  const radarSvg = svgRadarChart(bars, CYCLE_MAX, ['Student','Class Average'], ['var(--blue)','var(--gold)']);
 
   const bandCounts = CYCLE_BANDS.map(b=>({ ...b, count: withData.filter(p=>b.test(p.v1)).length }));
   const pieSvg = svgPieChart(bandCounts.map(b=>({ label:b.label, value:b.count, color:b.color })));
@@ -1382,7 +1381,6 @@ function renderCycle1View(perSubject, section, stage, grade, term, studentId){
       <div class="db-chart-card db-chart-full">
         <h4>🕸️ Subject Balance (Radar) — Student vs Class Average</h4>
         ${radarSvg}
-        <p class="db-trend-note">The dashed red ring marks the ${CYCLE_PASS_LABEL} (${CYCLE_PASS_MARK}/${CYCLE_MAX}) — any point falling inside it highlights a subject needing more attention.</p>
       </div>
     </div>`;
 }
@@ -1390,8 +1388,8 @@ function renderCycle1View(perSubject, section, stage, grade, term, studentId){
 function renderCycleCompareView(perSubject){
   const withData = perSubject.filter(p=>p.hasV1 || p.hasV2);
   const bars = withData.map(p=>({ label:p.subject, values:[p.v1, p.v2] }));
-  const barSvg = svgGroupedBarChart(bars, CYCLE_MAX, ['Cycle 1','Cycle 2'], ['var(--blue)','var(--gold)'], CYCLE_PASS_MARK, CYCLE_PASS_LABEL);
-  const radarSvg = svgRadarChart(bars, CYCLE_MAX, ['Cycle 1','Cycle 2'], ['var(--blue)','var(--gold)'], CYCLE_PASS_MARK, CYCLE_PASS_LABEL);
+  const barSvg = svgGroupedBarChart(bars, CYCLE_MAX, ['Cycle 1','Cycle 2'], ['var(--blue)','var(--gold)']);
+  const radarSvg = svgRadarChart(bars, CYCLE_MAX, ['Cycle 1','Cycle 2'], ['var(--blue)','var(--gold)']);
 
   let improved=0, same=0, declined=0;
   withData.forEach(p=>{
@@ -1437,7 +1435,6 @@ function renderCycleCompareView(perSubject){
       <div class="db-chart-card db-chart-full">
         <h4>🕸️ Subject Balance (Radar) — Cycle 1 vs Cycle 2</h4>
         ${radarSvg}
-        <p class="db-trend-note">The dashed red ring marks the ${CYCLE_PASS_LABEL} (${CYCLE_PASS_MARK}/${CYCLE_MAX}) — any point falling inside it highlights a subject needing more attention.</p>
       </div>
     </div>`;
 }
@@ -2386,7 +2383,7 @@ function renderCertStudentPicker(){
   const roster = certRosterFor(certState.section, certState.stage, certState.grade, certState.term);
   if(certState.studentId && !roster.find(s=>s.id===certState.studentId)) certState.studentId = null;
   if(isLinkedParentViewer()){
-    holder.innerHTML = `<button class="btn btn-gold" id="certGenerateBtn" onclick="certState.generated=true; renderCertReportsCards();">⚡ Generate</button>`;
+    holder.innerHTML = '';
     return;
   }
   const optionsHtml = roster.map(s=>
@@ -2394,29 +2391,16 @@ function renderCertStudentPicker(){
   ).join('');
   holder.innerHTML = `
     <label>Student:</label>
-    <select onchange="certState.studentId=this.value||null; certState.generated=false; renderCertReportsCards();">
+    <select onchange="certState.studentId=this.value||null; renderCertReportsCards();">
       <option value="">All Students (${roster.length})</option>
       ${optionsHtml}
-    </select>
-    <button class="btn btn-gold" id="certGenerateBtn" onclick="certState.generated=true; renderCertReportsCards();">⚡ Generate</button>`;
+    </select>`;
 }
 
 function renderCertReportsCards(){
   const holder = document.getElementById('certReportsHolder');
   let roster = certRosterFor(certState.section, certState.stage, certState.grade, certState.term);
   if(certState.studentId) roster = roster.filter(s=> s.id===certState.studentId);
-  if(!certState.generated){
-    const scopeLabel = certState.studentId
-      ? (roster[0] ? roster[0].name : 'the selected student')
-      : (certState.term ? `class ${certState.term}` : 'every class in this Grade');
-    holder.innerHTML = `
-      <div class="empty-state">
-        <div class="seal-lg">⚡</div>
-        <h3>Ready to generate</h3>
-        <p>Click <b>Generate</b> above to build the certificate(s) for ${escapeHtml(scopeLabel)}.</p>
-      </div>`;
-    return;
-  }
   if(roster.length===0){
     holder.innerHTML = `
       <div class="empty-state">
@@ -10743,35 +10727,66 @@ function findUser(username){
 }
 
 /* ---------- Role -> effective permissions ----------
-   sectionScope / stageScope / classroomScope === null  -> unrestricted
+   sectionScope / stageScope / gradeScope / classroomScope === null  -> unrestricted
    an array (even empty) -> restricted to exactly those values            */
+
+// A Teacher's account only stores their Section, Subjects and a flat list of Classroom names
+// (e.g. "Liverpool 1 A German") — it never records which Stage/Grade each classroom belongs to.
+// This scans the Student roster once to work that out, so the Grade Book / Attendance steppers
+// can offer ONLY the Stages and Grades that actually contain one of the Teacher's own classes,
+// instead of every Stage/Grade in the school (which is what let a Teacher wander into an
+// unrelated Grade and get stuck with no selectable Class/Mark Entry/Subject there).
+function computeTeacherGradeScope(user){
+  const stages = new Set();
+  const grades = new Set();
+  if(!user || !Array.isArray(user.classrooms) || !user.classrooms.length) return { stages:[], grades:[] };
+  const classroomSet = new Set(user.classrooms);
+  const section = user.section || null;
+  Object.keys(students).forEach(classKey=>{
+    const parts = classKey.split('|');
+    const sec = parts[0], stage = parts[1], grade = parts[2];
+    if(section && sec!==section) return;
+    const roster = students[classKey] || [];
+    if(roster.some(s=> classroomSet.has(s.classroom))){
+      stages.add(stage);
+      grades.add(grade);
+    }
+  });
+  return { stages:[...stages], grades:[...grades] };
+}
+
 function getEffectivePermissions(user){
   const role = user.role || 'parent';
   if(role==='admin'){
     // Admin: Full System Access
     return { database:true, grades:true, attendance:true, reports:true, dashboard:true, examsAnalysis:true, examSchedule:true, perfAlerts:true, classLists:true, settings:true, edit:true,
-      sectionScope:null, stageScope:null, classroomScope:null };
+      sectionScope:null, stageScope:null, gradeScope:null, classroomScope:null };
   }
   if(role==='hos'){
     // HOS/Deputy: Can View their relevant Section and Stage - Can View or edit Grade Book, Can View or Edit Absence, Can View Certificates, Can View Dashboard, Can View Exam Analysis
     return { database:false, grades:true, attendance:true, reports:true, dashboard:true, examsAnalysis:true, examSchedule:true, perfAlerts:true, classLists:false, settings:false, edit:true,
-      sectionScope:user.section||null, stageScope:user.stages||[], classroomScope:null };
+      sectionScope:user.section||null, stageScope:user.stages||[], gradeScope:null, classroomScope:null };
   }
   if(role==='hod'){
     // Head of Department: Can view OR edit their subject's grade book within their stage (and their section).
     return { database:false, grades:true, attendance:false, reports:true, dashboard:false, examsAnalysis:false, examSchedule:false, perfAlerts:false, classLists:false, settings:false, edit:true,
-      sectionScope:user.section||null, stageScope:user.stages||[], classroomScope:null, subjectScope:user.subjects||[] };
+      sectionScope:user.section||null, stageScope:user.stages||[], gradeScope:null, classroomScope:null, subjectScope:user.subjects||[] };
   }
   if(role==='teacher'){
     // Teacher: Can view/edit the grade form AND the Absence (Attendance) tab, both restricted to
     // their own registered subjects and classes only — the classroomScope/subjectScope below feed
     // straight into the Grade Book's and the Attendance tab's stepper option-lists (via
     // scopeClassroomAllowed / scopeSubjectAllowed), so a Teacher never even sees a class or
-    // subject they aren't assigned to, let alone edit one. Both Grade Book AND Absence edits are
-    // further subject to the Admin's Grade Entry Lock rules (Absence writes straight into the
-    // Month's grade, so the two are locked/unlocked together) — see isCurrentUserGradeEntryLocked().
+    // subject they aren't assigned to, let alone edit one. stageScope/gradeScope are derived from
+    // those same classrooms (see computeTeacherGradeScope above) so the Stage and Grade steps only
+    // ever offer the Stage(s)/Grade(s) that actually contain one of the Teacher's classes — a
+    // Teacher can no longer open the Stage dropdown and pick a Stage they don't teach in at all.
+    // Both Grade Book AND Absence edits are further subject to the Admin's Grade Entry Lock rules
+    // (Absence writes straight into the Month's grade, so the two are locked/unlocked together) —
+    // see isCurrentUserGradeEntryLocked().
+    const scope = computeTeacherGradeScope(user);
     return { database:false, grades:true, attendance:true, reports:false, dashboard:false, examsAnalysis:false, examSchedule:false, perfAlerts:false, classLists:false, settings:false, edit:true,
-      sectionScope:user.section||null, stageScope:null, classroomScope:user.classrooms||[], subjectScope:user.subjects||[] };
+      sectionScope:user.section||null, stageScope:scope.stages, gradeScope:scope.grades, classroomScope:user.classrooms||[], subjectScope:user.subjects||[] };
   }
   // Parent/Student: Can View ONLY Certificates, Dashboard and the Exams Schedule
   const hasStudentLink = Array.isArray(user.studentIds);
@@ -10782,6 +10797,7 @@ function getEffectivePermissions(user){
     // keep behaving exactly as before, so nobody's access silently changes underneath them.
     sectionScope: hasStudentLink ? null : (user.section||null),
     stageScope: hasStudentLink ? null : (user.stages||[]),
+    gradeScope: null,
     classroomScope: hasStudentLink ? null : (user.classrooms||[]),
     studentScope: hasStudentLink ? user.studentIds : null };
 }
@@ -10796,6 +10812,13 @@ function scopeStageAllowed(id){
   const sc = currentUser.effective.stageScope;
   // stageScope === null -> unrestricted. An array (even empty) -> restricted to exactly those stages.
   return !sc || sc.includes(id);
+}
+// gradeScope === null/undefined -> unrestricted. An array (even empty) -> restricted to exactly
+// those Grade ids. Currently only set for the Teacher role (see computeTeacherGradeScope above).
+function scopeGradeAllowed(gradeId){
+  if(!currentUser || !currentUser.effective) return true;
+  const sc = currentUser.effective.gradeScope;
+  return !sc || sc.includes(gradeId);
 }
 function scopeSubjectAllowed(name){
   if(!currentUser || !currentUser.effective) return true;
