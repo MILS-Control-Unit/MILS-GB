@@ -5911,10 +5911,23 @@ function getTodaysBirthdays(){
     const dd = parseInt(parts[0],10), mm = parseInt(parts[1],10);
     if(!dd || !mm || dd!==td || mm!==tm) return;
     const classLabel = [s.grade, s.classroom].filter(Boolean).join(' - ');
-    list.push({ name: s.name || s.displayId || 'Student', classLabel });
+    list.push({ id: s.id, name: s.name || s.displayId || 'Student', classLabel });
   });
   list.sort((a,b)=> a.name.localeCompare(b.name));
   return list;
+}
+
+/* Today's birthdays, scoped to what the CURRENT user is allowed to see:
+   - Admin: every student, campus-wide.
+   - Parent/Student: only their own linked child(ren) — never a classmate's,
+     even though getTodaysBirthdays() itself scans every student. This is what
+     powers the notification bell's birthday reminder for a parent account. */
+function getTodaysBirthdaysForCurrentUser(){
+  if(!currentUser) return [];
+  const list = getTodaysBirthdays();
+  if(currentUser.role==='admin') return list;
+  if(currentUser.role==='parent') return list.filter(b=> scopeStudentAllowed(b.id));
+  return [];
 }
 
 function renderBirthdayWidget(){
@@ -10095,9 +10108,9 @@ function updateNotifBadge(){
   const lastSeen = getNotifLastSeen();
   const list = notifRelevantLog();
   let unread = list.filter(e=> e.ts > lastSeen).length;
-  // Birthday reminders in the bell stay Admin-only — a parent already sees their own
-  // child's birthday elsewhere and doesn't need a system-wide birthday feed.
-  const todaysBirthdays = currentUser.role==='admin' ? getTodaysBirthdays() : [];
+  // Admin gets the full campus-wide birthday feed; a Parent/Student account only
+  // gets reminded about their own linked child(ren)'s birthday, never a classmate's.
+  const todaysBirthdays = getTodaysBirthdaysForCurrentUser();
   if(todaysBirthdays.length && !isBirthdayNotifSeenToday()) unread += todaysBirthdays.length;
   if(unread > 0){
     badge.style.display = 'flex';
@@ -10115,12 +10128,14 @@ function renderNotifDropdown(){
   const isParentBell = !!(currentUser && currentUser.role==='parent');
 
   let html = '';
-  const todaysBirthdays = isParentBell ? [] : getTodaysBirthdays();
+  const todaysBirthdays = getTodaysBirthdaysForCurrentUser();
   if(todaysBirthdays.length){
     const names = todaysBirthdays.map(b=> formatBirthdayNameWithClass(b)).join(', ');
-    const msg = todaysBirthdays.length===1
-      ? `<b>${names}</b> has a birthday today`
-      : `<b>${todaysBirthdays.length} students</b> have a birthday today: ${names}`;
+    const msg = isParentBell
+      ? (todaysBirthdays.length===1 ? `It's <b>${names}</b>'s birthday today! 🎉` : `It's <b>${names}</b>'s birthdays today! 🎉`)
+      : (todaysBirthdays.length===1
+          ? `<b>${names}</b> has a birthday today`
+          : `<b>${todaysBirthdays.length} students</b> have a birthday today: ${names}`);
     html += `
       <div class="notif-item notif-release">
         <div class="notif-row">
@@ -11250,7 +11265,7 @@ function canAccessTab(tab){
   if(tab==='teacherStatistics') return currentUser.role === 'admin'; // Teachers Statistics only for Admin
   if(tab==='statistics') return currentUser.role === 'admin' || currentUser.role === 'hod'; // Statistics for Admin & HOD
   if(tab==='certReports') return !!currentUser.effective.reports; // Certificates tab shares the Reports permission
-  if(tab==='markEntryReport') return !!currentUser.effective.reports; // Mark Entry Report shares the Reports permission
+  if(tab==='markEntryReport') return currentUser.role!=='parent' && !!currentUser.effective.reports; // Mark Entry Report shares the Reports permission, but is staff-only
   return !!currentUser.effective[tab];
 }
 
@@ -11285,7 +11300,7 @@ function applyPermissionsUI(){
   const certReportsTab = document.getElementById('navTabCertReports');
   if(certReportsTab) certReportsTab.style.display = eff.reports ? '' : 'none';
   const markEntryReportTab = document.getElementById('navTabMarkEntryReport');
-  if(markEntryReportTab) markEntryReportTab.style.display = eff.reports ? '' : 'none';
+  if(markEntryReportTab) markEntryReportTab.style.display = (eff.reports && currentUser.role!=='parent') ? '' : 'none';
   document.getElementById('dashboardDropdownWrap').style.display = eff.dashboard ? '' : 'none';
   document.getElementById('examsDropdownWrap').style.display = eff.examsAnalysis ? '' : 'none';
   const examSchedWrap = document.getElementById('examSchedDropdownWrap');
