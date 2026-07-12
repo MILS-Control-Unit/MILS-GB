@@ -305,38 +305,63 @@ function getClassesInGrade(st){
 function makeStepConfig(st, sectionsData, stagesData){
   sectionsData = sectionsData || SECTIONS;
   stagesData = stagesData || STAGES;
-  return [
-    { key:'termPeriod', title:'Academic Term', state: st, getLabel:()=> st.termPeriod ? TERM_LABELS[st.termPeriod] : null,
-      options: [
-        { id:'term1', label:'Term 1' },
-        { id:'term2', label:'Term 2' }
-      ] },
-    { key:'section', title:'Section', state: st, getLabel:()=> st.section ? sectionsData[st.section].label : null,
-      options: Object.entries(sectionsData).filter(([id])=>scopeSectionAllowed(id)).map(([id,v])=>({id,label:v.label})), requires:['termPeriod'] },
-    { key:'stage', title:'Stage', state: st, getLabel:()=> st.stage ? stagesData[st.stage].label : null,
-      options: Object.entries(stagesData).filter(([id])=>scopeStageAllowed(id)).map(([id,v])=>({id,label:v.label})), requires:['termPeriod','section'] },
-    { key:'grade', title:'Grade', state: st, getLabel:()=>{
-        if(!st.grade) return null;
-        const g = stagesData[st.stage].grades.find(g=>g.id===st.grade);
-        return g ? g.label : null;
-      }, options: ()=> st.stage ? stagesData[st.stage].grades.filter(g=>scopeGradeAllowed(g.id)).map(g=>({id:g.id,label:g.label})) : [], requires:['termPeriod','section','stage'] },
-    { key:'term', title:'Class', state: st, getLabel:()=> st.term ? st.term : null,
-      options: ()=> getClassesInGrade(st).filter(c=>scopeClassroomAllowed(c)).map(c=>({id:c,label:c})), requires:['termPeriod','section','stage','grade'] },
-    { key:'academicTerm', title:'Mark Entry', state: st, getLabel:()=> markEntryLabel(st.termPeriod, st.academicTerm),
-      options: ()=>{
-        const opts = [
-          { id:'month1', label:'First Month Mark Entry' },
-          { id:'month2', label:'Second Month Mark Entry' },
-          { id:'coursework', label:'Total Coursework Mark Entry' }
-        ];
-        if(st.termPeriod==='term1') opts.push({ id:'examPaper', label:'Term 1 (Total)' });
-        else if(st.termPeriod==='term2') opts.push({ id:'examPaper', label:'Term 2 (Total)' });
-        return opts;
-      },
-      requires:['termPeriod','section','stage','grade','term'] },
-    { key:'subject', title:'Subject', state: st, getLabel:()=> st.subject ? subjectWithIcon(st.subject) : null,
-      options: ()=> st.stage ? getSubjectsForStageAndSection(st.stage, st.section).filter(s=>scopeSubjectAllowed(s)).map(s=>({id:s,label:subjectWithIcon(s)})) : [], requires:['termPeriod','section','stage','grade','term','academicTerm'] }
-  ];
+
+  const termPeriodStep = { key:'termPeriod', title:'Academic Term', state: st, getLabel:()=> st.termPeriod ? TERM_LABELS[st.termPeriod] : null,
+    options: [
+      { id:'term1', label:'Term 1' },
+      { id:'term2', label:'Term 2' }
+    ] };
+  const sectionStep = { key:'section', title:'Section', state: st, getLabel:()=> st.section ? sectionsData[st.section].label : null,
+    options: Object.entries(sectionsData).filter(([id])=>scopeSectionAllowed(id)).map(([id,v])=>({id,label:v.label})), requires:['termPeriod'] };
+  const academicTermStep = { key:'academicTerm', title:'Mark Entry', state: st, getLabel:()=> markEntryLabel(st.termPeriod, st.academicTerm),
+    options: ()=>{
+      const opts = [
+        { id:'month1', label:'First Month Mark Entry' },
+        { id:'month2', label:'Second Month Mark Entry' },
+        { id:'coursework', label:'Total Coursework Mark Entry' }
+      ];
+      if(st.termPeriod==='term1') opts.push({ id:'examPaper', label:'Term 1 (Total)' });
+      else if(st.termPeriod==='term2') opts.push({ id:'examPaper', label:'Term 2 (Total)' });
+      return opts;
+    },
+    requires:['termPeriod','section','stage','grade','term'] };
+  const subjectStep = { key:'subject', title:'Subject', state: st, getLabel:()=> st.subject ? subjectWithIcon(st.subject) : null,
+    options: ()=> st.stage ? getSubjectsForStageAndSection(st.stage, st.section).filter(s=>scopeSubjectAllowed(s)).map(s=>({id:s,label:subjectWithIcon(s)})) : [], requires:['termPeriod','section','stage','grade','term','academicTerm'] };
+
+  // Teachers only ever have one Section, and a fixed, pre-assigned set of Classes/Subjects —
+  // making them click through Stage and Grade first (even though those dropdowns only ever
+  // offer the one Stage/Grade their own classes happen to sit in) is pure friction. So for the
+  // Teacher role the Class step skips Stage/Grade entirely and lists the Teacher's own classes
+  // directly (see getTeacherClassroomsInSection()); Stage/Grade get filled in silently behind
+  // the scenes the moment a Class is picked (see selectValue()) so every downstream lookup
+  // (roster, subjects-for-stage, etc.) keeps working exactly as before.
+  if(currentUser && currentUser.role==='teacher'){
+    const classStep = { key:'term', title:'Class', state: st, getLabel:()=> st.term ? st.term : null,
+      options: ()=> getTeacherClassroomsInSection(st.section).map(c=>({id:c,label:c})), requires:['termPeriod','section'] };
+    return [termPeriodStep, sectionStep, classStep, academicTermStep, subjectStep];
+  }
+
+  const stageStep = { key:'stage', title:'Stage', state: st, getLabel:()=> st.stage ? stagesData[st.stage].label : null,
+    options: Object.entries(stagesData).filter(([id])=>scopeStageAllowed(id)).map(([id,v])=>({id,label:v.label})), requires:['termPeriod','section'] };
+  const gradeStep = { key:'grade', title:'Grade', state: st, getLabel:()=>{
+      if(!st.grade) return null;
+      const g = stagesData[st.stage].grades.find(g=>g.id===st.grade);
+      return g ? g.label : null;
+    }, options: ()=> st.stage ? stagesData[st.stage].grades.filter(g=>scopeGradeAllowed(g.id)).map(g=>({id:g.id,label:g.label})) : [], requires:['termPeriod','section','stage'] };
+  const termStep = { key:'term', title:'Class', state: st, getLabel:()=> st.term ? st.term : null,
+    options: ()=> getClassesInGrade(st).filter(c=>scopeClassroomAllowed(c)).map(c=>({id:c,label:c})), requires:['termPeriod','section','stage','grade'] };
+
+  return [termPeriodStep, sectionStep, stageStep, gradeStep, termStep, academicTermStep, subjectStep];
+}
+
+// Returns the leading part of a stepConfig()/makeStepConfig() array up to and including the
+// "Class" (term) step — used wherever a tab needs its own reduced stepper (Mark Entry Report,
+// the Attendance tab's own Subject+Month steps). Written as "find the Class step" rather than
+// a hardcoded slice(0,5) so it stays correct for the Teacher role's shorter config (which skips
+// the separate Stage/Grade steps) as well as the normal 7-step config.
+function stepConfigThroughClass(cfgArray){
+  const idx = cfgArray.findIndex(c=>c.key==='term');
+  return idx>-1 ? cfgArray.slice(0, idx+1) : cfgArray;
 }
 
 function stepConfig(){
@@ -349,7 +374,7 @@ function stepConfig(){
 // (1st Month / 2nd Month only — no "Total Coursework", attendance has no such concept) which
 // picks out one independent attendance table, the same way Mark Entry does for the Grade Book.
 function attStepConfig(){
-  const base = makeStepConfig(attState, ATT_SECTIONS, ATT_STAGES).slice(0,5);
+  const base = stepConfigThroughClass(makeStepConfig(attState, ATT_SECTIONS, ATT_STAGES));
   // Absence is recorded per Subject (each subject has its own sessions/schedule), so the
   // Attendance tab picks a Subject right after Class, before the Month step.
   const subjectStep = {
@@ -526,6 +551,13 @@ function buildStepperHTML(holderId, cfgs, idPrefix, prominentCount){
 function selectValue(key, id, targetState){
   const st = targetState || state;
   st[key]=id;
+  // Teacher stepper skips the Stage/Grade steps entirely (see makeStepConfig()), so the moment
+  // a Teacher picks a Class, silently fill in which Stage/Grade it belongs to — every downstream
+  // lookup (roster, subjects-for-stage, etc.) still keys off state.stage/state.grade as before.
+  if(key==='term' && currentUser && currentUser.role==='teacher' && (st===state || st===attState)){
+    const loc = findTeacherClassroomLocation(st.section, id);
+    if(loc){ st.stage = loc.stage; st.grade = loc.grade; }
+  }
   // reset downstream selections (only resets keys that exist on the target state object).
   // Grade Book order: ...Class, Mark Entry(academicTerm), Subject. Attendance order: ...Class, Subject, Month(academicTerm).
   const order = (st===attState)
@@ -2109,14 +2141,14 @@ const TERM_LABELS = { term1:'Term 1', term2:'Term 2' };
 function renderMarkEntryStepper(){
   const holder = document.getElementById('markEntryStepper');
   if(!holder) return;
-  buildStepperHTML('markEntryStepper', stepConfig().slice(0,5), 'me-');
+  buildStepperHTML('markEntryStepper', stepConfigThroughClass(stepConfig()), 'me-');
 }
 
 function renderMarkEntryWorkspace(){
   const ws = document.getElementById('markEntryWorkspace');
   const intro = document.getElementById('markEntryIntroState');
   if(!ws || !intro) return;
-  const cfgs = stepConfig().slice(0,5);
+  const cfgs = stepConfigThroughClass(stepConfig());
   const ready = state.termPeriod && state.section && state.stage && state.grade && state.term;
   ws.style.display = ready ? '' : 'none';
   intro.style.display = ready ? 'none' : '';
@@ -2437,6 +2469,8 @@ function renderCertReportsCards(){
     const isJuniorMonthCert = certState.stage==='primary' && ['g1','g2'].includes(certState.grade) && (type==='month1' || type==='month2');
     const isJuniorCourseworkCert = certState.stage==='primary' && ['g1','g2'].includes(certState.grade) && type==='coursework';
     const isJuniorReportCardCert = certState.stage==='primary' && ['g1','g2'].includes(certState.grade) && (type==='reportcard' || type==='endyear');
+    // Grade 9 Prep (3rd Prep) First Month / Second Month Report Card certificate — linked to Grade Book Cycle marks
+    const isG9MonthCert = certState.stage==='prep' && certState.grade==='g9' && (type==='month1' || type==='month2');
     // Grade 3, 4, 5 & 6 Primary First/Second Month Report certificate — uses its own header:
     // Q.1-Q.4 (Max.5 each), Q. Av. (Max.5), H.W. (Max.5), Beh. & Attend. (Max.5), Total (Max.15), Cycle (Max.5).
     const isG3G6MonthCert = certState.stage==='primary' && !['g1','g2'].includes(certState.grade) && (type==='month1' || type==='month2');
@@ -2532,6 +2566,62 @@ function renderCertReportsCards(){
             <td>${cycleCellHtml(sc, mKey)}</td>
           </tr>`;
       }).join('');
+    } else if(isG9MonthCert){
+      // Grade 9 First Month / Second Month Report Card — linked directly to Grade Book Cycle marks
+      // Shows Cycle (Max. 15), Percentage, and Grade automatically from Grade Book
+      showGradingKey = true;
+      const cycleField = type==='month1' ? 'g9c1' : 'g9c2';
+      const cycleNum = type==='month1' ? 1 : 2;
+      const cycleMax = 15;
+      const cell = v => (v===null || v===undefined || v==='') ? '' : v;
+      
+      tableHeadHtml = `
+        <tr>
+          <th class="subject-th">Subject</th>
+          <th>Cycle ${cycleNum}<br><small>(Max. 15)</small></th>
+          <th>Percentage</th>
+          <th>Grade</th>
+        </tr>`;
+      
+      tableBodyHtml = subjects.map(sub=>{
+        const { sc } = withCertState(sub, ()=>{
+          const sc = (scores[subjKey()]||{})[student.id] || emptyScoreObj();
+          return { sc };
+        });
+        
+        const cycleVal = sc[cycleField];
+        const hasVal = cycleVal!==null && cycleVal!==undefined && cycleVal!=='';
+        const pct = hasVal ? Math.round((parseFloat(cycleVal)/cycleMax*100)*10)/10 : null;
+        const g = hasVal ? letterGrade(pct) : null;
+        const cycBand = g ? g.c : 'neutral';
+        
+        if(hasVal) {
+          sumVal += parseFloat(cycleVal);
+          sumMax += cycleMax;
+        }
+        
+        return `
+          <tr${rowBandAttr(cycBand)}>
+            <td>
+              ${subjCellHtml(sub, cycBand)}
+            </td>
+            <td class="total-cell">${hasVal ? Math.round(parseFloat(cycleVal)*10)/10 : '—'}</td>
+            <td class="pct-cell">${hasVal ? pct + '%' : '—'}</td>
+            <td>${g ? `<span class="badge ${g.c}">${g.t}</span>` : '—'}</td>
+          </tr>`;
+      }).join('');
+      
+      // Add total row for Grade 9 month certificate
+      const totalPct = sumMax > 0 ? Math.round((sumVal/sumMax*100)*10)/10 : 0;
+      const totalGrade = sumMax > 0 ? letterGrade(totalPct) : null;
+      tableBodyHtml += sumMax > 0 ? `
+        <tr class="cert-subtotal-row">
+          <td><b>Total</b></td>
+          <td class="total-cell"><b>${Math.round(sumVal*10)/10}</b></td>
+          <td class="pct-cell"><b>${totalPct}%</b></td>
+          <td><span class="badge ${totalGrade.c}">${totalGrade.t}</span></td>
+        </tr>` : '';
+      
     } else if(isG3G6MonthCert){
       showGradingKey = true; // always show Grading Key on every certificate
       const mKey = type==='month1' ? 'm1' : 'm2';
@@ -10775,6 +10865,37 @@ function computeTeacherGradeScope(user){
     }
   });
   return { stages:[...stages], grades:[...grades] };
+}
+
+// Lists just the logged-in Teacher's own classrooms within a given Section, in place of the
+// normal Stage -> Grade -> Class drill-down (see makeStepConfig()'s Teacher-role branch above).
+// A Teacher's classroom names are unique within their Section, so this is all the Class step
+// needs to show — no Stage/Grade pick required first.
+function getTeacherClassroomsInSection(section){
+  if(!currentUser || currentUser.role!=='teacher' || !Array.isArray(currentUser.classrooms) || !section) return [];
+  const classroomSet = new Set(currentUser.classrooms);
+  const names = new Set();
+  Object.keys(students).forEach(classKey=>{
+    const parts = classKey.split('|');
+    if(parts[0]!==section) return;
+    const roster = students[classKey] || [];
+    roster.forEach(s=>{ if(s.classroom && classroomSet.has(s.classroom)) names.add(s.classroom); });
+  });
+  return [...names].sort();
+}
+
+// Given a Section + Classroom name, finds which Stage/Grade that classroom lives in by scanning
+// the Student roster once. Used by selectValue() to silently fill in Stage/Grade for a Teacher
+// the moment they pick a Class, since the Teacher stepper never shows those two steps directly.
+function findTeacherClassroomLocation(section, classroom){
+  if(!section || !classroom) return null;
+  for(const classKey of Object.keys(students)){
+    const parts = classKey.split('|');
+    if(parts[0]!==section) continue;
+    const roster = students[classKey] || [];
+    if(roster.some(s=> s.classroom===classroom)) return { stage: parts[1], grade: parts[2] };
+  }
+  return null;
 }
 
 function getEffectivePermissions(user){
