@@ -2302,7 +2302,14 @@ function certApplicableSubjects(stage, student, section){
   return subjects.filter(sub=>{
     if(isLanguageSubject(sub)){
       const expectedLang = getExpectedLang2ForSubject(sub, section);
-      return student.lang2 === expectedLang;
+      // Only Second-Language subjects (French/German in English Section, English in French
+      // Section) resolve to a non-null expectedLang and get filtered by the student's Second
+      // Language. The Section's OWN language (English O.L./A.L. in English Section, French
+      // O.L./A.L. in French Section) is a core subject taken by every student, so it must not
+      // be filtered out just because expectedLang is null (see filterRosterForSubject/
+      // subjectFilteredRoster/getAttRoster for the same guard pattern).
+      if(expectedLang) return student.lang2 === expectedLang;
+      return true;
     }
     if(sub==='Ch-Religion') return student.religion==='Christian';
     if(sub==='Religion') return student.religion!=='Christian';
