@@ -209,7 +209,7 @@ let attSubView = 'absence';
 (function setupGsapChoreography(){
   function run(){
     if(typeof gsap === 'undefined') return;
-
+    try{
     const logos = document.querySelectorAll('.masthead .school-logo');
     const mastheadText = document.querySelector('.masthead-text');
     const rightRows = document.querySelectorAll('.masthead-right .masthead-right-row');
@@ -227,8 +227,16 @@ let attSubView = 'absence';
       tl.from(rightRows, { opacity:0, y:-10, duration:.45, stagger:.08 }, 0.15);
     }
     if(navTabs.length){
-      tl.from(navTabs, { opacity:0, y:-8, duration:.35, stagger:.02 }, 0.3);
+      tl.from(navTabs, { opacity:0, y:-8, duration:.35, stagger:.02, clearProps:'opacity' }, 0.3);
     }
+    // Safety net: if this timeline gets interrupted by an unrelated script error
+    // before it finishes, the tab labels/icons can be left stuck at a faded
+    // in-between opacity (e.g. "Teachers"/"Absence" rendering pale grey instead
+    // of full ink color). Force full opacity shortly after load regardless of
+    // whether the animation completed cleanly.
+    setTimeout(()=>{
+      navTabs.forEach(el=>{ el.style.opacity = ''; });
+    }, 1500);
 
     // Small hover "pulse" on nav-tab icons (the inline SVGs) — reinforces which
     // tab is about to be clicked without needing any CSS changes.
@@ -238,6 +246,12 @@ let attSubView = 'absence';
       tab.addEventListener('mouseenter', ()=> gsap.to(icon, { scale:1.18, duration:.18, ease:'back.out(3)' }));
       tab.addEventListener('mouseleave', ()=> gsap.to(icon, { scale:1, duration:.18, ease:'power2.out' }));
     });
+    }catch(e){
+      // If anything above throws, make sure nav labels/icons are never left
+      // stuck faded from the entrance animation.
+      console.error('nav animation setup failed, forcing full opacity', e);
+      document.querySelectorAll('.nav-tab, .nav-group-label').forEach(el=>{ el.style.opacity = ''; });
+    }
   }
   if(document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', run);
@@ -991,9 +1005,16 @@ function perfCycleMaxFor(stage, grade){
    student who qualifies as Top Performance (>=95% of the max) or At Risk (<60% of the max) in
    at least one subject, together with the list of qualifying subjects. An optional `filter`
    (Section/Stage/Grade/Class, from the stepper above the table) narrows the scan to a single
-   Grade — or a single Class within that Grade, when a specific Class is picked. */
+   Grade — or a single Class within that Grade, when a specific Class is picked.
+   `cycle` is 'cycle1' / 'cycle2' (Cycle score, Max. 5 or 15 depending on stage/grade — see
+   perfCycleMaxFor) OR 'exam' (that Term's Total — Total Coursework + Exam Paper, always out of
+   100 — used by the "First Term Exam" / "Second Term Exam" filters). `category` is 'top' / 'risk'
+   for Cycle mode, and 'top' / 'risk' / 'critical' for Exam mode: Top >=95%, At Risk <60%,
+   Critical <50% of the Term Total. Grade 1 & 2 Primary (junior) record no Cycle scores and no
+   numeric Exam Paper, so they're skipped for both modes, same as before. */
 function computePerfAlertList(term, cycle, category, filter){
   filter = filter || {};
+  const isExam = cycle==='exam';
   const field = cycle==='cycle2' ? 'm2Cycle' : 'm1Cycle';
   const resultMap = {};
   Object.keys(SECTIONS).forEach(section=>{
@@ -1008,17 +1029,35 @@ function computePerfAlertList(term, cycle, category, filter){
         let roster = visibleRoster(students[ck]);
         if(filter.term) roster = roster.filter(s=> s.classroom===filter.term);
         if(!roster.length) return;
-        const max = perfCycleMaxFor(stage, grade);
-        const threshold = category==='risk' ? max*0.6 : max*0.95;
+        const max = isExam ? 100 : perfCycleMaxFor(stage, grade);
+        const threshold = isExam
+          ? (category==='critical' ? max*0.5 : category==='risk' ? max*0.6 : max*0.95)
+          : (category==='risk' ? max*0.6 : max*0.95);
         getSubjectsForStageAndSection(stage, section).forEach(subject=>{
           const sk = `${ck}|${term}|${subject}`;
           const subjScores = scores[sk] || {};
           roster.forEach(s=>{
             const sc = subjScores[s.id];
             if(!sc) return;
-            const v = parseFloat(sc[field]);
+            let v;
+            if(isExam){
+              // Term Total (Max. 100) = Total Coursework (computed from this subject's raw
+              // fields, scale depends on stage/grade) + Exam Paper — mirrors the Report Card's
+              // own Term Total math exactly (see the isG3G6ReportCardCert / isPrepG78ReportCardCert
+              // certificate blocks). computePrimaryTotals() reads state.stage/state.grade, so we
+              // briefly point global state at this student's Stage/Grade, same pattern as
+              // withCertState() uses for certificates.
+              const backup = { stage:state.stage, grade:state.grade };
+              state.stage = stage; state.grade = grade;
+              const t = computePrimaryTotals(sc);
+              Object.assign(state, backup);
+              const examVal = (sc.examPaper===null||sc.examPaper===undefined||sc.examPaper==='') ? 0 : (parseFloat(sc.examPaper)||0);
+              v = t.totalCoursework + examVal;
+            } else {
+              v = parseFloat(sc[field]);
+            }
             if(isNaN(v)) return;
-            const qualifies = category==='risk' ? (v < threshold) : (v >= threshold);
+            const qualifies = category==='top' ? (v >= threshold) : (v < threshold);
             if(!qualifies) return;
             if(!resultMap[s.id]){
               resultMap[s.id] = { id:s.id, displayId:s.displayId||'—', name:s.name, subjects:[], section, stage, grade, classroom:s.classroom||'' };
@@ -1034,14 +1073,20 @@ function computePerfAlertList(term, cycle, category, filter){
     .sort((a,b)=> b.count-a.count || a.name.localeCompare(b.name));
 }
 
-const PERF_CATEGORY_LABELS = { top:'Top Performance Students', risk:'At Risk Students' };
+const PERF_CATEGORY_LABELS = { top:'Top Performance Students', risk:'At Risk Students', critical:'Critical Students' };
 const PERF_CYCLE_LABELS = { cycle1:'Cycle 1', cycle2:'Cycle 2' };
+// "exam" means different things depending which Term it's under — First Term Exam (Term 1) vs
+// Second Term Exam (Term 2) — so its label is resolved per-term rather than a flat lookup.
+function perfCycleLabel(term, cycle){
+  if(cycle==='exam') return term==='term2' ? 'Second Term Exam' : 'First Term Exam';
+  return PERF_CYCLE_LABELS[cycle] || 'Cycle 1';
+}
 
 function renderPerfAlerts(){
   const { perfTerm:term, perfCycle:cycle, perfCategory:category } = state;
   const crumbs = document.getElementById('perfCrumbs');
   const termLabel = TERM_LABELS[term] || 'Term 1';
-  const cycleLabel = PERF_CYCLE_LABELS[cycle] || 'Cycle 1';
+  const cycleLabel = perfCycleLabel(term, cycle);
   const catLabel = PERF_CATEGORY_LABELS[category] || 'Top Performance Students';
   if(crumbs) crumbs.innerHTML = `<span class="crumb subj">${termLabel}</span><span class="crumb subj">${cycleLabel}</span><span class="crumb subj">${catLabel}</span>`;
   const area = document.getElementById('perfTableArea');
@@ -1060,11 +1105,12 @@ function renderPerfAlerts(){
     : `${STAGES[filter.stage].grades.find(g=>g.id===filter.grade).label} (whole Grade)`;
   const list = computePerfAlertList(term, cycle, category, filter);
   // Students who ALSO qualify for the same category in the other Cycle of the same Term (within
-  // the same filtered scope) get their whole row highlighted red.
-  const otherCycle = cycle==='cycle2' ? 'cycle1' : 'cycle2';
-  const otherIds = new Set(computePerfAlertList(term, otherCycle, category, filter).map(r=>r.id));
+  // the same filtered scope) get their whole row highlighted red. Only applies to the Cycle 1/2
+  // filters — the Exam filter (First/Second Term Exam) has no paired "other Cycle" to compare against.
+  const otherCycle = cycle==='cycle1' ? 'cycle2' : cycle==='cycle2' ? 'cycle1' : null;
+  const otherIds = otherCycle ? new Set(computePerfAlertList(term, otherCycle, category, filter).map(r=>r.id)) : new Set();
   if(!list.length){
-    const icon = category==='risk' ? '⚠' : '🌟';
+    const icon = category==='risk' ? '⚠' : category==='critical' ? '🚨' : '🌟';
     area.innerHTML = `<div class="empty-state"><div class="seal-lg">${icon}</div><h3>No students found</h3><p>No students in ${scopeLabel} currently meet the ${escapeXml(catLabel)} criteria for ${escapeXml(termLabel)} • ${escapeXml(cycleLabel)}.</p></div>`;
     return;
   }
@@ -1090,8 +1136,58 @@ function renderPerfAlerts(){
         <tbody>${rows}</tbody>
       </table>
     </div>
-    <p style="font-size:12px;color:var(--ink-soft);margin-top:8px;">Rows shaded red mark students who also appear in the ${escapeXml(catLabel)} list for the other Cycle in ${escapeXml(termLabel)}, within this same scope.</p>`;
+    ${otherCycle ? `<p style="font-size:12px;color:var(--ink-soft);margin-top:8px;">Rows shaded red mark students who also appear in the ${escapeXml(catLabel)} list for the other Cycle in ${escapeXml(termLabel)}, within this same scope.</p>` : ''}`;
 }
+
+// Adds a "First Term Exam" item under Term 1 and a "Second Term Exam" item under Term 2 of the
+// "Top & At-Risk" nav dropdown, each opening a 3-way Top Performance / At Risk / Critical submenu
+// (see computePerfAlertList's 'exam' mode above). Built by cloning the existing Cycle 1
+// button+submenu DOM nodes rather than hand-authoring new markup, so it automatically matches
+// the dropdown's real styling/behavior without needing to touch the HTML file directly.
+function injectPerfExamMenuItems(){
+  ['term1','term2'].forEach(term=>{
+    const key = term+'_exam';
+    if(document.getElementById('perfCycleGroupBtn_'+key)) return; // already injected
+    const templateBtn = document.getElementById('perfCycleGroupBtn_'+term+'_cycle1');
+    const templateGroup = document.getElementById('perfCycleGroup_'+term+'_cycle1');
+    const container = document.getElementById('perfTermGroup_'+term);
+    if(!templateBtn || !templateGroup || !container) return; // menu not in the DOM yet
+
+    const label = term==='term2' ? 'Second Term Exam' : 'First Term Exam';
+
+    // Clone the "Cycle 1" group button and repoint it at the new Exam submenu.
+    const groupBtn = templateBtn.cloneNode(true);
+    groupBtn.id = 'perfCycleGroupBtn_'+key;
+    groupBtn.classList.remove('selected','expanded');
+    groupBtn.innerHTML = groupBtn.innerHTML.replace(/Cycle\s*1/i, label);
+    groupBtn.onclick = (e)=> togglePerfCycleGroup(e, term, 'exam');
+    container.appendChild(groupBtn);
+
+    // Clone the Cycle 1 submenu (Top Performance / At Risk buttons), repoint them at 'exam',
+    // then add a third "Critical" button (<50%) cloned from the At Risk button for matching style.
+    const subgroup = templateGroup.cloneNode(true);
+    subgroup.id = 'perfCycleGroup_'+key;
+    subgroup.classList.remove('open');
+    let riskBtnTemplate = null;
+    subgroup.querySelectorAll('button').forEach(btn=>{
+      btn.classList.remove('selected');
+      const isRisk = /at\s*risk/i.test(btn.textContent);
+      if(isRisk) riskBtnTemplate = btn;
+      const cat = isRisk ? 'risk' : 'top';
+      btn.onclick = (e)=>{ e.stopPropagation(); openPerfAlert(term, 'exam', cat); };
+    });
+    if(riskBtnTemplate){
+      const criticalBtn = riskBtnTemplate.cloneNode(true);
+      criticalBtn.textContent = 'Critical';
+      criticalBtn.classList.remove('selected');
+      criticalBtn.onclick = (e)=>{ e.stopPropagation(); openPerfAlert(term, 'exam', 'critical'); };
+      subgroup.appendChild(criticalBtn);
+    }
+    container.appendChild(subgroup);
+  });
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', injectPerfExamMenuItems);
+else injectPerfExamMenuItems();
 
 const DASHBOARD_MODE_LABELS = { cycle1:'Cycle 1', cycle1vs2:'Cycle 1 Vs Cycle 2' };
 
@@ -3176,7 +3272,9 @@ function renderCertReportsCards(){
             gradeBasis = yearAvg;
             yearAvgCellHtml = `<td class="qavg-cell">${Math.round(yearAvg*10)/10}</td>`;
           }
-          const g = letterGrade(Math.round(gradeBasis*10)/10);
+          const g = isEndYear
+            ? yearResultLetterGrade(Math.round(gradeBasis*10)/10, examVal, 60)
+            : letterGrade(Math.round(gradeBasis*10)/10);
           const cycBand = subjCycleBand(sc, null, cycMax);
           rowsHtmlArr.push(`
           <tr${rowBandAttr(cycBand)}>
@@ -3278,7 +3376,9 @@ function renderCertReportsCards(){
             runningYearAvg += yearAvg;
             gradeBasis = yearAvg;
           }
-          const g = letterGrade(Math.round(gradeBasis*10)/10);
+          const g = isEndYear
+            ? yearResultLetterGrade(Math.round(gradeBasis*10)/10, examVal, 30)
+            : letterGrade(Math.round(gradeBasis*10)/10);
           // Actual Mark: converts each term's total (always out of 100) into this subject's own Max./Min. scale.
           const actualRange = actualMarkMap[sub] || null;
           let actualMarkCellsHtml = '<td></td><td></td>';
@@ -3922,6 +4022,22 @@ function letterGrade(pct){
   if(pct>=65) return {t:'Good', c:'good'};
   if(pct>=50) return {t:'Pass', c:'pass'};
   return {t:'Fail', c:'fail'};
+}
+
+// End-of-Year final result rule (Grades 3–11, all subjects, both Sections):
+// a student only succeeds a subject's Year result if BOTH (1) their Second Term Exam
+// Paper score is more than 30% of that paper's max mark, AND (2) their Year Average is
+// at least 50%. Scoring 30% or less on the Second Term Exam Paper is an automatic Fail
+// for that subject's Year result, regardless of how high the Year Average is.
+// Used only for the End-of-Year (Year Average) grade badge — Term 1 Report Cards and
+// every other grade (Coursework/Cycle/Month totals, Term totals, etc.) keep using
+// letterGrade() unchanged.
+function yearResultLetterGrade(yearAvgPct, examVal, examMax){
+  if(examMax > 0){
+    const examPct = (examVal/examMax)*100;
+    if(examPct <= 30) return {t:'Fail', c:'fail'};
+  }
+  return letterGrade(yearAvgPct);
 }
 
 // Builds the "Subject" cell used on every Report Certificate row, framed in a colored border
