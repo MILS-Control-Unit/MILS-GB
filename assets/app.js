@@ -163,6 +163,89 @@ let attSubView = 'absence';
   if(document.head) document.head.appendChild(style);
   else document.addEventListener('DOMContentLoaded', ()=> document.head.appendChild(style));
 })();
+// Animation styles for the Dashboard tab (Cycle Dashboard): staggered card/chart
+// entrances, animated bar growth, pie-slice reveal, and radar fade-in. Pure CSS,
+// no external animation library — keeps the single-file app dependency-free.
+(function injectDashboardAnimStyles(){
+  const css = `
+    #dashboardChartsArea{ animation: dbFadeSlideIn .35s ease both; }
+    .db-student-banner, .db-motivation-badge, .db-stat-card, .db-chart-card, .db-strength-alert,
+    .db-attention-banner, .db-subject-trend-table{ animation: dbCardIn .45s cubic-bezier(.22,.9,.32,1) both; }
+    .db-summary-row .db-stat-card:nth-child(1){ animation-delay:.02s; }
+    .db-summary-row .db-stat-card:nth-child(2){ animation-delay:.08s; }
+    .db-summary-row .db-stat-card:nth-child(3){ animation-delay:.14s; }
+    .db-summary-row .db-stat-card:nth-child(4){ animation-delay:.20s; }
+    .db-charts-grid .db-chart-card:nth-child(1){ animation-delay:.16s; }
+    .db-charts-grid .db-chart-card:nth-child(2){ animation-delay:.22s; }
+    .db-charts-grid .db-chart-card:nth-child(3){ animation-delay:.28s; }
+    .db-stat-num{ display:inline-block; }
+    @keyframes dbFadeSlideIn{ from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:translateY(0);} }
+    @keyframes dbCardIn{ from{ opacity:0; transform:translateY(10px) scale(.98);} to{ opacity:1; transform:translateY(0) scale(1);} }
+    .db-anim-bar{ transform-box:fill-box; transform-origin:bottom; animation:dbBarGrow .55s cubic-bezier(.22,.9,.32,1) both; }
+    @keyframes dbBarGrow{ from{ transform:scaleY(0);} to{ transform:scaleY(1);} }
+    .db-anim-slice{ transform-box:fill-box; transform-origin:center; animation:dbSlicePop .5s cubic-bezier(.34,1.4,.64,1) both; }
+    @keyframes dbSlicePop{ from{ opacity:0; transform:scale(.4);} to{ opacity:1; transform:scale(1);} }
+    .db-anim-radar-fill{ animation:dbFadeIn .6s ease both .15s; }
+    .db-anim-radar-ring{ animation:dbFadeIn .5s ease both; }
+    @keyframes dbFadeIn{ from{ opacity:0;} to{ opacity:1;} }
+    @media (prefers-reduced-motion: reduce){
+      #dashboardChartsArea, .db-student-banner, .db-motivation-badge, .db-stat-card, .db-chart-card,
+      .db-strength-alert, .db-attention-banner, .db-subject-trend-table,
+      .db-anim-bar, .db-anim-slice, .db-anim-radar-fill, .db-anim-radar-ring{ animation:none !important; }
+    }
+  `;
+  const style = document.createElement('style');
+  style.textContent = css;
+  if(document.head) document.head.appendChild(style);
+  else document.addEventListener('DOMContentLoaded', ()=> document.head.appendChild(style));
+})();
+
+// ===== GSAP: masthead & nav-icon choreography =====
+// Reorganizes how the header (logos, title, right-side widgets) and the nav bar's
+// icons appear: a staggered entrance on load instead of everything popping in at
+// once, plus a small icon "pulse" on hover. Purely additive — no layout/markup
+// changes, just animation on top of the existing elements. Guarded by typeof gsap
+// in case the CDN script fails to load (offline, blocked, etc.).
+(function setupGsapChoreography(){
+  function run(){
+    if(typeof gsap === 'undefined') return;
+
+    const logos = document.querySelectorAll('.masthead .school-logo');
+    const mastheadText = document.querySelector('.masthead-text');
+    const rightRows = document.querySelectorAll('.masthead-right .masthead-right-row');
+    const navTabs = document.querySelectorAll('.nav-tab, .nav-group-label');
+
+    const tl = gsap.timeline({ defaults:{ ease:'power3.out' } });
+
+    if(logos.length){
+      tl.from(logos, { opacity:0, x:-24, duration:.5, stagger:.12 }, 0);
+    }
+    if(mastheadText){
+      tl.from(mastheadText, { opacity:0, y:-10, duration:.5 }, 0.1);
+    }
+    if(rightRows.length){
+      tl.from(rightRows, { opacity:0, y:-10, duration:.45, stagger:.08 }, 0.15);
+    }
+    if(navTabs.length){
+      tl.from(navTabs, { opacity:0, y:-8, duration:.35, stagger:.02 }, 0.3);
+    }
+
+    // Small hover "pulse" on nav-tab icons (the inline SVGs) — reinforces which
+    // tab is about to be clicked without needing any CSS changes.
+    document.querySelectorAll('.nav-tab svg').forEach(icon=>{
+      const tab = icon.closest('.nav-tab');
+      if(!tab) return;
+      tab.addEventListener('mouseenter', ()=> gsap.to(icon, { scale:1.18, duration:.18, ease:'back.out(3)' }));
+      tab.addEventListener('mouseleave', ()=> gsap.to(icon, { scale:1, duration:.18, ease:'power2.out' }));
+    });
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', run);
+  } else {
+    run();
+  }
+})();
+
 // teachers = [{id, displayId, name, section, subject, classes}]
 let teachers = [];
 let teacherIdCounter = 1;
@@ -626,34 +709,73 @@ function selectValue(key, id, targetState){
 // hover and a smooth fade-out ~350ms after the cursor actually leaves the button+menu
 // area, so moving diagonally into the menu doesn't accidentally close it. Click-to-toggle
 // (for touch devices) keeps working exactly as before.
+// Positions a nav-dropdown-menu as position:fixed directly under (or, if it would run
+// off-screen, above/left-aligned to stay on-screen) its trigger button. This is required
+// because .nav-row-tabs scrolls horizontally (overflow-x:auto), which per the CSS spec
+// forces overflow-y to also clip — so a plain position:absolute menu gets sliced off by
+// that scroll container. Fixed positioning, computed from the live button rect, escapes
+// that clipping entirely regardless of any ancestor's overflow/scroll state.
+function positionFixedNavMenu(wrap, menu){
+  if(!wrap || !menu) return;
+  const rect = wrap.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.top = (rect.bottom + 8) + 'px';
+  menu.style.margin = '0';
+  const menuWidth = Math.max(menu.offsetWidth, 230);
+  let left = rect.left;
+  if(left + menuWidth > window.innerWidth - 8){
+    left = Math.max(8, rect.right - menuWidth);
+  }
+  menu.style.left = left + 'px';
+}
+
 (function(){
-  const NAV_DROPDOWNS = [
-    ['dashboardDropdownWrap','dashboardMenu'],
-    ['examsDropdownWrap','examsMenu'],
-    ['perfDropdownWrap','perfMenu'],
-    ['examSchedDropdownWrap','examSchedMenu'],
-    ['configDropdownWrap','configMenu'],
-    ['databaseDropdownWrap','databaseMenu'],
-    ['teachersDropdownWrap','teachersMenu']
-  ];
-  const closeTimers = {};
-  NAV_DROPDOWNS.forEach(([wrapId, menuId])=>{
-    const wrap = document.getElementById(wrapId);
-    const menu = document.getElementById(menuId);
-    if(!wrap || !menu) return;
-    const openNow = ()=>{
-      clearTimeout(closeTimers[wrapId]);
-      menu.classList.add('open');
+  function setupNavDropdowns(){
+    const NAV_DROPDOWNS = [
+      ['dashboardDropdownWrap','dashboardMenu'],
+      ['examsDropdownWrap','examsMenu'],
+      ['perfDropdownWrap','perfMenu'],
+      ['examSchedDropdownWrap','examSchedMenu'],
+      ['configDropdownWrap','configMenu'],
+      ['databaseDropdownWrap','databaseMenu'],
+      ['teachersDropdownWrap','teachersMenu']
+    ];
+    const closeTimers = {};
+    NAV_DROPDOWNS.forEach(([wrapId, menuId])=>{
+      const wrap = document.getElementById(wrapId);
+      const menu = document.getElementById(menuId);
+      if(!wrap || !menu) return;
+      const openNow = ()=>{
+        clearTimeout(closeTimers[wrapId]);
+        positionFixedNavMenu(wrap, menu);
+        menu.classList.add('open');
+      };
+      const scheduleClose = ()=>{
+        clearTimeout(closeTimers[wrapId]);
+        closeTimers[wrapId] = setTimeout(()=>{ menu.classList.remove('open'); }, 650);
+      };
+      wrap.addEventListener('mouseenter', openNow);
+      wrap.addEventListener('mouseleave', scheduleClose);
+      menu.addEventListener('mouseenter', openNow);
+      menu.addEventListener('mouseleave', scheduleClose);
+    });
+    // Keep an open menu's position in sync with its button if the page scrolls/resizes
+    // while it's open (e.g. the horizontally-scrolling nav row itself).
+    const reposition = ()=>{
+      NAV_DROPDOWNS.forEach(([wrapId, menuId])=>{
+        const wrap = document.getElementById(wrapId);
+        const menu = document.getElementById(menuId);
+        if(wrap && menu && menu.classList.contains('open')) positionFixedNavMenu(wrap, menu);
+      });
     };
-    const scheduleClose = ()=>{
-      clearTimeout(closeTimers[wrapId]);
-      closeTimers[wrapId] = setTimeout(()=>{ menu.classList.remove('open'); }, 650);
-    };
-    wrap.addEventListener('mouseenter', openNow);
-    wrap.addEventListener('mouseleave', scheduleClose);
-    menu.addEventListener('mouseenter', openNow);
-    menu.addEventListener('mouseleave', scheduleClose);
-  });
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', setupNavDropdowns);
+  } else {
+    setupNavDropdowns();
+  }
 })();
 
 document.addEventListener('click', (e)=>{
@@ -725,12 +847,16 @@ function toggleBirthdayDropdown(e){
 
 function toggleConfigMenu(e){
   e.stopPropagation();
-  document.getElementById('configMenu').classList.toggle('open');
+  const menu = document.getElementById('configMenu');
+  if(!menu.classList.contains('open')) positionFixedNavMenu(document.getElementById('configDropdownWrap'), menu);
+  menu.classList.toggle('open');
 }
 
 function toggleDatabaseMenu(e){
   e.stopPropagation();
-  document.getElementById('databaseMenu').classList.toggle('open');
+  const menu = document.getElementById('databaseMenu');
+  if(!menu.classList.contains('open')) positionFixedNavMenu(document.getElementById('databaseDropdownWrap'), menu);
+  menu.classList.toggle('open');
 }
 function closeDatabaseMenu(){
   const dm = document.getElementById('databaseMenu');
@@ -739,7 +865,9 @@ function closeDatabaseMenu(){
 
 function toggleTeachersMenu(e){
   e.stopPropagation();
-  document.getElementById('teachersMenu').classList.toggle('open');
+  const menu = document.getElementById('teachersMenu');
+  if(!menu.classList.contains('open')) positionFixedNavMenu(document.getElementById('teachersDropdownWrap'), menu);
+  menu.classList.toggle('open');
 }
 function closeTeachersMenu(){
   const tm = document.getElementById('teachersMenu');
@@ -748,7 +876,9 @@ function closeTeachersMenu(){
 
 function toggleDashboardMenu(e){
   e.stopPropagation();
-  document.getElementById('dashboardMenu').classList.toggle('open');
+  const menu = document.getElementById('dashboardMenu');
+  if(!menu.classList.contains('open')) positionFixedNavMenu(document.getElementById('dashboardDropdownWrap'), menu);
+  menu.classList.toggle('open');
 }
 
 let openDashTermGroup = null;
@@ -765,7 +895,9 @@ function toggleDashTermGroup(e, term){
 
 function toggleExamsMenu(e){
   e.stopPropagation();
-  document.getElementById('examsMenu').classList.toggle('open');
+  const menu = document.getElementById('examsMenu');
+  if(!menu.classList.contains('open')) positionFixedNavMenu(document.getElementById('examsDropdownWrap'), menu);
+  menu.classList.toggle('open');
 }
 
 let openExamsTermGroup = null;
@@ -782,7 +914,9 @@ function toggleExamsTermGroup(e, term){
 
 function toggleExamSchedMenu(e){
   e.stopPropagation();
-  document.getElementById('examSchedMenu').classList.toggle('open');
+  const menu = document.getElementById('examSchedMenu');
+  if(!menu.classList.contains('open')) positionFixedNavMenu(document.getElementById('examSchedDropdownWrap'), menu);
+  menu.classList.toggle('open');
 }
 
 let openExamSchedTermGroup = null;
@@ -799,7 +933,9 @@ function toggleExamSchedTermGroup(e, term){
 
 function togglePerfMenu(e){
   e.stopPropagation();
-  document.getElementById('perfMenu').classList.toggle('open');
+  const menu = document.getElementById('perfMenu');
+  if(!menu.classList.contains('open')) positionFixedNavMenu(document.getElementById('perfDropdownWrap'), menu);
+  menu.classList.toggle('open');
 }
 
 let openPerfTermGroup = null;
@@ -1415,6 +1551,40 @@ function renderDashboardCharts(){
   } else {
     area.innerHTML = renderAttentionBanner(mode, withData) + nameBanner + motivationHtml + renderCycle1View(stats.perSubject, section, stage, grade, term, studentId);
   }
+  animateDashboardStatNumbers(area);
+}
+
+/* Animated count-up for the "db-stat-num" cards (Student's Average, Subjects Recorded,
+   Change, Subjects Compared, etc.). Reads the target value/suffix out of the number
+   already written into the cell (so no call sites need to change), then re-runs the
+   count from 0 (or from the starting sign for +/- deltas) using requestAnimationFrame.
+   Respects prefers-reduced-motion by just leaving the static text in place. */
+function animateDashboardStatNumbers(container){
+  if(!container) return;
+  const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  container.querySelectorAll('.db-stat-num').forEach(el=>{
+    const smallEl = el.querySelector('small');
+    const suffix = smallEl ? smallEl.outerHTML : '';
+    const rawText = (el.childNodes[0] && el.childNodes[0].textContent || el.textContent || '').trim();
+    const match = rawText.match(/^([+-]?)(\d+(?:\.\d+)?)$/);
+    if(!match){ return; } // non-numeric stat (leave as-is)
+    const sign = match[1] === '-' ? -1 : 1;
+    const target = parseFloat(match[2]) * (match[1]==='-'?-1:1);
+    const decimals = (match[2].split('.')[1]||'').length;
+    if(prefersReduced){ return; }
+    const duration = 650;
+    const startTime = performance.now();
+    function tick(now){
+      const p = Math.min(1, (now-startTime)/duration);
+      const eased = 1 - Math.pow(1-p, 3);
+      const val = target * eased;
+      const shown = (val>=0 && match[1]==='+' ? '+' : '') + val.toFixed(decimals);
+      el.innerHTML = shown + suffix;
+      if(p<1) requestAnimationFrame(tick);
+      else el.innerHTML = rawText + suffix;
+    }
+    requestAnimationFrame(tick);
+  });
 }
 
 function renderCycle1View(perSubject, section, stage, grade, term, studentId){
@@ -2016,7 +2186,8 @@ function svgGroupedBarChart(items, maxVal, seriesNames, colors, targetVal, targe
       const bh = (v/maxVal) * chartH;
       const x = groupX + (slot/2 - barW) + si*(barW+4);
       const y = padT + chartH - bh;
-      bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" rx="3" fill="${colors[si]}"></rect>
+      const barDelay = (i*seriesNames.length + si) * 0.03;
+      bars += `<rect class="db-anim-bar" style="animation-delay:${barDelay.toFixed(2)}s" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" rx="3" fill="${colors[si]}"></rect>
         <text x="${(x+barW/2).toFixed(1)}" y="${(y-5).toFixed(1)}" text-anchor="middle" font-size="9.5" font-weight="700" fill="var(--ink)">${val===null?'—':v.toFixed(1)}</text>`;
     });
     labels += `<text x="${(groupX+slot/2).toFixed(1)}" y="${h-padB+16}" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)" transform="rotate(-18 ${(groupX+slot/2).toFixed(1)} ${h-padB+16})">${escapeXml(it.label)}</text>`;
@@ -2043,7 +2214,7 @@ function svgPieChart(data){
   if(!total){
     return `<svg viewBox="0 0 220 220" style="width:100%;max-width:240px;display:block;margin:0 auto;"><circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--border)"></circle><text x="${cx}" y="${cy+4}" text-anchor="middle" font-size="13" fill="var(--ink-soft)">No data</text></svg>`;
   }
-  let angle = -90, paths='';
+  let angle = -90, paths='', sliceIdx=0;
   data.forEach(d=>{
     if(d.value<=0) return;
     const slice = (d.value/total)*360;
@@ -2051,7 +2222,8 @@ function svgPieChart(data){
     const large = slice>180 ? 1 : 0;
     const x1 = cx + r*Math.cos(start*Math.PI/180), y1 = cy + r*Math.sin(start*Math.PI/180);
     const x2 = cx + r*Math.cos(end*Math.PI/180), y2 = cy + r*Math.sin(end*Math.PI/180);
-    paths += `<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${large} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${d.color}" stroke="var(--paper)" stroke-width="2"></path>`;
+    const sliceDelay = (sliceIdx++ * 0.08).toFixed(2);
+    paths += `<path class="db-anim-slice" style="animation-delay:${sliceDelay}s" d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${large} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${d.color}" stroke="var(--paper)" stroke-width="2"></path>`;
     angle = end;
   });
   return `<svg viewBox="0 0 220 220" style="width:100%;max-width:240px;display:block;margin:0 auto;">${paths}</svg>`;
@@ -2076,7 +2248,7 @@ function svgRadarChart(items, maxVal, seriesNames, colors, targetVal, targetLabe
   let gridRings = '';
   for(let g=1; g<=maxVal; g++){
     const ringPts = items.map((it,i)=>pointFor(i,g));
-    gridRings += `<path d="${polygonPath(ringPts)}" fill="none" stroke="var(--border)" stroke-width="1"></path>`;
+    gridRings += `<path class="db-anim-radar-ring" d="${polygonPath(ringPts)}" fill="none" stroke="var(--border)" stroke-width="1"></path>`;
   }
   let spokes = '';
   items.forEach((it,i)=>{
@@ -2115,7 +2287,7 @@ function svgRadarChart(items, maxVal, seriesNames, colors, targetVal, targetLabe
       const v = it.values[si];
       return pointFor(i, (v===null||v===undefined||isNaN(v)) ? 0 : v);
     });
-    seriesPolys += `<path d="${polygonPath(pts)}" fill="${colors[si]}" fill-opacity="0.18" stroke="${colors[si]}" stroke-width="2"></path>`;
+    seriesPolys += `<path class="db-anim-radar-fill" style="animation-delay:${(si*0.12).toFixed(2)}s" d="${polygonPath(pts)}" fill="${colors[si]}" fill-opacity="0.18" stroke="${colors[si]}" stroke-width="2"></path>`;
     pts.forEach(p=>{ seriesPolys += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.6" fill="${colors[si]}"></circle>`; });
   }
 
