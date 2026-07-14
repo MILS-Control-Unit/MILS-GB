@@ -263,6 +263,13 @@ let attSubView = 'absence';
 // teachers = [{id, displayId, name, section, subject, classes}]
 let teachers = [];
 let teacherIdCounter = 1;
+// IDs of teachers deleted locally. The Firestore sync merges the teachers array by ID
+// (so that a device that's behind doesn't wipe out teachers another device just added),
+// but a plain union can't tell "remote still has this because it's stale" apart from
+// "remote still has this because someone else added it back" — so a deletion made on one
+// device would keep reappearing after the next Save/sync. Recording deleted IDs here (and
+// syncing this list too) lets the merge explicitly drop them instead of re-adding them.
+let deletedTeacherIds = [];
 
 // Base64 logos for the First Month Report certificate (same images as the masthead)
 const MILS_LOGO_B64 = "assets/images/mils-logo.jpg";
@@ -6296,7 +6303,7 @@ function saveState(){
 }
 function saveStateLocalOnly(){
   try{
-    localStorage.setItem(LS_KEY, JSON.stringify({ students, scores, studentIdCounter, attendance, approvedLeave, teachers, teacherIdCounter, savedAt: new Date().toISOString() }));
+    localStorage.setItem(LS_KEY, JSON.stringify({ students, scores, studentIdCounter, attendance, approvedLeave, teachers, teacherIdCounter, deletedTeacherIds, savedAt: new Date().toISOString() }));
     flashSaveIndicator();
     updateQuickStatsWidget();
   }catch(err){ console.warn('Auto-save failed', err); }
@@ -6314,6 +6321,7 @@ function loadState(){
     approvedLeave = payload.approvedLeave || {};
     teachers = payload.teachers || [];
     teacherIdCounter = payload.teacherIdCounter || 1;
+    deletedTeacherIds = payload.deletedTeacherIds || [];
   }catch(err){ console.warn('Auto-load failed', err); }
 }
 
@@ -6503,13 +6511,20 @@ async function pushMergedToFirestore(){
       const snap = await tx.get(FB_DOC_REF);
       const remote = (snap.exists ? snap.data() : null) || {};
       newVersion = (remote.dataVersion || 0) + 1;
+      // Union of every teacher ID either device has deleted, so a deletion made on THIS
+      // device isn't silently re-added just because the server's copy of `teachers`
+      // (from before the deletion reached it) still contains that row.
+      const mergedDeletedTeacherIds = Array.from(new Set([...(remote.deletedTeacherIds||[]), ...deletedTeacherIds]));
+      const mergedTeachers = mergeArrayById(remote.teachers, teachers, 'id')
+        .filter(t=> !mergedDeletedTeacherIds.includes(t.id));
       const merged = {
         students: mergeObjectField(remote.students, students),
         scores: mergeObjectField(remote.scores, scores),
         attendance: mergeObjectField(remote.attendance, attendance),
         approvedLeave: mergeObjectField(remote.approvedLeave, approvedLeave),
         studentIdCounter: Math.max(remote.studentIdCounter||1, studentIdCounter||1),
-        teachers: mergeArrayById(remote.teachers, teachers, 'id'),
+        teachers: mergedTeachers,
+        deletedTeacherIds: mergedDeletedTeacherIds,
         teacherIdCounter: Math.max(remote.teacherIdCounter||1, teacherIdCounter||1),
         users: mergeArrayById(remote.users, users, 'username'),
         activityLog: mergeActivityLogEntries(remote.activityLog, activityLog),
@@ -6580,7 +6595,7 @@ window.addEventListener('beforeunload', function(e){
 });
 
 function downloadBackup(){
-  const payload = { students, scores, studentIdCounter, attendance, approvedLeave, teachers, teacherIdCounter, termMonthDates, examSchedules, examSeatAssignments, bellTimes, adminStructure, gradeEntryLockRules: normalizeGradeEntryLockRules(gradeEntryLockRules), reportCardReleases, examScheduleReleases, savedAt: new Date().toISOString() };
+  const payload = { students, scores, studentIdCounter, attendance, approvedLeave, teachers, teacherIdCounter, deletedTeacherIds, termMonthDates, examSchedules, examSeatAssignments, bellTimes, adminStructure, gradeEntryLockRules: normalizeGradeEntryLockRules(gradeEntryLockRules), reportCardReleases, examScheduleReleases, savedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -6602,6 +6617,7 @@ function restoreBackup(file){
       approvedLeave = payload.approvedLeave || {};
       teachers = payload.teachers || [];
       teacherIdCounter = payload.teacherIdCounter || teacherIdCounter;
+      deletedTeacherIds = payload.deletedTeacherIds || deletedTeacherIds || [];
       if(payload.termMonthDates && payload.termMonthDates.term1 && payload.termMonthDates.term2){
         termMonthDates = normalizeTermMonthDates(payload.termMonthDates);
         saveTermMonthDatesLocalOnly();
@@ -7491,6 +7507,7 @@ function deleteTeacherFromDb(id){
   const idx = teachers.findIndex(t=>t.id===id);
   const removedName = idx>-1 ? teachers[idx].name : 'Unknown';
   if(idx>-1) teachers.splice(idx,1);
+  if(!deletedTeacherIds.includes(id)) deletedTeacherIds.push(id);
   renderTeachersDatabase();
   saveState();
   logActivity('delete', `Permanently deleted teacher "${removedName}" from the Teachers Database`);
@@ -7576,6 +7593,7 @@ function deleteSelectedTeachers(){
   if(!confirm(`Permanently delete ${checked.length} selected teacher(s)? This cannot be undone.`)) return;
   const ids = checked.map(cb=>cb.value);
   teachers = teachers.filter(t=> !ids.includes(t.id));
+  ids.forEach(id=>{ if(!deletedTeacherIds.includes(id)) deletedTeacherIds.push(id); });
   renderTeachersDatabase();
   saveState();
   logActivity('delete', `Permanently deleted ${ids.length} teacher(s) from the Teachers Database`);
@@ -13110,6 +13128,10 @@ function applyRemotePayload(payload){
   // device pushes anything — even something unrelated like a Bell Times change.
   // Merge instead (remote as the base, local pending edits win per key) so those
   // unsaved edits survive until the person actually presses Save.
+  // Union deleted-teacher tombstones from the incoming snapshot with whatever this device
+  // already knows about, then use that to keep any resurrected-by-merge rows out of the
+  // final teachers list, however teachers ends up being set below.
+  deletedTeacherIds = Array.from(new Set([...(payload.deletedTeacherIds||[]), ...deletedTeacherIds]));
   if(gbUnsavedChanges){
     students = mergeObjectField(payload.students, students);
     scores = mergeObjectField(payload.scores, scores);
@@ -13129,6 +13151,7 @@ function applyRemotePayload(payload){
     teacherIdCounter = payload.teacherIdCounter || 1;
     grade3FlexibleMaximaBySubject = payload.grade3FlexibleMaxima || grade3FlexibleMaximaBySubject || {};
   }
+  teachers = teachers.filter(t=> !deletedTeacherIds.includes(t.id));
   try{ localStorage.setItem(GRADE3_MAXIMA_LS_KEY, JSON.stringify(grade3FlexibleMaximaBySubject)); }catch(err){}
   knownDataVersion = Math.max(knownDataVersion, payload.dataVersion || 0);
   if(Array.isArray(payload.users) && payload.users.length){ users = payload.users; saveUsersLocalOnly(); }
