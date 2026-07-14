@@ -7498,6 +7498,12 @@ function addTeacherManual(){
   toggleAddTeacherForm(false);
   renderTeachersDatabase();
   saveState();
+  // Teachers Database changes used to only mark themselves "unsaved" and wait for the
+  // separate Grade Book Save button — unlike Manage Users, which auto-pushes via
+  // scheduleGithubPush(). If a remote snapshot arrived (another device, or this device's
+  // own page reload) before that button was pressed, the newly added teacher would be
+  // silently overwritten by the older server copy. Push immediately so it can't be lost.
+  scheduleGithubPush();
   logActivity('add', `Added teacher "${name}" to the Teachers Database`);
 }
 
@@ -7515,6 +7521,7 @@ function deleteTeacherFromDb(id){
   if(!deletedTeacherIds.includes(id)) deletedTeacherIds.push(id);
   renderTeachersDatabase();
   saveState();
+  scheduleGithubPush(); // push the deletion tombstone immediately (see addTeacherManual note)
   logActivity('delete', `Permanently deleted teacher "${removedName}" from the Teachers Database`);
 }
 
@@ -7529,6 +7536,7 @@ function updateTeacherField(id, field, value){
   if(!t) return;
   t[field] = value;
   saveState();
+  scheduleGithubPush(); // see addTeacherManual note
 
   // Name, Section and Subject are the sort keys for the table (Section → Subject → Name),
   // so re-render after editing any of them to reflect the teacher's new position. Other
@@ -7570,6 +7578,7 @@ function toggleTeacherClassSelection(id, checkboxEl){
   const selected = panel ? Array.from(panel.querySelectorAll('input[type="checkbox"]:checked')).map(cb=>cb.value) : [];
   t.classes = selected.join(', ');
   saveState();
+  scheduleGithubPush(); // see addTeacherManual note
 
   const dd = document.getElementById('tcDD_'+id);
   const toggleBtn = dd ? dd.querySelector('.teacher-classes-toggle') : null;
@@ -7601,6 +7610,7 @@ function deleteSelectedTeachers(){
   ids.forEach(id=>{ if(!deletedTeacherIds.includes(id)) deletedTeacherIds.push(id); });
   renderTeachersDatabase();
   saveState();
+  scheduleGithubPush(); // push the deletion tombstones immediately (see addTeacherManual note)
   logActivity('delete', `Permanently deleted ${ids.length} teacher(s) from the Teachers Database`);
 }
 
@@ -7640,6 +7650,7 @@ function syncTeachersFromUserAccounts(){
   });
 
   saveState();
+  scheduleGithubPush(); // see addTeacherManual note
   renderTeachersDatabase();
   logActivity('edit', `Synced Teachers Database from Teacher/HOD accounts (${added} added, ${updated} refreshed)`);
   alert(`Sync complete: ${added} new row(s) added, ${updated} existing row(s) refreshed from Manage Users.`);
@@ -7869,6 +7880,12 @@ function importTeachersExcel(file){
 
       renderTeachersDatabase();
       saveState();
+      // Push immediately instead of only marking "unsaved". Excel-imported teachers used to
+      // sit only in localStorage until the separate Grade Book Save button was pressed; if a
+      // remote Firestore snapshot arrived first (another device, a live-sync tick, or simply
+      // reloading the page) the older server copy — which never had these rows — would
+      // silently replace them, making a successful import look like it got "deleted".
+      scheduleGithubPush();
       document.getElementById('importTitle').textContent = 'Bulk Import Result';
       let msg = `${added} teacher(s) added successfully.`;
       if(skippedDuplicates) msg += ` ${skippedDuplicates} duplicate row(s) skipped.`;
@@ -11552,14 +11569,21 @@ function computeTeacherGradeScope(user){
   const stages = new Set();
   const grades = new Set();
   if(!user || !Array.isArray(user.classrooms) || !user.classrooms.length) return { stages:[], grades:[] };
-  const classroomSet = new Set(user.classrooms);
+  // Classroom values assigned to a Teacher (via Manage Users) always come from
+  // getAllClassroomsInDb(), which trims each student's classroom value before offering it
+  // as a checkbox option. Comparing against the RAW (untrimmed) s.classroom below used to
+  // silently fail — and drop that classroom out of the Teacher's scope entirely — for any
+  // student row whose classroom value has stray leading/trailing whitespace, which is a
+  // common side effect of manual entry or Excel import. Trim on both sides so the match is
+  // whitespace-insensitive.
+  const classroomSet = new Set((user.classrooms||[]).map(c=>(c||'').trim()));
   const section = user.section || null;
   Object.keys(students).forEach(classKey=>{
     const parts = classKey.split('|');
     const sec = parts[0], stage = parts[1], grade = parts[2];
     if(section && sec!==section) return;
     const roster = students[classKey] || [];
-    if(roster.some(s=> classroomSet.has(s.classroom))){
+    if(roster.some(s=> classroomSet.has((s.classroom||'').trim()))){
       stages.add(stage);
       grades.add(grade);
     }
@@ -11573,13 +11597,17 @@ function computeTeacherGradeScope(user){
 // needs to show — no Stage/Grade pick required first.
 function getTeacherClassroomsInSection(section){
   if(!currentUser || currentUser.role!=='teacher' || !Array.isArray(currentUser.classrooms) || !section) return [];
-  const classroomSet = new Set(currentUser.classrooms);
+  // Same whitespace-insensitive matching as computeTeacherGradeScope() above — the
+  // Teacher's assigned classroom names are trimmed, so raw student.classroom values with
+  // stray spaces must be trimmed too or they'll never match and the class silently
+  // disappears from the Teacher's own class list.
+  const classroomSet = new Set(currentUser.classrooms.map(c=>(c||'').trim()));
   const names = new Set();
   Object.keys(students).forEach(classKey=>{
     const parts = classKey.split('|');
     if(parts[0]!==section) return;
     const roster = students[classKey] || [];
-    roster.forEach(s=>{ if(s.classroom && classroomSet.has(s.classroom)) names.add(s.classroom); });
+    roster.forEach(s=>{ const c=(s.classroom||'').trim(); if(c && classroomSet.has(c)) names.add(s.classroom); });
   });
   return [...names].sort();
 }
@@ -11674,7 +11702,7 @@ function scopeSubjectAllowed(name){
 function scopeClassroomAllowed(name){
   if(!currentUser || !currentUser.effective) return true;
   const sc = currentUser.effective.classroomScope;
-  return !sc || sc.includes(name);
+  return !sc || sc.map(c=>(c||'').trim()).includes((name||'').trim());
 }
 function scopeStudentAllowed(id){
   if(!currentUser || !currentUser.effective) return true;
@@ -12674,6 +12702,11 @@ function saveUserFromForm(){
       teacher.classes = classrooms.length ? classrooms.join(', ') : (teacher.classes || '');
     } else if(previousRole === 'teacher' || previousRole === 'hod'){
       // Role changed away from Teacher/HOD: drop the linked Teachers Database row.
+      // Also tombstone its id in deletedTeacherIds — otherwise the Firestore merge (which
+      // only ever adds/updates by id, never removes) will pull the row right back in from
+      // an older server copy the next time this device pushes or receives a snapshot.
+      const droppedIds = teachers.filter(t => t.username===editing || t.username===username).map(t=>t.id);
+      droppedIds.forEach(id=>{ if(!deletedTeacherIds.includes(id)) deletedTeacherIds.push(id); });
       teachers = teachers.filter(t => !(t.username===editing || t.username===username));
     }
     
@@ -12690,6 +12723,12 @@ function saveUserFromForm(){
     logActivity('edit', `Updated user account "${username}" (${ROLE_LABELS[role]||role})${(role==='teacher'||role==='hod') ? ' + updated Teachers Database' : ''}`);
   } else {
     if(findUser(username)){ alert('This username already exists.'); return; }
+    // If this exact username was deleted before, its tombstone is still sitting in
+    // deletedUsernames — every Firestore push/pull filters users against that list, so
+    // without this the newly (re-)created account would get silently stripped back out
+    // the moment saveUsers()'s debounced push (or the live sync listener) round-trips it,
+    // making it look like the brand-new user was "auto-deleted right after saving".
+    deletedUsernames = deletedUsernames.filter(u=> u!==username);
     users.push(userObj);
     
     // Auto-import Teacher/HOD accounts to Teachers Database, filling Section & Subject from
@@ -12730,6 +12769,10 @@ function deleteUserRow(username){
   // first, falling back to name-matching for legacy rows created before linking existed)
   if(user && (user.role === 'teacher' || user.role === 'hod')){
     const displayName = user.displayName || username;
+    // Tombstone the linked row's id (same reasoning as saveUserFromForm above) so the
+    // Firestore merge can't silently resurrect it from an older server copy.
+    const droppedIds = teachers.filter(t => t.username ? t.username === username : (t.name === displayName || t.name === username)).map(t=>t.id);
+    droppedIds.forEach(id=>{ if(!deletedTeacherIds.includes(id)) deletedTeacherIds.push(id); });
     teachers = teachers.filter(t => t.username ? t.username !== username : (t.name !== displayName && t.name !== username));
   }
   
@@ -12859,7 +12902,7 @@ function downloadUserTemplate(){
     { "Username":"fatima.hos", "Display Name":"Fatima Deputy", "Password":"12345", "Role":"HOS/Deputy",
       "Section":"French Section", "Subjects":"", "Classes":"" },
     { "Username":"ahmed.hod", "Display Name":"Ahmed Samir", "Password":"12345", "Role":"Head of Department",
-      "Section":"French Section", "Subjects":"", "Classes":"" },
+      "Section":"French Section", "Subjects":"Mathematics", "Classes":"" },
     { "Username":"sara.parent", "Display Name":"Sara's Parent", "Password":"12345", "Role":"Parent / Student",
       "Section":"English Section", "Subjects":"", "Classes":"" },
     { "Username":"", "Display Name":"", "Password":"", "Role":"", "Section":"", "Subjects":"", "Classes":"" }
@@ -12870,8 +12913,8 @@ function downloadUserTemplate(){
     { "Field":"Password", "Allowed Values":"Any text — the user can change it later" },
     { "Field":"Role", "Allowed Values":"Admin / HOS/Deputy / Teacher / Head of Department / Parent / Student" },
     { "Field":"Section", "Allowed Values":"English Section / French Section — required for Teacher, HOS/Deputy, Head of Department and Parent/Student (leave blank for Admin)" },
-    { "Field":"Subjects", "Allowed Values":"Semicolon-separated subject names — only for Teacher/Parent/Student. Available: " + ALL_SUBJECTS.join(', ') },
-    { "Field":"Classes", "Allowed Values":"Semicolon-separated class values (must match the 'Class' step used in Grade Book, e.g. 3/A) — only for Teacher/Parent/Student" }
+    { "Field":"Subjects", "Allowed Values":"Semicolon-separated subject names — required for Teacher and Head of Department (a Head of Department normally has just one), optional for Parent/Student. Available: " + ALL_SUBJECTS.join(', ') },
+    { "Field":"Classes", "Allowed Values":"Semicolon-separated class values (must match the 'Class' step used in Grade Book, e.g. 3/A) — only for Teacher/Parent/Student, leave blank for Head of Department" }
   ];
   const wsGuide = XLSX.utils.json_to_sheet(guide);
   const wb = XLSX.utils.book_new();
@@ -12986,14 +13029,30 @@ function importUsersExcel(file){
       let added = 0;
       const problems = [];
 
+      // Column headers can vary slightly (extra spaces, different case, "Subject" instead
+      // of "Subjects", etc.) — look them up case-insensitively instead of requiring an exact
+      // match, the same way importTeachersExcel already does.
+      function getField(row, candidates){
+        const normalizedMap = {};
+        Object.keys(row).forEach(k=>{ normalizedMap[k.trim().toLowerCase()] = row[k]; });
+        for(const c of candidates){
+          const v = normalizedMap[c.toLowerCase()];
+          if(v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+        }
+        return '';
+      }
+      // Accept both ";" and "," as the separator between multiple subjects/classes, since
+      // the template uses ";" but a hand-edited sheet commonly uses ",".
+      const splitMulti = (raw) => raw ? raw.split(/[;,]/).map(s=>s.trim()).filter(Boolean) : [];
+
       rows.forEach((row, idx)=>{
-        const username = (row['Username']||'').toString().trim();
-        const displayName = (row['Display Name']||row['DisplayName']||'').toString().trim();
-        const password = (row['Password']||'').toString().trim();
-        const roleLabel = (row['Role']||'').toString().trim();
-        const sectionLabel = (row['Section']||'').toString().trim();
-        const subjectsRaw = (row['Subjects']||'').toString().trim();
-        const classesRaw = (row['Classes']||'').toString().trim();
+        const username = getField(row, ['Username']);
+        const displayName = getField(row, ['Display Name','DisplayName','Name']);
+        const password = getField(row, ['Password']);
+        const roleLabel = getField(row, ['Role']);
+        const sectionLabel = getField(row, ['Section']);
+        const subjectsRaw = getField(row, ['Subjects','Subject']);
+        const classesRaw = getField(row, ['Classes','Class']);
 
         if(!username){ return; } // skip fully blank helper rows
         if(!password){ problems.push(`${username}: missing password`); return; }
@@ -13012,9 +13071,15 @@ function importUsersExcel(file){
         const userObj = { username, displayName, password, role };
         if(sectionId) userObj.section = sectionId;
         if(role==='teacher' || role==='hod' || role==='parent'){
-          userObj.subjects = subjectsRaw ? subjectsRaw.split(';').map(s=>s.trim()).filter(Boolean) : [];
-          userObj.classrooms = classesRaw ? classesRaw.split(';').map(s=>s.trim()).filter(Boolean) : [];
+          userObj.subjects = splitMulti(subjectsRaw);
+          userObj.classrooms = splitMulti(classesRaw);
+          if(role==='hod' && !userObj.subjects.length){
+            problems.push(`${username}: Head of Department has no "Subjects" value in this row — added with Subject left blank, please fill it in manually`);
+          }
         }
+        // Clear any leftover deletion-tombstone for this username — see the matching
+        // comment in saveUserFromForm() above for why this is required.
+        deletedUsernames = deletedUsernames.filter(u=> u!==username);
         users.push(userObj);
         added++;
 
@@ -13183,7 +13248,16 @@ function applyRemotePayload(payload){
   knownDataVersion = Math.max(knownDataVersion, payload.dataVersion || 0);
   if(Array.isArray(payload.users) && payload.users.length){
     deletedUsernames = Array.from(new Set([...(payload.deletedUsernames||[]), ...deletedUsernames]));
-    users = payload.users.filter(u=> !deletedUsernames.includes(u.username));
+    // This used to hard-replace `users` with whatever the incoming snapshot contained. If an
+    // admin had just added/edited a user (e.g. a Teacher) and that edit hadn't reached
+    // Firestore yet (saveUsers()'s push is debounced by ~2.5s — see scheduleGithubPush()),
+    // any snapshot that arrived in that window — from another device, or a delayed echo of
+    // an older write — would silently overwrite the brand-new local edit and then persist
+    // that older list back to localStorage, making the user (often a just-added/edited
+    // Teacher account) appear to have been "deleted" right after saving. Merge with the
+    // current in-memory `users` instead, the same way `teachers` is merged above, so a local
+    // edit that hasn't round-tripped to Firestore yet always survives.
+    users = mergeArrayById(payload.users, users, 'username').filter(u=> !deletedUsernames.includes(u.username));
     saveUsersLocalOnly();
   }
   if(Array.isArray(payload.activityLog) && payload.activityLog.length){
