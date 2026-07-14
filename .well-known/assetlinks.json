@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "io.github.mils_control_unit.twa",
+        "sha256_cert_fingerprints": ["F8:96:01:C1:BB:3F:03:A7:E2:F9:31:42:90:C3:77:37:1D:68:06:F3:4E:D6:BA:28:29:D0:68:0F:C1:A2:BE:9C"]
+      }
+    }]
