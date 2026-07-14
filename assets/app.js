@@ -7498,6 +7498,12 @@ function addTeacherManual(){
   toggleAddTeacherForm(false);
   renderTeachersDatabase();
   saveState();
+  // Teachers Database changes used to only mark themselves "unsaved" and wait for the
+  // separate Grade Book Save button — unlike Manage Users, which auto-pushes via
+  // scheduleGithubPush(). If a remote snapshot arrived (another device, or this device's
+  // own page reload) before that button was pressed, the newly added teacher would be
+  // silently overwritten by the older server copy. Push immediately so it can't be lost.
+  scheduleGithubPush();
   logActivity('add', `Added teacher "${name}" to the Teachers Database`);
 }
 
@@ -7515,6 +7521,7 @@ function deleteTeacherFromDb(id){
   if(!deletedTeacherIds.includes(id)) deletedTeacherIds.push(id);
   renderTeachersDatabase();
   saveState();
+  scheduleGithubPush(); // push the deletion tombstone immediately (see addTeacherManual note)
   logActivity('delete', `Permanently deleted teacher "${removedName}" from the Teachers Database`);
 }
 
@@ -7529,6 +7536,7 @@ function updateTeacherField(id, field, value){
   if(!t) return;
   t[field] = value;
   saveState();
+  scheduleGithubPush(); // see addTeacherManual note
 
   // Name, Section and Subject are the sort keys for the table (Section → Subject → Name),
   // so re-render after editing any of them to reflect the teacher's new position. Other
@@ -7570,6 +7578,7 @@ function toggleTeacherClassSelection(id, checkboxEl){
   const selected = panel ? Array.from(panel.querySelectorAll('input[type="checkbox"]:checked')).map(cb=>cb.value) : [];
   t.classes = selected.join(', ');
   saveState();
+  scheduleGithubPush(); // see addTeacherManual note
 
   const dd = document.getElementById('tcDD_'+id);
   const toggleBtn = dd ? dd.querySelector('.teacher-classes-toggle') : null;
@@ -7601,6 +7610,7 @@ function deleteSelectedTeachers(){
   ids.forEach(id=>{ if(!deletedTeacherIds.includes(id)) deletedTeacherIds.push(id); });
   renderTeachersDatabase();
   saveState();
+  scheduleGithubPush(); // push the deletion tombstones immediately (see addTeacherManual note)
   logActivity('delete', `Permanently deleted ${ids.length} teacher(s) from the Teachers Database`);
 }
 
@@ -7640,6 +7650,7 @@ function syncTeachersFromUserAccounts(){
   });
 
   saveState();
+  scheduleGithubPush(); // see addTeacherManual note
   renderTeachersDatabase();
   logActivity('edit', `Synced Teachers Database from Teacher/HOD accounts (${added} added, ${updated} refreshed)`);
   alert(`Sync complete: ${added} new row(s) added, ${updated} existing row(s) refreshed from Manage Users.`);
@@ -7869,6 +7880,12 @@ function importTeachersExcel(file){
 
       renderTeachersDatabase();
       saveState();
+      // Push immediately instead of only marking "unsaved". Excel-imported teachers used to
+      // sit only in localStorage until the separate Grade Book Save button was pressed; if a
+      // remote Firestore snapshot arrived first (another device, a live-sync tick, or simply
+      // reloading the page) the older server copy — which never had these rows — would
+      // silently replace them, making a successful import look like it got "deleted".
+      scheduleGithubPush();
       document.getElementById('importTitle').textContent = 'Bulk Import Result';
       let msg = `${added} teacher(s) added successfully.`;
       if(skippedDuplicates) msg += ` ${skippedDuplicates} duplicate row(s) skipped.`;
@@ -12685,6 +12702,11 @@ function saveUserFromForm(){
       teacher.classes = classrooms.length ? classrooms.join(', ') : (teacher.classes || '');
     } else if(previousRole === 'teacher' || previousRole === 'hod'){
       // Role changed away from Teacher/HOD: drop the linked Teachers Database row.
+      // Also tombstone its id in deletedTeacherIds — otherwise the Firestore merge (which
+      // only ever adds/updates by id, never removes) will pull the row right back in from
+      // an older server copy the next time this device pushes or receives a snapshot.
+      const droppedIds = teachers.filter(t => t.username===editing || t.username===username).map(t=>t.id);
+      droppedIds.forEach(id=>{ if(!deletedTeacherIds.includes(id)) deletedTeacherIds.push(id); });
       teachers = teachers.filter(t => !(t.username===editing || t.username===username));
     }
     
@@ -12747,6 +12769,10 @@ function deleteUserRow(username){
   // first, falling back to name-matching for legacy rows created before linking existed)
   if(user && (user.role === 'teacher' || user.role === 'hod')){
     const displayName = user.displayName || username;
+    // Tombstone the linked row's id (same reasoning as saveUserFromForm above) so the
+    // Firestore merge can't silently resurrect it from an older server copy.
+    const droppedIds = teachers.filter(t => t.username ? t.username === username : (t.name === displayName || t.name === username)).map(t=>t.id);
+    droppedIds.forEach(id=>{ if(!deletedTeacherIds.includes(id)) deletedTeacherIds.push(id); });
     teachers = teachers.filter(t => t.username ? t.username !== username : (t.name !== displayName && t.name !== username));
   }
   
