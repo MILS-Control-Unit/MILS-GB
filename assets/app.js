@@ -7507,6 +7507,11 @@ function updateTeacherField(id, field, value){
   if(!t) return;
   t[field] = value;
   saveState();
+
+  // Name, Section and Subject are the sort keys for the table (Section → Subject → Name),
+  // so re-render after editing any of them to reflect the teacher's new position. Other
+  // fields (e.g. classes, which has its own dedicated update path) don't affect sort order.
+  if(field==='name' || field==='section' || field==='subject') renderTeachersDatabase();
 }
 
 // Small "📚 3/A, 4/B" (or "No classes assigned yet") line shown under a teacher's name in
@@ -7657,13 +7662,26 @@ function renderTeachersDatabase(){
     return true;
   });
 
+  // Display order: Section (English Section → French Section → Both), then Subject A-Z,
+  // then Teacher Name A-Z within that subject. This is a display-only sort — it does not
+  // change the underlying `teachers` array order (used by import/export/merge).
+  const TEACHER_SECTION_SORT_ORDER = { 'English': 0, 'French': 1, 'Both': 2 };
+  list = list.slice().sort((a, b) => {
+    const sa = TEACHER_SECTION_SORT_ORDER.hasOwnProperty(a.section) ? TEACHER_SECTION_SORT_ORDER[a.section] : 99;
+    const sb = TEACHER_SECTION_SORT_ORDER.hasOwnProperty(b.section) ? TEACHER_SECTION_SORT_ORDER[b.section] : 99;
+    if (sa !== sb) return sa - sb;
+    const subjCmp = (a.subject || '').trim().localeCompare((b.subject || '').trim(), undefined, { sensitivity: 'base' });
+    if (subjCmp !== 0) return subjCmp;
+    return (a.name || '').trim().localeCompare((b.name || '').trim(), undefined, { sensitivity: 'base' });
+  });
+
   document.getElementById('teachersCount').textContent = `${list.length} teachers`;
   const holder = document.getElementById('teachersTableHolder');
 
-  // Manual reordering (▲▼) only makes unambiguous sense when the list isn't narrowed
-  // by a search/filter, since the buttons move a teacher's position within the full
-  // underlying database. While a filter/search is active we disable the arrows.
-  const reorderEnabled = !search && !fSection && !fSubject && !fClass;
+  // Manual reordering (▲▼) is disabled: the list is now always auto-sorted by
+  // Section → Subject → Name, so a manual position within the underlying array
+  // would no longer be reflected visually.
+  const reorderEnabled = false;
 
   if(list.length===0){
     holder.innerHTML = `
@@ -7684,7 +7702,7 @@ function renderTeachersDatabase(){
            <button class="order-btn" ${atTop?'disabled':''} onclick="moveTeacherInDb('${t.id}',-1)" title="Move up">▲</button>
            <button class="order-btn" ${atBottom?'disabled':''} onclick="moveTeacherInDb('${t.id}',1)" title="Move down">▼</button>
          </div>`
-      : `<span class="foot-note" title="Clear search &amp; filters to reorder">—</span>`;
+      : `<span class="foot-note" title="Sorted automatically by Section, Subject, then Name">—</span>`;
     const teacherClassList = (t.classes||'').split(',').map(c=>c.trim()).filter(Boolean);
     const classesOptionsHtml = uniqueClasses.length
       ? uniqueClasses.map(c=>`
