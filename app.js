@@ -12870,6 +12870,8 @@ function bulkDeleteUsernames(usernames){
     if(currentUser.role==='hod' && user && (user.role==='admin' || user.role==='hod' || !hodSectionMatches(user.section))){ skipped++; return; }
     if(user && (user.role==='teacher' || user.role==='hod')){
       const displayName = user.displayName || username;
+      const droppedIds = teachers.filter(t=> t.username ? t.username===username : (t.name===displayName || t.name===username)).map(t=>t.id);
+      droppedIds.forEach(id=>{ if(!deletedTeacherIds.includes(id)) deletedTeacherIds.push(id); });
       teachers = teachers.filter(t=> t.username ? t.username!==username : (t.name!==displayName && t.name!==username));
     }
     users = users.filter(u=> u.username!==username);
@@ -13224,14 +13226,21 @@ function applyRemotePayload(payload){
   // already knows about, then use that to keep any resurrected-by-merge rows out of the
   // final teachers list, however teachers ends up being set below.
   deletedTeacherIds = Array.from(new Set([...(payload.deletedTeacherIds||[]), ...deletedTeacherIds]));
+  // teachers is ALWAYS merged (never hard-replaced), regardless of gbUnsavedChanges. A pure
+  // replace here was the remaining path that could make a just-imported/just-added teacher
+  // vanish: if this device's own push hadn't fully round-tripped yet, or a same-document
+  // snapshot arrived from a source (this tab's own listener re-attaching, a delayed/duplicate
+  // event, etc.) carrying a copy of teachers older than what's in memory, a hard replace would
+  // silently drop the new rows. Merging is safe even when there's nothing pending locally —
+  // it's a superset by id, and deletedTeacherIds still prunes anything genuinely deleted.
+  teachers = mergeArrayById(payload.teachers, teachers, 'id');
+  teacherIdCounter = Math.max(payload.teacherIdCounter || 1, teacherIdCounter || 1);
   if(gbUnsavedChanges){
     students = mergeObjectField(payload.students, students);
     scores = mergeObjectField(payload.scores, scores);
     attendance = mergeObjectField(payload.attendance, attendance);
     approvedLeave = mergeObjectField(payload.approvedLeave, approvedLeave);
-    teachers = mergeArrayById(payload.teachers, teachers, 'id');
     studentIdCounter = Math.max(payload.studentIdCounter || 1, studentIdCounter || 1);
-    teacherIdCounter = Math.max(payload.teacherIdCounter || 1, teacherIdCounter || 1);
     grade3FlexibleMaximaBySubject = mergeObjectField(payload.grade3FlexibleMaxima, grade3FlexibleMaximaBySubject);
   }else{
     students = payload.students || {};
@@ -13239,8 +13248,6 @@ function applyRemotePayload(payload){
     studentIdCounter = payload.studentIdCounter || 1;
     attendance = payload.attendance || {};
     approvedLeave = payload.approvedLeave || {};
-    teachers = payload.teachers || [];
-    teacherIdCounter = payload.teacherIdCounter || 1;
     grade3FlexibleMaximaBySubject = payload.grade3FlexibleMaxima || grade3FlexibleMaximaBySubject || {};
   }
   teachers = teachers.filter(t=> !deletedTeacherIds.includes(t.id));
