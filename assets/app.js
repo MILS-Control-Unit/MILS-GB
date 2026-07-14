@@ -6517,6 +6517,10 @@ async function pushMergedToFirestore(){
       const mergedDeletedTeacherIds = Array.from(new Set([...(remote.deletedTeacherIds||[]), ...deletedTeacherIds]));
       const mergedTeachers = mergeArrayById(remote.teachers, teachers, 'id')
         .filter(t=> !mergedDeletedTeacherIds.includes(t.id));
+      // Union of every username either device has deleted, same reasoning as teachers above.
+      const mergedDeletedUsernames = Array.from(new Set([...(remote.deletedUsernames||[]), ...deletedUsernames]));
+      const mergedUsers = mergeArrayById(remote.users, users, 'username')
+        .filter(u=> !mergedDeletedUsernames.includes(u.username));
       const merged = {
         students: mergeObjectField(remote.students, students),
         scores: mergeObjectField(remote.scores, scores),
@@ -6526,7 +6530,8 @@ async function pushMergedToFirestore(){
         teachers: mergedTeachers,
         deletedTeacherIds: mergedDeletedTeacherIds,
         teacherIdCounter: Math.max(remote.teacherIdCounter||1, teacherIdCounter||1),
-        users: mergeArrayById(remote.users, users, 'username'),
+        users: mergedUsers,
+        deletedUsernames: mergedDeletedUsernames,
         activityLog: mergeActivityLogEntries(remote.activityLog, activityLog),
         termMonthDates: termMonthDates || remote.termMonthDates || null,
         examSchedules: examSchedules || remote.examSchedules || null,
@@ -8138,6 +8143,12 @@ const SESSION_LS_KEY = 'gradesSystemSession_v1';
 const REMEMBER_LS_KEY = 'gradesSystemRememberedUser_v1';
 let users = [];
 let currentUser = null;
+// Usernames deleted locally, mirroring deletedTeacherIds above for the exact same reason:
+// the Firestore sync merges `users` by union-of-both-sides (mergeArrayById keyed by
+// username), so without recording deletions explicitly, a deleted account reappears the
+// next time this device (or another) syncs, because the server's copy from before the
+// deletion still has that row.
+let deletedUsernames = [];
 
 /* ================== ACTIVITY & LOGIN LOG ==================
    Records who signed in/out and who changed what, with a timestamp.
@@ -11481,7 +11492,15 @@ const ALL_SUBJECTS = [...new Set(Object.values(STAGES).flatMap(s=>s.subjects))].
 function loadUsers(){
   try{
     const raw = localStorage.getItem(USERS_LS_KEY);
-    if(raw) users = JSON.parse(raw);
+    if(raw){
+      const parsed = JSON.parse(raw);
+      if(Array.isArray(parsed)){
+        users = parsed; // legacy format from before deletion-tombstones existed
+      }else if(parsed && typeof parsed==='object'){
+        users = parsed.users || [];
+        deletedUsernames = parsed.deletedUsernames || [];
+      }
+    }
   }catch(err){ console.warn('Could not load users', err); }
   // migrate old "viewer" role (renamed to "parent")
   let migrated = false;
@@ -11512,7 +11531,7 @@ function saveUsers(){
   scheduleGithubPush();
 }
 function saveUsersLocalOnly(){
-  try{ localStorage.setItem(USERS_LS_KEY, JSON.stringify(users)); }
+  try{ localStorage.setItem(USERS_LS_KEY, JSON.stringify({ users, deletedUsernames })); }
   catch(err){ console.warn('Could not save users', err); }
 }
 function findUser(username){
@@ -12715,6 +12734,7 @@ function deleteUserRow(username){
   }
   
   users = users.filter(u=> u.username !== username);
+  if(!deletedUsernames.includes(username)) deletedUsernames.push(username);
   saveUsers();
   saveState(); // Save teachers as well
   renderUsersTable();
@@ -12810,6 +12830,7 @@ function bulkDeleteUsernames(usernames){
       teachers = teachers.filter(t=> t.username ? t.username!==username : (t.name!==displayName && t.name!==username));
     }
     users = users.filter(u=> u.username!==username);
+    if(!deletedUsernames.includes(username)) deletedUsernames.push(username);
     deleted++;
   });
   saveUsers();
@@ -13154,7 +13175,11 @@ function applyRemotePayload(payload){
   teachers = teachers.filter(t=> !deletedTeacherIds.includes(t.id));
   try{ localStorage.setItem(GRADE3_MAXIMA_LS_KEY, JSON.stringify(grade3FlexibleMaximaBySubject)); }catch(err){}
   knownDataVersion = Math.max(knownDataVersion, payload.dataVersion || 0);
-  if(Array.isArray(payload.users) && payload.users.length){ users = payload.users; saveUsersLocalOnly(); }
+  if(Array.isArray(payload.users) && payload.users.length){
+    deletedUsernames = Array.from(new Set([...(payload.deletedUsernames||[]), ...deletedUsernames]));
+    users = payload.users.filter(u=> !deletedUsernames.includes(u.username));
+    saveUsersLocalOnly();
+  }
   if(Array.isArray(payload.activityLog) && payload.activityLog.length){
     const map = {};
     activityLog.forEach(e=> map[e.id]=e);
