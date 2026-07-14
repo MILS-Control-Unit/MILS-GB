@@ -6566,15 +6566,42 @@ async function pushMergedToFirestore(){
   }
 }
 
+// pushMergedToFirestore() already retries internally (the Firestore SDK backs off and
+// retries a transaction a handful of times on its own when it detects contention on the
+// document), but under sustained concurrent load on this single shared document those
+// internal retries can still be exhausted, surfacing as a `failed-precondition` error and
+// leaving whatever was just added/imported stranded in memory only — never reaching the
+// server. Wrap it in a few more attempts with a growing delay so a temporary traffic spike
+// doesn't turn into permanent, invisible data loss the way it did before.
+async function pushMergedToFirestoreWithRetry(maxAttempts){
+  maxAttempts = maxAttempts || 4;
+  for(let attempt=1; attempt<=maxAttempts; attempt++){
+    const ok = await pushMergedToFirestore();
+    if(ok) return true;
+    if(attempt<maxAttempts){
+      const delayMs = 1000 * attempt; // 1s, 2s, 3s...
+      await new Promise(res=> setTimeout(res, delayMs));
+    }
+  }
+  return false;
+}
+
 // Pushes the full shared dataset to Firestore, merged with whatever the
 // server currently holds (see pushMergedToFirestore above) — but bypasses
 // the "auto-sync enabled" toggle, since this manual button IS the sync
 // mechanism for the Grade Book now, not an extra pathway running alongside
 // the old automatic one.
 async function pushGradeBookToFirestore(){
-  const ok = await pushMergedToFirestore();
+  const ok = await pushMergedToFirestoreWithRetry();
   if(currentUser && currentUser.role==='admin') setSyncStatus(ok ? 'synced' : 'error');
-  if(!ok) console.warn('Grade Book manual save failed');
+  if(!ok){
+    console.warn('Grade Book manual save failed after retries');
+    // A silent/easy-to-miss toast previously let people believe their Excel import or
+    // manual edits had saved when they hadn't — the very next sync/reload from Firestore
+    // would then overwrite the local, never-actually-saved data, looking like deletion.
+    // A blocking alert on final failure makes sure that can't happen unnoticed.
+    alert('⚠️ لم يتم حفظ التعديلات على Firestore بعد عدة محاولات (ازدحام مؤقت على قاعدة البيانات). تعديلاتك ما زالت موجودة في هذا المتصفح فقط — الرجاء الانتظار قليلاً ثم الضغط على زر "💾 Save" مرة أخرى قبل إغلاق الصفحة أو إعادة تحميلها.');
+  }
   return ok;
 }
 
@@ -13394,7 +13421,7 @@ function stopFirebaseLiveSync(){
 async function pushToGithub(){
   if(!githubReady()) return false;
   setSyncStatus('syncing');
-  const ok = await pushMergedToFirestore();
+  const ok = await pushMergedToFirestoreWithRetry();
   setSyncStatus(ok ? 'synced' : 'error');
   return ok;
 }
