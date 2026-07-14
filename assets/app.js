@@ -11552,14 +11552,21 @@ function computeTeacherGradeScope(user){
   const stages = new Set();
   const grades = new Set();
   if(!user || !Array.isArray(user.classrooms) || !user.classrooms.length) return { stages:[], grades:[] };
-  const classroomSet = new Set(user.classrooms);
+  // Classroom values assigned to a Teacher (via Manage Users) always come from
+  // getAllClassroomsInDb(), which trims each student's classroom value before offering it
+  // as a checkbox option. Comparing against the RAW (untrimmed) s.classroom below used to
+  // silently fail — and drop that classroom out of the Teacher's scope entirely — for any
+  // student row whose classroom value has stray leading/trailing whitespace, which is a
+  // common side effect of manual entry or Excel import. Trim on both sides so the match is
+  // whitespace-insensitive.
+  const classroomSet = new Set((user.classrooms||[]).map(c=>(c||'').trim()));
   const section = user.section || null;
   Object.keys(students).forEach(classKey=>{
     const parts = classKey.split('|');
     const sec = parts[0], stage = parts[1], grade = parts[2];
     if(section && sec!==section) return;
     const roster = students[classKey] || [];
-    if(roster.some(s=> classroomSet.has(s.classroom))){
+    if(roster.some(s=> classroomSet.has((s.classroom||'').trim()))){
       stages.add(stage);
       grades.add(grade);
     }
@@ -11573,13 +11580,17 @@ function computeTeacherGradeScope(user){
 // needs to show — no Stage/Grade pick required first.
 function getTeacherClassroomsInSection(section){
   if(!currentUser || currentUser.role!=='teacher' || !Array.isArray(currentUser.classrooms) || !section) return [];
-  const classroomSet = new Set(currentUser.classrooms);
+  // Same whitespace-insensitive matching as computeTeacherGradeScope() above — the
+  // Teacher's assigned classroom names are trimmed, so raw student.classroom values with
+  // stray spaces must be trimmed too or they'll never match and the class silently
+  // disappears from the Teacher's own class list.
+  const classroomSet = new Set(currentUser.classrooms.map(c=>(c||'').trim()));
   const names = new Set();
   Object.keys(students).forEach(classKey=>{
     const parts = classKey.split('|');
     if(parts[0]!==section) return;
     const roster = students[classKey] || [];
-    roster.forEach(s=>{ if(s.classroom && classroomSet.has(s.classroom)) names.add(s.classroom); });
+    roster.forEach(s=>{ const c=(s.classroom||'').trim(); if(c && classroomSet.has(c)) names.add(s.classroom); });
   });
   return [...names].sort();
 }
@@ -11674,7 +11685,7 @@ function scopeSubjectAllowed(name){
 function scopeClassroomAllowed(name){
   if(!currentUser || !currentUser.effective) return true;
   const sc = currentUser.effective.classroomScope;
-  return !sc || sc.includes(name);
+  return !sc || sc.map(c=>(c||'').trim()).includes((name||'').trim());
 }
 function scopeStudentAllowed(id){
   if(!currentUser || !currentUser.effective) return true;
@@ -12690,6 +12701,12 @@ function saveUserFromForm(){
     logActivity('edit', `Updated user account "${username}" (${ROLE_LABELS[role]||role})${(role==='teacher'||role==='hod') ? ' + updated Teachers Database' : ''}`);
   } else {
     if(findUser(username)){ alert('This username already exists.'); return; }
+    // If this exact username was deleted before, its tombstone is still sitting in
+    // deletedUsernames — every Firestore push/pull filters users against that list, so
+    // without this the newly (re-)created account would get silently stripped back out
+    // the moment saveUsers()'s debounced push (or the live sync listener) round-trips it,
+    // making it look like the brand-new user was "auto-deleted right after saving".
+    deletedUsernames = deletedUsernames.filter(u=> u!==username);
     users.push(userObj);
     
     // Auto-import Teacher/HOD accounts to Teachers Database, filling Section & Subject from
@@ -13034,6 +13051,9 @@ function importUsersExcel(file){
             problems.push(`${username}: Head of Department has no "Subjects" value in this row — added with Subject left blank, please fill it in manually`);
           }
         }
+        // Clear any leftover deletion-tombstone for this username — see the matching
+        // comment in saveUserFromForm() above for why this is required.
+        deletedUsernames = deletedUsernames.filter(u=> u!==username);
         users.push(userObj);
         added++;
 
@@ -13202,7 +13222,16 @@ function applyRemotePayload(payload){
   knownDataVersion = Math.max(knownDataVersion, payload.dataVersion || 0);
   if(Array.isArray(payload.users) && payload.users.length){
     deletedUsernames = Array.from(new Set([...(payload.deletedUsernames||[]), ...deletedUsernames]));
-    users = payload.users.filter(u=> !deletedUsernames.includes(u.username));
+    // This used to hard-replace `users` with whatever the incoming snapshot contained. If an
+    // admin had just added/edited a user (e.g. a Teacher) and that edit hadn't reached
+    // Firestore yet (saveUsers()'s push is debounced by ~2.5s — see scheduleGithubPush()),
+    // any snapshot that arrived in that window — from another device, or a delayed echo of
+    // an older write — would silently overwrite the brand-new local edit and then persist
+    // that older list back to localStorage, making the user (often a just-added/edited
+    // Teacher account) appear to have been "deleted" right after saving. Merge with the
+    // current in-memory `users` instead, the same way `teachers` is merged above, so a local
+    // edit that hasn't round-tripped to Firestore yet always survives.
+    users = mergeArrayById(payload.users, users, 'username').filter(u=> !deletedUsernames.includes(u.username));
     saveUsersLocalOnly();
   }
   if(Array.isArray(payload.activityLog) && payload.activityLog.length){
