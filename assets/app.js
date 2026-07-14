@@ -8089,7 +8089,7 @@ function visibleActivityLog(){
   // Head of Department: only see their own entries plus Teacher/Parent accounts within their own section.
   if(currentUser && currentUser.role==='hod'){
     const sectionUsernames = new Set(
-      users.filter(u=> (u.role==='teacher'||u.role==='parent') && u.section===currentUser.section).map(u=>u.username)
+      users.filter(u=> (u.role==='teacher'||u.role==='parent') && hodSectionMatches(u.section)).map(u=>u.username)
     );
     sectionUsernames.add(currentUser.username);
     return activityLog.filter(e=> sectionUsernames.has(e.username));
@@ -12231,13 +12231,27 @@ function applyPermissionsUI(){
 }
 
 /* ---------- Manage Users Modal ---------- */
+// Populates the "Section" dropdown in Manage Users with English / French / Both, so Teacher,
+// HOD, and HOS accounts can be given access to a single Section or both at once. Selecting
+// "Both" stores an empty section value on the user, which getEffectivePermissions() already
+// treats as an unrestricted sectionScope (same null-check used for Admin) — so no separate
+// scoping logic is needed for the "Both" case.
+function populateUfSectionOptions(){
+  const sel = document.getElementById('ufSection');
+  if(!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = `<option value="en">${SECTIONS.en.label}</option><option value="fr">${SECTIONS.fr.label}</option><option value="">Both (English &amp; French)</option>`;
+  sel.value = prev;
+}
 function openUsersModal(){
   if(!currentUser || !currentUser.effective || !currentUser.effective.settings){ alert('You do not have permission to manage users.'); return; }
+  populateUfSectionOptions();
   resetUserForm();
   buildSubjectCheckboxes();
   const isHod = currentUser.role==='hod';
+  const hodSectionLabel = currentUser.section ? SECTIONS[currentUser.section].label : 'English & French';
   document.getElementById('usersModalSub').textContent = isHod
-    ? `You can manage Teacher and Parent/Student accounts within your own section (${SECTIONS[currentUser.section].label}).`
+    ? `You can manage Teacher and Parent/Student accounts within your own section (${hodSectionLabel}).`
     : 'Add users and control their access to each tab based on their role.';
   const roleSelect = document.getElementById('ufRole');
   document.getElementById('usersExcelRow').style.display = isHod ? 'none' : '';
@@ -12458,10 +12472,18 @@ function resetUserForm(){
   document.getElementById('ufSubmitBtn').textContent = '＋ Add User';
   document.getElementById('ufCancelBtn').style.display = 'none';
 }
+// True if `userSection` falls within the current HOD's own section scope. A HOD normally has a
+// single fixed section, but one assigned "Both" (empty section value) can manage/view users in
+// either section — so an empty currentUser.section always matches. Non-HOD callers always pass.
+function hodSectionMatches(userSection){
+  if(!currentUser || currentUser.role!=='hod') return true;
+  if(!currentUser.section) return true;
+  return userSection===currentUser.section;
+}
 function editUser(username){
   const user = findUser(username);
   if(!user) return;
-  if(currentUser.role==='hod' && (user.role==='admin' || user.role==='hod' || user.role==='hos' || user.section!==currentUser.section)){
+  if(currentUser.role==='hod' && (user.role==='admin' || user.role==='hod' || user.role==='hos' || !hodSectionMatches(user.section))){
     alert('You can only edit Teacher and Parent/Student accounts within your own section.'); return;
   }
   document.getElementById('editingUsername').value = user.username;
@@ -12470,7 +12492,7 @@ function editUser(username){
   document.getElementById('ufDisplayName').value = user.displayName || '';
   document.getElementById('ufPassword').value = user.password || '';
   document.getElementById('ufRole').value = user.role;
-  document.getElementById('ufSection').value = user.section || 'en';
+  document.getElementById('ufSection').value = user.section !== undefined ? user.section : 'en';
   buildClassroomOptions(user.classrooms||[]);
   buildSubjectCheckboxes(user.subjects||[]);
   setUfSelectedStages(user.stages||[]);
@@ -12577,7 +12599,7 @@ function deleteUserRow(username){
   if(username === 'admin'){ alert('The default administrator account cannot be deleted.'); return; }
   if(currentUser && currentUser.username === username){ alert('You cannot delete the account you are currently logged in with.'); return; }
   const user = findUser(username);
-  if(currentUser.role==='hod' && user && (user.role==='admin' || user.role==='hod' || user.section!==currentUser.section)){
+  if(currentUser.role==='hod' && user && (user.role==='admin' || user.role==='hod' || !hodSectionMatches(user.section))){
     alert('You can only delete Teacher and Parent/Student accounts within your own section.'); return;
   }
   if(!confirm(`Delete user "${username}"?`)) return;
@@ -12608,7 +12630,7 @@ function usersMatchingCurrentFilter(){
   const roleFilter = filterEl ? filterEl.value : 'all';
   let list = users;
   if(currentUser && currentUser.role==='hod'){
-    list = users.filter(u=> (u.role==='teacher' || u.role==='parent') && u.section===currentUser.section);
+    list = users.filter(u=> (u.role==='teacher' || u.role==='parent') && hodSectionMatches(u.section));
   }
   if(roleFilter!=='all') list = list.filter(u=> u.role===roleFilter);
   return list;
@@ -12617,7 +12639,8 @@ function renderUsersTable(){
   const body = document.getElementById('usersTableBody');
   const list = usersMatchingCurrentFilter();
   body.innerHTML = list.map(u=>{
-    const sectionLabel = u.section ? SECTIONS[u.section].label : '—';
+    const needsSectionCol = u.role==='teacher' || u.role==='hod' || u.role==='hos';
+    const sectionLabel = u.section ? SECTIONS[u.section].label : (needsSectionCol ? 'Both' : '—');
     const scopeInfo = u.role==='parent'
       ? `${Array.isArray(u.studentIds) ? u.studentIds.length : 0} linked student(s)`
       : (u.role==='teacher'
@@ -12678,7 +12701,7 @@ function bulkDeleteUsernames(usernames){
   usernames.forEach(username=>{
     if(username==='admin' || (currentUser && currentUser.username===username)){ skipped++; return; }
     const user = findUser(username);
-    if(currentUser.role==='hod' && user && (user.role==='admin' || user.role==='hod' || user.section!==currentUser.section)){ skipped++; return; }
+    if(currentUser.role==='hod' && user && (user.role==='admin' || user.role==='hod' || !hodSectionMatches(user.section))){ skipped++; return; }
     if(user && (user.role==='teacher' || user.role==='hod')){
       const displayName = user.displayName || username;
       teachers = teachers.filter(t=> t.username ? t.username!==username : (t.name!==displayName && t.name!==username));
