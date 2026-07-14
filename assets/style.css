@@ -293,6 +293,20 @@ body.dark-mode .masthead-text h1{
 }
 @media (max-width:700px){ .birthday-toast{ left:14px; right:14px; max-width:none; top:14px; } }
 
+/* On narrow phone screens these three header dropdowns (Active Visitors, Birthdays Today,
+   Notifications) used to keep their desktop min-width:210-260px / max-width:340px anchored to
+   `right:0` on their small trigger button. That's wide enough to overflow the viewport on a
+   ~360-400px phone and, since they're position:absolute with no dimming backdrop, they float
+   directly over the sticky nav/stepper and page content below — which is what reads as
+   overlapping/jumbled widgets. Pin them to the viewport edges instead, matching the same fix
+   already used for .birthday-toast above, so they can never be wider than the screen. */
+@media (max-width:640px){
+  .visitors-dropdown, .birthday-dropdown, .notif-dropdown{
+    position:fixed; left:14px; right:14px; top:64px; margin-top:0;
+    width:auto; min-width:0; max-width:none;
+  }
+}
+
 /* ---------- Birthday marker next to a student's name in tables/lists ---------- */
 .birthday-name-flag{
   display:inline-block;margin-inline-start:5px;font-size:13px;
