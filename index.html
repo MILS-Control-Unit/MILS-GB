@@ -1708,6 +1708,22 @@
 <script src="assets/app.js"></script>
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
 <script>
+// .main-nav can wrap to 2-3 rows on narrow/mobile screens, so its real height
+// isn't the fixed value the CSS used to assume. This measures it live and
+// exposes it as --nav-h, so the sticky breadcrumb bar (.stepper) below it
+// always sits right under it instead of overlapping/hiding it or the content.
+function updateNavHeight(){
+  const nav = document.querySelector('.main-nav');
+  if(nav){
+    document.documentElement.style.setProperty('--nav-h', nav.offsetHeight + 'px');
+  }
+}
+window.addEventListener('load', updateNavHeight);
+window.addEventListener('resize', updateNavHeight);
+window.addEventListener('orientationchange', updateNavHeight);
+// Nav content can change after login/render, so re-measure shortly after too.
+setTimeout(updateNavHeight, 300);
+
 // Register the service worker so the browser considers this app installable
 // (required for "Add to Home Screen" / the install prompt). Registration
 // failing (e.g. running from file:// instead of http/https) doesn't break
