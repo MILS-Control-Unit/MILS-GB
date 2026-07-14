@@ -12859,7 +12859,7 @@ function downloadUserTemplate(){
     { "Username":"fatima.hos", "Display Name":"Fatima Deputy", "Password":"12345", "Role":"HOS/Deputy",
       "Section":"French Section", "Subjects":"", "Classes":"" },
     { "Username":"ahmed.hod", "Display Name":"Ahmed Samir", "Password":"12345", "Role":"Head of Department",
-      "Section":"French Section", "Subjects":"", "Classes":"" },
+      "Section":"French Section", "Subjects":"Mathematics", "Classes":"" },
     { "Username":"sara.parent", "Display Name":"Sara's Parent", "Password":"12345", "Role":"Parent / Student",
       "Section":"English Section", "Subjects":"", "Classes":"" },
     { "Username":"", "Display Name":"", "Password":"", "Role":"", "Section":"", "Subjects":"", "Classes":"" }
@@ -12870,8 +12870,8 @@ function downloadUserTemplate(){
     { "Field":"Password", "Allowed Values":"Any text — the user can change it later" },
     { "Field":"Role", "Allowed Values":"Admin / HOS/Deputy / Teacher / Head of Department / Parent / Student" },
     { "Field":"Section", "Allowed Values":"English Section / French Section — required for Teacher, HOS/Deputy, Head of Department and Parent/Student (leave blank for Admin)" },
-    { "Field":"Subjects", "Allowed Values":"Semicolon-separated subject names — only for Teacher/Parent/Student. Available: " + ALL_SUBJECTS.join(', ') },
-    { "Field":"Classes", "Allowed Values":"Semicolon-separated class values (must match the 'Class' step used in Grade Book, e.g. 3/A) — only for Teacher/Parent/Student" }
+    { "Field":"Subjects", "Allowed Values":"Semicolon-separated subject names — required for Teacher and Head of Department (a Head of Department normally has just one), optional for Parent/Student. Available: " + ALL_SUBJECTS.join(', ') },
+    { "Field":"Classes", "Allowed Values":"Semicolon-separated class values (must match the 'Class' step used in Grade Book, e.g. 3/A) — only for Teacher/Parent/Student, leave blank for Head of Department" }
   ];
   const wsGuide = XLSX.utils.json_to_sheet(guide);
   const wb = XLSX.utils.book_new();
@@ -12986,14 +12986,30 @@ function importUsersExcel(file){
       let added = 0;
       const problems = [];
 
+      // Column headers can vary slightly (extra spaces, different case, "Subject" instead
+      // of "Subjects", etc.) — look them up case-insensitively instead of requiring an exact
+      // match, the same way importTeachersExcel already does.
+      function getField(row, candidates){
+        const normalizedMap = {};
+        Object.keys(row).forEach(k=>{ normalizedMap[k.trim().toLowerCase()] = row[k]; });
+        for(const c of candidates){
+          const v = normalizedMap[c.toLowerCase()];
+          if(v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+        }
+        return '';
+      }
+      // Accept both ";" and "," as the separator between multiple subjects/classes, since
+      // the template uses ";" but a hand-edited sheet commonly uses ",".
+      const splitMulti = (raw) => raw ? raw.split(/[;,]/).map(s=>s.trim()).filter(Boolean) : [];
+
       rows.forEach((row, idx)=>{
-        const username = (row['Username']||'').toString().trim();
-        const displayName = (row['Display Name']||row['DisplayName']||'').toString().trim();
-        const password = (row['Password']||'').toString().trim();
-        const roleLabel = (row['Role']||'').toString().trim();
-        const sectionLabel = (row['Section']||'').toString().trim();
-        const subjectsRaw = (row['Subjects']||'').toString().trim();
-        const classesRaw = (row['Classes']||'').toString().trim();
+        const username = getField(row, ['Username']);
+        const displayName = getField(row, ['Display Name','DisplayName','Name']);
+        const password = getField(row, ['Password']);
+        const roleLabel = getField(row, ['Role']);
+        const sectionLabel = getField(row, ['Section']);
+        const subjectsRaw = getField(row, ['Subjects','Subject']);
+        const classesRaw = getField(row, ['Classes','Class']);
 
         if(!username){ return; } // skip fully blank helper rows
         if(!password){ problems.push(`${username}: missing password`); return; }
@@ -13011,25 +13027,34 @@ function importUsersExcel(file){
 
         const userObj = { username, displayName, password, role };
         if(sectionId) userObj.section = sectionId;
-        if(role==='teacher' || role==='parent'){
-          userObj.subjects = subjectsRaw ? subjectsRaw.split(';').map(s=>s.trim()).filter(Boolean) : [];
-          userObj.classrooms = classesRaw ? classesRaw.split(';').map(s=>s.trim()).filter(Boolean) : [];
+        if(role==='teacher' || role==='hod' || role==='parent'){
+          userObj.subjects = splitMulti(subjectsRaw);
+          userObj.classrooms = splitMulti(classesRaw);
+          if(role==='hod' && !userObj.subjects.length){
+            problems.push(`${username}: Head of Department has no "Subjects" value in this row — added with Subject left blank, please fill it in manually`);
+          }
         }
         users.push(userObj);
         added++;
 
-        // Auto-import teacher accounts into the Teachers Database too, filling
-        // Section & Subject from the row just imported (Classes can be added later).
-        if(role === 'teacher'){
-          teachers.push({
-            id: uid(),
-            displayId: nextTeacherDisplayId(),
-            name: displayName || username,
-            username: username,
-            section: sectionLabelFromCode(sectionId),
-            subject: userObj.subjects.join(', '),
-            classes: userObj.classrooms.join(', ')
-          });
+        // Auto-import Teacher AND Head of Department accounts into the Teachers Database
+        // too, filling Section & Subject from the row just imported (Classes can be added
+        // later) — matching what the manual "Add User" form already does for both roles.
+        // (Previously this only checked role==='teacher', so HOD accounts silently never
+        // made it into the Teachers Database on bulk import.)
+        if(role === 'teacher' || role === 'hod'){
+          const alreadyLinked = teachers.some(t=> t.username === username);
+          if(!alreadyLinked){
+            teachers.push({
+              id: uid(),
+              displayId: nextTeacherDisplayId(),
+              name: displayName || username,
+              username: username,
+              section: sectionLabelFromCode(sectionId),
+              subject: userObj.subjects.join(', '),
+              classes: userObj.classrooms.join(', ')
+            });
+          }
         }
       });
 
