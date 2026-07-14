@@ -7795,18 +7795,50 @@ function importTeachersExcel(file){
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
       let added = 0;
+      let skippedDuplicates = 0;
       const problems = [];
 
+      // Column headers can vary slightly between files (extra spaces, different case,
+      // or a different wording like "Subject Name"/"Teacher Subject"). Build a lookup of
+      // this row's keys normalized (trimmed + lowercased) so we still find the right
+      // column even if it doesn't match the template's exact header text.
+      function getField(row, candidates){
+        const normalizedMap = {};
+        Object.keys(row).forEach(k=>{ normalizedMap[k.trim().toLowerCase()] = row[k]; });
+        for(const c of candidates){
+          const v = normalizedMap[c.toLowerCase()];
+          if(v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+        }
+        return '';
+      }
+
+      // De-duplication key: same Teacher Name + same Section is treated as the same teacher.
+      // Checked both against teachers already in the database AND against rows already
+      // processed earlier in this same file, so a file containing the same teacher twice
+      // (or a file re-imported by mistake) doesn't create repeated rows.
+      const dupKey = (n, s) => `${n.trim().toLowerCase()}|${s}`;
+      const existingKeys = new Set(teachers.map(t=> dupKey(t.name||'', t.section||'')));
+
       rows.forEach((row, idx)=>{
-        const name = (row['Teachers Name']||row['Name']||row['Teacher Name']||'').toString().trim();
-        const providedId = (row['ID']||row['id']||'').toString().trim();
-        const sectionLabel = (row['Section']||'').toString().trim();
-        const subject = (row['Subject']||'').toString().trim();
-        const classes = (row['Classes']||row['Class']||'').toString().trim();
+        const name = getField(row, ['Teachers Name','Name','Teacher Name']);
+        const providedId = getField(row, ['ID','id']);
+        const sectionLabel = getField(row, ['Section']);
+        const subject = getField(row, ['Subject','Subject Name','Teacher Subject']);
+        const classes = getField(row, ['Classes','Class']);
 
         if(!name){ problems.push(`Row ${idx+2}: missing teacher name`); return; }
         const section = findTeacherSection(sectionLabel);
         if(!section){ problems.push(`${name}: unrecognized "Section" value ("${sectionLabel}") — must be English, French or Both`); return; }
+
+        const key = dupKey(name, section);
+        if(existingKeys.has(key)){
+          skippedDuplicates++;
+          problems.push(`${name} (${section}): already exists — skipped to avoid a duplicate`);
+          return;
+        }
+        existingKeys.add(key);
+
+        if(!subject){ problems.push(`${name}: no "Subject" value found in this row — added with Subject left blank, please fill it in manually`); }
 
         teachers.push({ id: uid(), displayId: providedId || nextTeacherDisplayId(), name, section, subject, classes });
         added++;
@@ -7816,8 +7848,9 @@ function importTeachersExcel(file){
       saveState();
       document.getElementById('importTitle').textContent = 'Bulk Import Result';
       let msg = `${added} teacher(s) added successfully.`;
+      if(skippedDuplicates) msg += ` ${skippedDuplicates} duplicate row(s) skipped.`;
       if(problems.length){
-        msg += `<br><br><b>${problems.length} row(s) could not be added:</b><br>` +
+        msg += `<br><br><b>${problems.length} row(s) need attention:</b><br>` +
           problems.slice(0,8).map(p=>`• ${p}`).join('<br>') +
           (problems.length>8 ? `<br>... and ${problems.length-8} more` : '');
       }
@@ -7829,6 +7862,40 @@ function importTeachersExcel(file){
   };
   reader.readAsArrayBuffer(file);
   document.getElementById('teachersExcelInput').value='';
+}
+
+// One-off cleanup utility for teacher records that already got duplicated (e.g. from an
+// earlier import that had no duplicate check). Matches duplicates by Name + Section
+// (case-insensitive), keeps one merged row per match (filling in a blank Subject and
+// merging Classes from the duplicates before deleting them), and removes the rest.
+// Not wired to a button yet — run it from the browser console: cleanupDuplicateTeachers()
+function cleanupDuplicateTeachers(){
+  if(!currentUser || currentUser.role !== 'admin'){ alert('⛔ Teachers Database is only available to Administrators.'); return; }
+  const seen = new Map(); // "name|section" -> kept teacher object
+  const toRemove = [];
+  teachers.forEach(t=>{
+    const key = `${(t.name||'').trim().toLowerCase()}|${t.section||''}`;
+    if(!key.trim() || key==='|') return; // skip blank rows, nothing to merge
+    if(!seen.has(key)){
+      seen.set(key, t);
+      return;
+    }
+    const kept = seen.get(key);
+    if(!kept.subject && t.subject) kept.subject = t.subject;
+    if(t.classes){
+      const mergedClasses = new Set((kept.classes||'').split(',').map(c=>c.trim()).filter(Boolean));
+      t.classes.split(',').map(c=>c.trim()).filter(Boolean).forEach(c=>mergedClasses.add(c));
+      kept.classes = Array.from(mergedClasses).join(', ');
+    }
+    toRemove.push(t.id);
+  });
+  if(!toRemove.length){ alert('No duplicate teachers found (matched by identical Name + Section).'); return; }
+  if(!confirm(`Found ${toRemove.length} duplicate teacher row(s) (same Name + Section). Remove them and keep one merged row per teacher? This cannot be undone.`)) return;
+  teachers = teachers.filter(t=> !toRemove.includes(t.id));
+  renderTeachersDatabase();
+  saveState();
+  if(typeof logActivity==='function') logActivity('edit', `Removed ${toRemove.length} duplicate teacher row(s)`);
+  alert(`Removed ${toRemove.length} duplicate row(s). ${teachers.length} teacher(s) remain.`);
 }
 
 function downloadTeachersTemplate(){
