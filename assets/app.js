@@ -12935,6 +12935,14 @@ function saveUserFromForm(){
   if(!username){ alert('Please enter a username.'); return; }
   if(!password){ alert('Please enter a password.'); return; }
   if(currentUser.role==='hod' && (role==='admin' || role==='hod' || role==='hos')){ alert('You can only create Teacher or Parent/Student accounts.'); return; }
+  // Surfaces the exact mistake that used to cause a Parent/Student account to silently keep
+  // showing the full manual Section/Stage/Grade/Class stepper forever: saving with no student
+  // checked in the picker above (search filter hid the intended child, a click didn't
+  // register, etc.). Previously this saved silently — now the admin gets one explicit chance
+  // to go back and check a box before an unlinked account goes live.
+  if(role==='parent' && ufSelectedStudentIds.length===0){
+    if(!confirm('No student is checked for this account — it will show the full manual Term/Section/Stage/Grade stepper instead of jumping straight to their child\'s certificate. Save anyway?')) return;
+  }
 
   const userObj = { username, displayName, password, role };
   if(role==='teacher' || role==='hod' || role==='hos') userObj.section = section;
@@ -13264,6 +13272,20 @@ function importParentLinksExcel(file){
       pending.forEach((ids, username)=>{
         const user = findUser(username);
         if(!user) return;
+        // BUG FIXED: this used to run unconditionally, so a row whose Student ID(s) all
+        // failed to resolve (typo, wrong ID, etc. — each already pushed to `problems` above)
+        // still overwrote user.studentIds with an EMPTY array. That satisfies
+        // getEffectivePermissions' `Array.isArray(user.studentIds)` check, so the account
+        // counted as "linked" — it just wasn't linked to anyone. The result: the admin saw a
+        // reassuring "N account(s) linked/updated successfully" message, but the parent kept
+        // seeing the full manual Section/Stage/Grade/Class stepper forever, with no visible
+        // error anywhere. Now: an all-IDs-failed row is skipped entirely (leaving whatever
+        // link the account already had untouched) and reported as an issue instead, so a
+        // previously-working link can never be silently wiped down to zero students by a typo.
+        if(!ids.length){
+          problems.push(`${username}: none of the given Student ID(s) could be resolved — account left unchanged`);
+          return;
+        }
         user.studentIds = ids;
         linked++;
       });
