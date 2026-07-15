@@ -4673,6 +4673,20 @@ function subjectFilteredGradeRoster(){
 /* ================== ATTENDANCE ================== */
 const ATT_DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
+// Draws the "week-end" divider line after the LAST school day of a calendar week — i.e.
+// right before the next Sunday — rather than after every 7th array entry. Since Friday/
+// Saturday (and any holiday) are already excluded from the dates list, counting a fixed
+// number of entries doesn't reliably land on a real week boundary once the range's start
+// date isn't itself a Sunday, or a Thursday gets excluded as a holiday. Looking at the
+// actual day-of-week of the NEXT date instead guarantees every visual week always begins
+// on Sunday, however the dates happen to fall.
+function attColWeekEndCls(dates, idx){
+  const next = dates[idx+1];
+  if(!next) return '';
+  const nextDay = new Date(next+'T00:00:00').getDay();
+  return nextDay===0 ? ' week-end' : '';
+}
+
 // Builds the list of school-day dates (YYYY-MM-DD) between start and end inclusive,
 // skipping Friday (5), Saturday (6), and any date present in excludedSet (holidays manually
 // added in the Absence tab's form). Returns null if the range itself is invalid.
@@ -4945,7 +4959,7 @@ function renderAbsenceTable(){
     const d = new Date(ds+'T00:00:00');
     const dd = String(d.getDate()).padStart(2,'0');
     const mm = String(d.getMonth()+1).padStart(2,'0');
-    const weekEndCls = (idx+1)%7===0 ? ' week-end' : '';
+    const weekEndCls = attColWeekEndCls(month.dates, idx);
     return `<th class="att-day-col${weekEndCls}">${ATT_DAY_NAMES[d.getDay()]}<br><small>${dd}/${mm}</small></th>`;
   }).join('');
 
@@ -4954,7 +4968,7 @@ function renderAbsenceTable(){
     const leaveRec = leaveRecords[s.id] || {};
     let total = 0;
     const cells = month.dates.map((ds,idx)=>{
-      const weekEndCls = (idx+1)%7===0 ? ' week-end' : '';
+      const weekEndCls = attColWeekEndCls(month.dates, idx);
       // A date recorded on the Approved Leave sub-tab is CLOSED here: shown as a locked "L"
       // cell instead of a checkbox, and not counted in the Total column below.
       if(leaveRec[ds]){
@@ -5038,7 +5052,7 @@ function renderApprovedLeaveTable(){
     const d = new Date(ds+'T00:00:00');
     const dd = String(d.getDate()).padStart(2,'0');
     const mm = String(d.getMonth()+1).padStart(2,'0');
-    const weekEndCls = (idx+1)%7===0 ? ' week-end' : '';
+    const weekEndCls = attColWeekEndCls(month.dates, idx);
     return `<th class="att-day-col${weekEndCls}">${ATT_DAY_NAMES[d.getDay()]}<br><small>${dd}/${mm}</small></th>`;
   }).join('');
 
@@ -5048,7 +5062,7 @@ function renderApprovedLeaveTable(){
     const cells = month.dates.map((ds,idx)=>{
       const checked = !!rec[ds];
       if(checked) total++;
-      const weekEndCls = (idx+1)%7===0 ? ' week-end' : '';
+      const weekEndCls = attColWeekEndCls(month.dates, idx);
       return `<td class="att-day-col${weekEndCls}"><input type="checkbox" class="att-check" ${checked?'checked':''} ${canEdit?'':'disabled'}
                 onchange="flashInlineSaved(this);toggleApprovedLeave('${s.id}','${ds}',this.checked)"></td>`;
     }).join('');
