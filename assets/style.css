@@ -1055,6 +1055,18 @@ tbody tr:hover{background:var(--row-hover);}
 #dbTableHolder td.name-col{min-width:260px;}
 #dbTableHolder td.name-col{font-size:16.5px;}
 
+/* Header polish: consistent gold underline across the whole row (was previously only
+   implied by the freeze-zone divider), tighter uppercase letterforms, and rounded
+   container corners so the header reads as one cohesive band instead of a plain bar. */
+#dbTableHolder{border-radius:12px;overflow:hidden;}
+#dbTableHolder thead th{
+  font-size:12.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;
+  border-bottom:3px solid var(--gold);
+}
+#dbTableHolder thead th[dir="rtl"]{text-transform:none;letter-spacing:normal;}
+#dbTableHolder thead th:first-child{border-top-left-radius:12px;}
+#dbTableHolder thead th:last-child{border-top-right-radius:12px;}
+
 /* ---------- Teachers Database table: bigger name font + classes summary + classes multi-select ---------- */
 #teachersTableHolder td.name-col{font-size:16.5px;}
 #teachersTableHolder td.name-col input.teacher-name-input{font-size:14px;font-weight:700;border-width:1.5px;border-color:var(--border);padding:8px 10px;text-align:left;}
@@ -1099,10 +1111,12 @@ tbody tr:hover{background:var(--row-hover);}
 #dbTableHolder td:nth-child(7){position:sticky;left:890px;min-width:110px;background:var(--paper);z-index:9;border-right:1px solid var(--border);}
 #dbTableHolder thead th:nth-child(7){z-index:12;background:var(--ink);color:#fff;border-right:1px solid rgba(0,0,0,0.12);}
 /* Freeze zone now ends after the "Class" column (8th column): Religion and
-   2nd Language (9th/10th) scroll normally like the rest of the table. */
+   2nd Language (9th/10th) scroll normally like the rest of the table.
+   Divider kept subtle (thin border + soft shadow) so it reads as a separator,
+   not a stray line. */
 #dbTableHolder th:nth-child(8),
-#dbTableHolder td:nth-child(8){position:sticky;left:1000px;min-width:90px;background:var(--paper);z-index:9;border-right:2px solid var(--gold);}
-#dbTableHolder thead th:nth-child(8){z-index:12;background:var(--ink);color:#fff;border-right:2px solid var(--gold);}
+#dbTableHolder td:nth-child(8){position:sticky;left:1000px;min-width:90px;background:var(--paper);z-index:9;border-right:1.5px solid var(--gold-deep);box-shadow:2px 0 4px -2px rgba(0,0,0,0.18);}
+#dbTableHolder thead th:nth-child(8){z-index:12;background:var(--ink);color:#fff;border-right:1.5px solid var(--gold-deep);border-bottom:3px solid var(--gold);}
 #dbTableHolder th:nth-child(9),
 #dbTableHolder td:nth-child(9){min-width:90px;}
 #dbTableHolder th:nth-child(10),
