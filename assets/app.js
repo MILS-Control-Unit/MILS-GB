@@ -11591,7 +11591,7 @@ function renderNotifDropdown(){
   const upcoming = getUpcomingReportCardReleases();
   if(upcoming.length){
     const rc = upcoming[0];
-    const days = Math.max(0, Math.ceil((rc._releaseTs - Date.now()) / 86400000));
+    const days = daysUntilCalendar(rc._releaseTs);
     const dayLabel = days === 0 ? 'today' : (days === 1 ? 'in 1 day' : `in ${days} days`);
     html += `
       <div class="notif-item notif-release">
@@ -11710,6 +11710,17 @@ function sendParentBroadcast(){
 /* ---------- Report Card Release countdown bar ---------- */
 const RC_COUNTDOWN_WINDOW_DAYS = 14; // the bar visually "fills up" over this many days
 
+// Days between "today" and a target timestamp, compared by CALENDAR DATE (not raw ms/24h).
+// This is what makes "today" actually reachable — e.g. a release later tonight is 0 days
+// away, not 1, even though less than 24 raw hours remain.
+function daysUntilCalendar(targetTs){
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(targetTs);
+  const startOfTarget = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+  return Math.max(0, Math.round((startOfTarget - startOfToday) / 86400000));
+}
+
 function updateReportCardCountdownBar(){
   const bar = document.getElementById('rcCountdownBar');
   const label = document.getElementById('rcCountdownLabel');
@@ -11722,8 +11733,7 @@ function updateReportCardCountdownBar(){
     return;
   }
   const rc = upcoming[0];
-  const msLeft = rc._releaseTs - Date.now();
-  const daysLeft = Math.max(0, Math.ceil(msLeft / 86400000));
+  const daysLeft = daysUntilCalendar(rc._releaseTs);
   const dayLabel = daysLeft === 0 ? 'today' : (daysLeft === 1 ? '1 day' : `${daysLeft} days`);
 
   label.innerHTML = `📊 ${escapeHtml(reportCardReleaseLabel(rc))} releases in <b>${dayLabel}</b>`;
