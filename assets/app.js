@@ -13553,12 +13553,28 @@ function applyRemotePayload(payload){
   // in above, re-sync that scope from it and refresh the stepper so the Teacher immediately
   // sees the Classes/Subjects actually assigned to them in the database, instead of only
   // picking them up on next login.
-  if(currentUser && (currentUser.role==='teacher' || currentUser.role==='hod')){
-    syncTeacherScopeFromDb(currentUser);
+  //
+  // A Parent/Student account has the exact same staleness problem, just via `users` instead
+  // of `teachers`: currentUser.effective (specifically .studentScope) is only ever computed
+  // once, at login — see loginAs(). If that account was already open in a browser tab when
+  // an Admin links it to a student (or adds a sibling) from another device, this Firestore
+  // snapshot merges the new studentIds into `users` above, but without the block below the
+  // already-open tab kept using its original (unlinked, or missing-a-sibling) effective
+  // permissions for the rest of the session — silently showing the full generic Section/
+  // Stage/Grade/Class stepper instead of the simplified linked-parent view, with no error and
+  // no indication anything was wrong, until the parent happened to log out and back in.
+  if(currentUser && (currentUser.role==='teacher' || currentUser.role==='hod' || currentUser.role==='parent')){
+    if(currentUser.role==='teacher' || currentUser.role==='hod') syncTeacherScopeFromDb(currentUser);
     currentUser.effective = getEffectivePermissions(currentUser);
     sanitizeScopedState();
     if(typeof renderStepper==='function') renderStepper();
     if(typeof renderAttendanceStepper==='function') renderAttendanceStepper();
+    if(currentUser.role==='parent'){
+      if(typeof autoSelectDashboardChildForParent==='function') autoSelectDashboardChildForParent();
+      if(typeof renderDashboard==='function') renderDashboard();
+      if(typeof renderCertReportsStepper==='function') renderCertReportsStepper();
+      if(typeof renderCertReportsWorkspace==='function') renderCertReportsWorkspace();
+    }
   }
   saveStateLocalOnly();
   renderDatabase();
