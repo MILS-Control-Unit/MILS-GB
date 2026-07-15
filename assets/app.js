@@ -7063,6 +7063,57 @@ function restoreBackup(file){
 }
 
 /* ================== STUDENT DATABASE VIEW ================== */
+// Pagination for the Student Database table — with hundreds of students in one
+// grade, rendering every row (16 columns, several sticky) at once was heavy on
+// the browser. 50 rows per page keeps each render fast regardless of school size.
+const DB_PAGE_SIZE = 50;
+let dbCurrentPage = 1;
+let dbLastFilterSig = null; // detects a filter/search change so we can snap back to page 1
+
+// Optional/hideable Student Database columns. Deliberately limited to the columns
+// AFTER "Class" — those 8 earlier columns (checkbox, ID, Name, Arabic Name, Section,
+// Stage, Grade, Class) are the ones pinned via sticky-positioning CSS keyed to their
+// nth-child position, so leaving them always-rendered means hiding a column here never
+// touches that CSS. Persisted in localStorage so the choice survives a reload.
+const DB_COLUMN_VISIBILITY_LS_KEY = 'dbColumnVisibility_v1';
+const TOGGLABLE_DB_COLUMNS = [
+  {key:'religion',    label:'Religion'},
+  {key:'lang2',       label:'2nd Language'},
+  {key:'nationalId',  label:'National ID'},
+  {key:'gender',       label:'Gender'},
+  {key:'nationality',  label:'Nationality'},
+  {key:'dob',           label:'Date of Birth'},
+  {key:'notes',         label:'Notes'},
+];
+let dbColumnVisibility = null;
+function loadDbColumnVisibility(){
+  if(dbColumnVisibility) return dbColumnVisibility;
+  let saved = {};
+  try{ saved = JSON.parse(localStorage.getItem(DB_COLUMN_VISIBILITY_LS_KEY) || '{}'); }catch(err){}
+  dbColumnVisibility = {};
+  TOGGLABLE_DB_COLUMNS.forEach(c=>{ dbColumnVisibility[c.key] = saved[c.key] !== false; }); // default: all visible
+  return dbColumnVisibility;
+}
+function isDbColumnVisible(key){ return loadDbColumnVisibility()[key] !== false; }
+function toggleDbColumnVisibility(key, visible){
+  loadDbColumnVisibility();
+  dbColumnVisibility[key] = visible;
+  try{ localStorage.setItem(DB_COLUMN_VISIBILITY_LS_KEY, JSON.stringify(dbColumnVisibility)); }catch(err){}
+  renderDatabaseNow();
+}
+function toggleDbColumnsPanel(e){
+  if(e) e.stopPropagation();
+  const panel = document.getElementById('dbColumnsPanel');
+  if(panel) panel.classList.toggle('open');
+}
+// Close the panel on an outside click, same pattern as the notif bell dropdown.
+document.addEventListener('click', (e)=>{
+  const panel = document.getElementById('dbColumnsPanel');
+  if(panel && panel.classList.contains('open') && !e.target.closest('.db-columns-bar')){
+    panel.classList.remove('open');
+  }
+});
+
 function allStudentsFlat(){
   const list = [];
   Object.keys(students).forEach(ck=>{
@@ -7077,11 +7128,11 @@ function allStudentsFlat(){
 /* ================== BIRTHDAY WIDGET ==================
    Scans every student's Date of Birth (DD/MM/YY, entered manually or auto-calculated
    from the National ID) and lists anyone whose day+month matches today. */
-function getTodaysBirthdays(){
+function getTodaysBirthdays(flat){
   const today = new Date();
   const td = today.getDate(), tm = today.getMonth()+1;
   const list = [];
-  allStudentsFlat().forEach(s=>{
+  (flat || allStudentsFlat()).forEach(s=>{
     if(!s.dob) return;
     const parts = s.dob.split('/');
     if(parts.length!==3) return;
@@ -7099,9 +7150,9 @@ function getTodaysBirthdays(){
    - Parent/Student: only their own linked child(ren) — never a classmate's,
      even though getTodaysBirthdays() itself scans every student. This is what
      powers the notification bell's birthday reminder for a parent account. */
-function getTodaysBirthdaysForCurrentUser(){
+function getTodaysBirthdaysForCurrentUser(flat){
   if(!currentUser) return [];
-  const list = getTodaysBirthdays();
+  const list = getTodaysBirthdays(flat);
   if(currentUser.role==='admin') return list;
   if(currentUser.role==='parent') return list.filter(b=> scopeStudentAllowed(b.id));
   return [];
@@ -7328,16 +7379,40 @@ function renderDatabaseNow(){
     return;
   }
 
+  // Any change to the search box or a filter dropdown produces a different result
+  // set, so jump back to page 1 rather than stranding the user on, say, page 4 of
+  // a now much-shorter list. Simply paging forward/back (renderDatabaseNow() called
+  // again with the same filters) leaves dbCurrentPage untouched.
+  const filterSig = JSON.stringify([search, fSection, fStage, fGrade, fClassroom, fReligion, fLang]);
+  if(filterSig !== dbLastFilterSig){
+    dbCurrentPage = 1;
+    dbLastFilterSig = filterSig;
+  }
+  const totalPages = Math.max(1, Math.ceil(list.length / DB_PAGE_SIZE));
+  if(dbCurrentPage > totalPages) dbCurrentPage = totalPages;
+  if(dbCurrentPage < 1) dbCurrentPage = 1;
+  const pageStart = (dbCurrentPage-1) * DB_PAGE_SIZE;
+  const pageList = list.slice(pageStart, pageStart + DB_PAGE_SIZE);
+  document.getElementById('dbCount').textContent = totalPages > 1
+    ? `${list.length} students — showing ${pageStart+1}-${Math.min(pageStart+DB_PAGE_SIZE, list.length)}`
+    : `${list.length} students`;
+
+  // DOB auto-fill runs across every filtered student (not just the current page) so a
+  // student's Date of Birth still gets corrected and saved even before their page is
+  // ever viewed — pagination only limits how many rows get turned into HTML below.
   let dobAutoUpdated = false;
-  const rows = list.map(s=>{
+  list.forEach(s=>{
+    const autoDob = calcDobFromNationalId(s.nationalId);
+    if(autoDob && s.dob!==autoDob){ s.dob = autoDob; dobAutoUpdated = true; }
+  });
+
+  const rows = pageList.map(s=>{
     const availableClasses = classesForKey(s.classKey);
     const classOptions = [`<option value="" ${!s.classroom?'selected':''}>— None —</option>`]
       .concat(availableClasses.map(c=> `<option value="${c.replace(/"/g,'&quot;')}" ${s.classroom===c?'selected':''}>${c}</option>`))
       .concat([`<option value="__new__">+ Add new class…</option>`])
       .join('');
-    // Date of Birth is derived automatically from the 14-digit Egyptian National ID whenever possible
-    const autoDob = calcDobFromNationalId(s.nationalId);
-    if(autoDob && s.dob!==autoDob){ s.dob = autoDob; dobAutoUpdated = true; }
+    const autoDob = !!s.dob && s.dob === calcDobFromNationalId(s.nationalId);
     return `
     <tr>
       <td><input type="checkbox" class="dbStudentCheckbox" value="${s.classKey}::${s.id}"></td>
@@ -7354,51 +7429,71 @@ function renderDatabaseNow(){
           ${classOptions}
         </select>
       </td>
-      <td>
+      ${isDbColumnVisible('religion') ? `<td>
         <select class="db-edit-select" onchange="flashInlineSaved(this);updateStudentField('${s.classKey}','${s.id}','religion',this.value)">
           <option value="-" ${(!s.religion||s.religion==='-')?'selected':''}>None</option>
           <option value="Muslim" ${s.religion==='Muslim'?'selected':''}>Muslim</option>
           <option value="Christian" ${s.religion==='Christian'?'selected':''}>Christian</option>
         </select>
-      </td>
-      <td>
+      </td>` : ''}
+      ${isDbColumnVisible('lang2') ? `<td>
         <select class="db-edit-select" onchange="flashInlineSaved(this);updateStudentField('${s.classKey}','${s.id}','lang2',this.value)">
           <option value="-" ${(!s.lang2||s.lang2==='-')?'selected':''}>None</option>
           <option value="French" ${s.lang2==='French'?'selected':''}>🇫🇷 French</option>
           <option value="German" ${s.lang2==='German'?'selected':''}>🇩🇪 German</option>
           <option value="English" ${s.lang2==='English'?'selected':''}>English</option>
         </select>
-      </td>
-      <td>
+      </td>` : ''}
+      ${isDbColumnVisible('nationalId') ? `<td>
         <input type="text" class="db-edit-select" value="${(s.nationalId||'').replace(/"/g,'&quot;')}" placeholder="National ID" onchange="flashInlineSaved(this);updateStudentField('${s.classKey}','${s.id}','nationalId',this.value)">
-      </td>
-      <td>
+      </td>` : ''}
+      ${isDbColumnVisible('gender') ? `<td>
         <select class="db-edit-select" onchange="flashInlineSaved(this);updateStudentField('${s.classKey}','${s.id}','gender',this.value)">
           <option value="-" ${(!s.gender||s.gender==='-')?'selected':''}>None</option>
           <option value="Male" ${s.gender==='Male'?'selected':''}>Male</option>
           <option value="Female" ${s.gender==='Female'?'selected':''}>Female</option>
         </select>
-      </td>
-      <td>
+      </td>` : ''}
+      ${isDbColumnVisible('nationality') ? `<td>
         <span class="nat-flag" style="margin-right:4px;">${nationalityFlag(s.nationality)}</span><input type="text" class="db-edit-select" style="width:calc(100% - 26px);" value="${(s.nationality||'').replace(/"/g,'&quot;')}" placeholder="Nationality" oninput="this.previousElementSibling.textContent=nationalityFlag(this.value)" onchange="flashInlineSaved(this);updateStudentField('${s.classKey}','${s.id}','nationality',this.value)">
-      </td>
-      <td${autoDob?' data-dob-auto="1"':''}>
+      </td>` : ''}
+      ${isDbColumnVisible('dob') ? `<td${autoDob?' data-dob-auto="1"':''}>
         <input type="text" class="db-edit-select" value="${(s.dob||'').replace(/"/g,'&quot;')}" placeholder="DD/MM/YY" maxlength="8" ${autoDob?'readonly title="Calculated automatically from the National ID"':''} onchange="flashInlineSaved(this);updateStudentField('${s.classKey}','${s.id}','dob',this.value)">
-      </td>
-      <td>
+      </td>` : ''}
+      ${isDbColumnVisible('notes') ? `<td>
         <input type="text" class="db-edit-select" value="${(s.notes||'').replace(/"/g,'&quot;')}" placeholder="Notes" title="${(s.notes||'').replace(/"/g,'&quot;')}" onchange="flashInlineSaved(this);updateStudentField('${s.classKey}','${s.id}','notes',this.value)">
-      </td>
+      </td>` : ''}
       <td><button class="del-btn" onclick="deleteStudentFromDb('${s.classKey}','${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
     </tr>`;
   }).join('');
 
   if(dobAutoUpdated) saveState();
 
+  const paginationHtml = totalPages > 1 ? `
+    <div class="db-pagination">
+      <button type="button" class="btn btn-outline" ${dbCurrentPage<=1?'disabled':''} onclick="goToDbPage(dbCurrentPage-1)">‹ Previous</button>
+      <span class="db-pagination-status">Page ${dbCurrentPage} of ${totalPages}</span>
+      <button type="button" class="btn btn-outline" ${dbCurrentPage>=totalPages?'disabled':''} onclick="goToDbPage(dbCurrentPage+1)">Next ›</button>
+    </div>` : '';
+
+  const columnsBarHtml = `
+    <div class="db-columns-bar">
+      <button type="button" class="btn btn-outline" onclick="toggleDbColumnsPanel(event)">⚙ Columns</button>
+      <div class="db-columns-panel" id="dbColumnsPanel">
+        ${TOGGLABLE_DB_COLUMNS.map(c=>`
+          <label>
+            <input type="checkbox" ${isDbColumnVisible(c.key)?'checked':''} onchange="toggleDbColumnVisibility('${c.key}', this.checked)">
+            ${c.label}
+          </label>`).join('')}
+      </div>
+    </div>`;
+
   holder.innerHTML = `
+    ${columnsBarHtml}
     <table>
       <thead>
         <tr>
-          <th style="width:30px;"><input type="checkbox" id="dbSelectAllCheckbox" aria-label="Select all students" onclick="toggleSelectAllDb()"></th>
+          <th style="width:30px;"><input type="checkbox" id="dbSelectAllCheckbox" aria-label="Select all students on this page" onclick="toggleSelectAllDb()"></th>
           <th>ID</th>
           <th class="name-col">Student Name</th>
           <th dir="rtl">اسم الطالب</th>
@@ -7406,18 +7501,28 @@ function renderDatabaseNow(){
           <th>Stage</th>
           <th>Grade</th>
           <th>Class</th>
-          <th>Religion</th>
-          <th>2nd Language</th>
-          <th>National ID</th>
-          <th>Gender</th>
-          <th>Nationality</th>
-          <th>Date of Birth (DD/MM/YY)</th>
-          <th>Notes</th>
+          ${isDbColumnVisible('religion') ? '<th>Religion</th>' : ''}
+          ${isDbColumnVisible('lang2') ? '<th>2nd Language</th>' : ''}
+          ${isDbColumnVisible('nationalId') ? '<th>National ID</th>' : ''}
+          ${isDbColumnVisible('gender') ? '<th>Gender</th>' : ''}
+          ${isDbColumnVisible('nationality') ? '<th>Nationality</th>' : ''}
+          ${isDbColumnVisible('dob') ? '<th>Date of Birth (DD/MM/YY)</th>' : ''}
+          ${isDbColumnVisible('notes') ? '<th>Notes</th>' : ''}
           <th></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
-    </table>`;
+    </table>${paginationHtml}`;
+}
+
+// Bound to the Previous/Next buttons in the Student Database pagination bar.
+// Re-renders with the new page number; renderDatabaseNow() itself clamps it to
+// a valid range and only resets to page 1 when the search/filters have changed.
+function goToDbPage(page){
+  dbCurrentPage = page;
+  renderDatabaseNow();
+  const holder = document.getElementById('dbTableHolder');
+  if(holder) holder.scrollTop = 0;
 }
 
 // Maps a free-typed Nationality value to a country flag emoji, using
@@ -11625,20 +11730,23 @@ function markBirthdayNotifSeenToday(){
   catch(err){}
 }
 
-function updateNotifBadge(){
+function updateNotifBadge(flat){
   const badge = document.getElementById('notifBadge');
   const bellBtn = document.getElementById('notifBellBtn');
   if(!badge) return;
   const canSeeBell = !!(currentUser && (currentUser.role==='admin' || currentUser.role==='parent'));
   if(!canSeeBell){ badge.style.display = 'none'; if(bellBtn) bellBtn.classList.remove('has-unread'); return; }
+  // Computed once by the caller (or lazily here) and threaded through to the two
+  // helpers below, instead of each one calling allStudentsFlat() separately.
+  const allFlat = flat || allStudentsFlat();
   const lastSeen = getNotifLastSeen();
   const list = notifRelevantLog();
   let unread = list.filter(e=> e.ts > lastSeen).length;
   // Admin gets the full campus-wide birthday feed; a Parent/Student account only
   // gets reminded about their own linked child(ren)'s birthday, never a classmate's.
-  const todaysBirthdays = getTodaysBirthdaysForCurrentUser();
+  const todaysBirthdays = getTodaysBirthdaysForCurrentUser(allFlat);
   if(todaysBirthdays.length && !isBirthdayNotifSeenToday()) unread += todaysBirthdays.length;
-  if(currentUser && currentUser.role==='parent') unread += getMonthlyAbsenceWarningsForCurrentUser().length;
+  if(currentUser && currentUser.role==='parent') unread += getMonthlyAbsenceWarningsForCurrentUser(allFlat).length;
   if(unread > 0){
     badge.style.display = 'flex';
     badge.textContent = unread > 99 ? '99+' : unread;
@@ -11699,14 +11807,14 @@ function subjectFullyMissedThisMonth(student, subject, termPeriod, monthKey){
 
 // One entry per (linked student, active month) with the list of subjects they've missed
 // completely so far, plus an isFullAbsence flag when it's every subject, not just some.
-function getMonthlyAbsenceWarningsForCurrentUser(){
+function getMonthlyAbsenceWarningsForCurrentUser(flat){
   if(!currentUser || currentUser.role!=='parent') return [];
   const windows = activeMonthlyAlertWindows();
   if(!windows.length) return [];
   let seen = {};
   try{ seen = JSON.parse(localStorage.getItem(MONTHLY_ABSENCE_SEEN_LS_KEY) || '{}'); }catch(err){}
   const out = [];
-  allStudentsFlat().filter(s=> scopeStudentAllowed(s.id)).forEach(student=>{
+  (flat || allStudentsFlat()).filter(s=> scopeStudentAllowed(s.id)).forEach(student=>{
     if(!STAGES[student.stage]) return;
     const subjects = getSubjectsForStageAndSection(student.stage, student.section);
     windows.forEach(w=>{
@@ -11733,13 +11841,26 @@ function dismissMonthlyAbsenceWarning(seenKey){
   try{ localStorage.setItem(MONTHLY_ABSENCE_SEEN_LS_KEY, JSON.stringify(seen)); }catch(err){}
 }
 
-function renderNotifDropdown(){
+// Bound to the dismiss (×) button on a monthly absence warning. Computes the full
+// student list once and shares it between the dropdown re-render and the badge
+// update, instead of the two calling allStudentsFlat() separately.
+function dismissMonthlyAbsenceWarningAndRefresh(seenKey){
+  dismissMonthlyAbsenceWarning(seenKey);
+  const flat = allStudentsFlat();
+  renderNotifDropdown(flat);
+  updateNotifBadge(flat);
+}
+
+function renderNotifDropdown(flat){
   const holder = document.getElementById('notifList');
   if(!holder) return;
   const isParentBell = !!(currentUser && currentUser.role==='parent');
+  // Computed once by the caller (or lazily here) and threaded through to the two
+  // helpers below, instead of each one calling allStudentsFlat() separately.
+  const allFlat = flat || allStudentsFlat();
 
   let html = '';
-  const todaysBirthdays = getTodaysBirthdaysForCurrentUser();
+  const todaysBirthdays = getTodaysBirthdaysForCurrentUser(allFlat);
   if(todaysBirthdays.length){
     const names = todaysBirthdays.map(b=> formatBirthdayNameWithClass(b)).join(', ');
     const msg = isParentBell
@@ -11770,7 +11891,7 @@ function renderNotifDropdown(){
       </div>`;
   }
 
-  const monthlyAbsenceWarnings = isParentBell ? getMonthlyAbsenceWarningsForCurrentUser() : [];
+  const monthlyAbsenceWarnings = isParentBell ? getMonthlyAbsenceWarningsForCurrentUser(allFlat) : [];
   monthlyAbsenceWarnings.forEach(w=>{
     const subjList = w.missedSubjects.join(', ');
     const msg = w.isFullAbsence
@@ -11784,7 +11905,7 @@ function renderNotifDropdown(){
           <span class="notif-icon">${w.isFullAbsence ? '🚨' : '⚠️'}</span>
           <span class="notif-msg" style="flex:1;">${msg}</span>
           <button type="button" title="Dismiss" aria-label="Dismiss this alert" style="border:none;background:none;cursor:pointer;font-size:16px;opacity:.6;line-height:1;"
-                  onclick="dismissMonthlyAbsenceWarning('${w.seenKey}'); renderNotifDropdown(); updateNotifBadge();">×</button>
+                  onclick="dismissMonthlyAbsenceWarningAndRefresh('${w.seenKey}');">×</button>
         </div>
       </div>`;
   });
@@ -11823,10 +11944,13 @@ function toggleNotifDropdown(e){
   const opening = !dd.classList.contains('open');
   dd.classList.toggle('open');
   if(opening){
-    renderNotifDropdown();
+    // Computed once here (instead of separately inside renderNotifDropdown and
+    // updateNotifBadge) since both need the same full student list at this instant.
+    const flat = allStudentsFlat();
+    renderNotifDropdown(flat);
     setNotifLastSeen(Date.now());
     markBirthdayNotifSeenToday();
-    updateNotifBadge();
+    updateNotifBadge(flat);
   }
 }
 
@@ -11933,11 +12057,16 @@ function updateReportCardCountdownBar(){
    often (after saves, after activity log writes, after login, and on a timer). */
 function refreshHeaderQuickWidgets(){
   updateQuickStatsWidget();
-  updateNotifBadge();
+  // Only worth precomputing when there's actually a bell to feed (admin/parent) —
+  // otherwise skip the allStudentsFlat() pass entirely, same as before.
+  const canSeeBell = !!(currentUser && (currentUser.role==='admin' || currentUser.role==='parent'));
+  const dd = document.getElementById('notifDropdown');
+  const dropdownOpen = !!(dd && dd.classList.contains('open'));
+  const flat = canSeeBell ? allStudentsFlat() : null;
+  updateNotifBadge(flat);
   updateReportCardCountdownBar();
   renderBirthdayTopBar();
-  const dd = document.getElementById('notifDropdown');
-  if(dd && dd.classList.contains('open')) renderNotifDropdown();
+  if(dropdownOpen) renderNotifDropdown(flat);
 }
 
 document.addEventListener('click', (e)=>{
@@ -12905,6 +13034,16 @@ function toggleDarkMode(){
   const btn = document.getElementById('themeToggleBtn');
   if(btn) btn.textContent = isDark ? '☀️ Light' : '🌙 Dark';
   try{ localStorage.setItem('mils_dark_mode', isDark ? '1' : '0'); }catch(err){}
+}
+/* ---------- Login screen: Principal's welcome message expand/collapse ---------- */
+function togglePrincipalNote(){
+  const body = document.getElementById('principalBody');
+  const btn = document.getElementById('principalToggleBtn');
+  if(!body || !btn) return;
+  const expanded = body.classList.toggle('expanded');
+  btn.classList.toggle('open', expanded);
+  const label = btn.querySelector('span:not(.chevron)') || btn.firstChild;
+  if(label) label.textContent = expanded ? 'Show less ' : 'Read full message ';
 }
 (function initLoginUX(){
   try{
@@ -13978,6 +14117,34 @@ const fbDb  = firebase.firestore();
 const FB_DOC_REF = fbDb.collection('gradebook').doc('main');
 
 const GITHUB_CFG_KEY = 'gradesSystemFirebaseCfg_v1'; // kept name for minimal disruption to storage; holds { enabled }
+
+// Tracks when this browser last actually received confirmed data from Firestore (a
+// successful pull OR a live-listener update) — kept in localStorage so it survives a
+// reload instead of resetting to "Never" every time the page opens. Lets an Admin
+// glance at the header pill and confirm everyone is looking at the same version,
+// instead of just knowing sync is "on" with no sense of how fresh the data actually is.
+const LAST_SYNC_LS_KEY = 'lastFirestoreSyncAt_v1';
+function recordLastSyncTime(){
+  const now = Date.now();
+  try{ localStorage.setItem(LAST_SYNC_LS_KEY, String(now)); }catch(err){}
+  return now;
+}
+function getLastSyncTime(){
+  try{ const raw = localStorage.getItem(LAST_SYNC_LS_KEY); return raw ? parseInt(raw,10) : null; }
+  catch(err){ return null; }
+}
+// "2:45 PM" for today, "Jul 14, 2:45 PM" for any earlier day — short enough for an
+// inline badge while still being unambiguous once a few days have passed.
+function formatSyncTimeLabel(ts){
+  if(!ts) return null;
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const time = d.toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'});
+  if(sameDay) return time;
+  const datePart = d.toLocaleDateString(undefined, {month:'short', day:'numeric'});
+  return `${datePart}, ${time}`;
+}
 let githubConfig = null; // { enabled }
 let fbUnsubscribe = null;
 let fbApplyingRemote = false; // guard so a remote snapshot doesn't immediately re-trigger a push
@@ -14018,14 +14185,18 @@ function setSyncStatus(state){
   if(!el) return;
   if(!currentUser || currentUser.role!=='admin'){ el.style.display = 'none'; return; }
   if(!githubConfig || !githubConfig.enabled){ el.style.display = 'none'; return; }
+  if(state==='synced') recordLastSyncTime();
+  const lastSyncTs = getLastSyncTime();
+  const lastSyncLabel = formatSyncTimeLabel(lastSyncTs);
   const map = {
     idle:    ['☁ Not synced yet', '#B8B2A0'],
     syncing: ['☁ Syncing…', 'var(--gold-deep)'],
-    synced:  ['☁ Synced with Firebase', 'var(--green)'],
-    error:   ['⚠ Firebase sync error', 'var(--red)']
+    synced:  [`☁ Synced${lastSyncLabel ? ' · Last: '+lastSyncLabel : ' with Firebase'}`, 'var(--green)'],
+    error:   [`⚠ Firebase sync error${lastSyncLabel ? ' · Last synced: '+lastSyncLabel : ''}`, 'var(--red)']
   };
   const [text,color] = map[state] || map.idle;
   el.textContent = text;
+  el.title = lastSyncTs ? `Last confirmed sync with Firestore: ${new Date(lastSyncTs).toLocaleString()}` : 'No successful sync yet on this device';
   el.style.color = color;
   el.style.display = 'inline-flex';
   if(state!=='idle') flashSyncBadgeNearEdit(text, color);
@@ -14049,6 +14220,29 @@ function flashSyncBadgeNearEdit(text, color){
     badge.classList.remove('show');
     setTimeout(()=> badge.remove(), 200);
   }, 1600);
+}
+
+/* One-off, everyone-sees-it indicator (unlike setSyncStatus's header pill, which is
+   Admin-only) for the very first data pull on page load. Without this, whatever was
+   last cached in localStorage renders immediately and the app can look complete —
+   or, on a brand-new device with no cache yet, look empty — for however long the
+   Firestore round-trip to fetch the real latest data takes, with no sign anything
+   is happening in the background. */
+function showInitialSyncIndicator(){
+  let el = document.getElementById('initialSyncBanner');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'initialSyncBanner';
+    el.innerHTML = `<span class="initial-sync-spinner"></span><span>Loading the latest data…</span>`;
+    document.body.appendChild(el);
+  }
+  requestAnimationFrame(()=> el.classList.add('show'));
+}
+function hideInitialSyncIndicator(){
+  const el = document.getElementById('initialSyncBanner');
+  if(!el) return;
+  el.classList.remove('show');
+  setTimeout(()=>{ const cur = document.getElementById('initialSyncBanner'); if(cur && !cur.classList.contains('show')) cur.remove(); }, 400);
 }
 
 function applyRemotePayload(payload){
@@ -14324,7 +14518,9 @@ function openGithubModal(){
   const cfg = githubConfig || {};
   document.getElementById('fbProjectLabel').textContent = firebaseConfig.projectId || '—';
   document.getElementById('ghEnabled').checked = !!cfg.enabled;
-  document.getElementById('ghModalStatus').textContent = cfg.enabled ? 'Automatic live sync is currently ON.' : 'Automatic live sync is currently OFF.';
+  const lastSyncLabel = formatSyncTimeLabel(getLastSyncTime());
+  const baseStatus = cfg.enabled ? 'Automatic live sync is currently ON.' : 'Automatic live sync is currently OFF.';
+  document.getElementById('ghModalStatus').textContent = lastSyncLabel ? `${baseStatus} Last synced: ${lastSyncLabel}.` : baseStatus;
   document.getElementById('githubOverlay').classList.add('show');
 }
 function closeGithubModal(){
@@ -14347,7 +14543,10 @@ function manualPushToGithub(){
 }
 function manualPullFromGithub(){
   pullFromGithub(false).then(ok=>{
-    document.getElementById('ghModalStatus').textContent = ok ? 'Latest data pulled from Firebase.' : 'Pull failed or no data saved yet on Firebase.';
+    const lastSyncLabel = formatSyncTimeLabel(getLastSyncTime());
+    document.getElementById('ghModalStatus').textContent = ok
+      ? `Latest data pulled from Firebase.${lastSyncLabel ? ' Last synced: '+lastSyncLabel+'.' : ''}`
+      : 'Pull failed or no data saved yet on Firebase.';
     if(ok) applyPermissionsUI();
   });
 }
@@ -14687,7 +14886,8 @@ tryAutoLogin();
 // live listener open — this is what makes data appear on every device/
 // browser instantly, not just the one that originally saved it.
 if(githubReady()){ setSyncStatus('idle'); }
-pullFromGithub(true).then(()=>{ if(githubReady()) startFirebaseLiveSync(); refreshHeaderQuickWidgets(); });
+showInitialSyncIndicator();
+pullFromGithub(true).then(()=>{ if(githubReady()) startFirebaseLiveSync(); refreshHeaderQuickWidgets(); hideInitialSyncIndicator(); });
 
 /* ================== BULK GRADES IMPORT BY SUBJECT(S) ================== */
 
