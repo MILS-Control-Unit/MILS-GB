@@ -30,38 +30,67 @@
 
 <!-- ================= LOGIN SCREEN ================= -->
 <div class="login-overlay" id="loginOverlay">
-  <div class="login-card" style="position:relative;">
+  <div class="login-card login-card-split" style="position:relative;">
     <button type="button" class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleDarkMode()" title="Toggle dark mode">🌙 Dark</button>
-    <div class="seal"><img src="assets/images/mils-seal.jpg" alt="MILS Logo"></div>
-    <h2>MILS Grade Book</h2>
-    <div class="title-flourish"><span class="line"></span><span class="dot"></span><span class="line right"></span></div>
-    <p class="sub">Please sign in to continue</p>
-    <p class="login-quote" id="loginQuote"></p>
-    <div class="login-error" id="loginError" role="alert" aria-live="polite">Incorrect username or password.</div>
-    <div class="login-lockout" id="loginLockout" role="alert" aria-live="assertive"></div>
-    <form onsubmit="return handleLogin(event)">
-      <div class="field">
-        <label for="loginUsername">Username</label>
-        <input type="text" id="loginUsername" autocomplete="username" autofocus aria-describedby="loginError loginLockout" required>
-      </div>
-      <div class="field pw-field">
-        <label for="loginPassword">Password</label>
-        <input type="password" id="loginPassword" autocomplete="current-password" aria-describedby="loginError loginLockout" required>
-        <button type="button" class="pw-toggle" id="pwToggleBtn" onclick="togglePasswordVisibility()" title="Show/Hide password" aria-label="Show or hide password">👁</button>
-      </div>
-      <div class="check-field" style="justify-content:space-between;">
-        <div style="display:flex;align-items:center;gap:8px;">
-          <input type="checkbox" id="rememberMe" class="check-box">
-          <label for="rememberMe" class="check-label">Remember me</label>
+
+    <div class="login-brand-side">
+      <div class="seal"><img src="assets/images/mils-seal.jpg" alt="MILS Logo"></div>
+      <h2>MILS Grade Book</h2>
+      <div class="title-flourish"><span class="line"></span><span class="dot"></span><span class="line right"></span></div>
+      <p class="sub">Please sign in to continue</p>
+      <p class="login-quote" id="loginQuote"></p>
+
+      <div class="principal-note" id="principalNote">
+        <div class="principal-header">
+          <div class="principal-icon">&rdquo;</div>
+          <div class="principal-heading">
+            <h3>Welcome Message from our Principal</h3>
+            <span class="principal-name">Maha El Khamissy</span>
+            <span class="principal-title">School Principal</span>
+          </div>
         </div>
-        <button type="button" onclick="showForgotPasswordHelp()" style="background:none;border:none;color:var(--gold-deep);font-family:'Tajawal';font-weight:700;font-size:12.5px;cursor:pointer;padding:0;">Forgot password?</button>
+        <div class="principal-body" id="principalBody">
+          <p>As part of the Egypt Education Platform (EEP), Madinaty Integrated Language Schools (MILS) has become one of the leading models of educational excellence and innovation. Over the past three years, and under my leadership as a principal, we have seen remarkable growth across our learning community, reflecting EEP's mission to deliver inclusive, high-quality education and foster continuous development.</p>
+          <p>Our partnership with the French Institute led to the LabelFrancÉducation certification for our French school, with teachers maintaining their credentials for two consecutive years. Faculty achievements include BELC certification, AFLE professional development, DELF examiner accreditation up to B2, and collaboration with UTOPIA, providing diverse academic and cultural opportunities.</p>
+          <p>We have expanded global connections through an AFS student exchange program, introduced a fully integrated ICT curriculum with Algorithm, and partnered with VLABI to bring interactive learning and virtual lab experiences to our classrooms.</p>
+          <p>Our students remain at the heart of our progress, excelling academically and in national competitions such as the EEP Act for Impact challenge, "Speak Up," the "Math Whiz Challenge," and various STEM and robotics events. These achievements reflect our commitment to holistic development, arts, athletics, and leadership.</p>
+          <p>Our curriculum, rooted in the Egyptian National framework and enhanced with international best practices, ensures future-ready learning. We continue to invest in teacher training through partners like Teach-O-Gen, equipping staff with modern tools and methodologies.</p>
+          <p>We are also committed to building community stability, supporting teacher retention, and strengthening trust with parents through open communication.</p>
+          <p>At MILS, we remain steadfast in embracing innovation, ensuring safety, empowering learners, and driving sustainable growth, shaping brighter futures and building a legacy of excellence together with EEP.</p>
+        </div>
+        <button type="button" class="principal-toggle" id="principalToggleBtn" onclick="togglePrincipalNote()">
+          Read full message <span class="chevron">▾</span>
+        </button>
       </div>
-      <button type="submit" class="btn-login" id="loginSubmitBtn"><span class="spinner"></span><span>Sign In</span></button>
-    </form>
-    <p class="login-hint" id="loginHint">Default administrator: <b>admin</b> / <b>admin123</b><br>Please change this password after first login.</p>
-    <a href="https://github.com/MILS-Control-Unit/MILS-GB/releases/download/v1.0/MILS.GB.apk" download style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;padding:10px 18px;background-color:#2ea44f;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-family:'Tajawal',sans-serif;font-size:13.5px;">
-      ⬇ Download Android App (APK)
-    </a>
+    </div>
+
+    <div class="login-form-side">
+      <div class="login-error" id="loginError" role="alert" aria-live="polite">Incorrect username or password.</div>
+      <div class="login-lockout" id="loginLockout" role="alert" aria-live="assertive"></div>
+      <form onsubmit="return handleLogin(event)">
+        <div class="field">
+          <label for="loginUsername">Username</label>
+          <input type="text" id="loginUsername" autocomplete="username" autofocus aria-describedby="loginError loginLockout" required>
+        </div>
+        <div class="field pw-field">
+          <label for="loginPassword">Password</label>
+          <input type="password" id="loginPassword" autocomplete="current-password" aria-describedby="loginError loginLockout" required>
+          <button type="button" class="pw-toggle" id="pwToggleBtn" onclick="togglePasswordVisibility()" title="Show/Hide password" aria-label="Show or hide password">👁</button>
+        </div>
+        <div class="check-field" style="justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <input type="checkbox" id="rememberMe" class="check-box">
+            <label for="rememberMe" class="check-label">Remember me</label>
+          </div>
+          <button type="button" onclick="showForgotPasswordHelp()" style="background:none;border:none;color:var(--gold-deep);font-family:'Tajawal';font-weight:700;font-size:12.5px;cursor:pointer;padding:0;">Forgot password?</button>
+        </div>
+        <button type="submit" class="btn-login" id="loginSubmitBtn"><span class="spinner"></span><span>Sign In</span></button>
+      </form>
+      <p class="login-hint" id="loginHint">Default administrator: <b>admin</b> / <b>admin123</b><br>Please change this password after first login.</p>
+      <a href="https://github.com/MILS-Control-Unit/MILS-GB/releases/download/v1.0/MILS.GB.apk" download style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;padding:10px 18px;background-color:#2ea44f;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-family:'Tajawal',sans-serif;font-size:13.5px;">
+        ⬇ Download Android App (APK)
+      </a>
+    </div>
   </div>
 </div>
 
