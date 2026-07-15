@@ -11555,6 +11555,7 @@ function updateNotifBadge(){
   // gets reminded about their own linked child(ren)'s birthday, never a classmate's.
   const todaysBirthdays = getTodaysBirthdaysForCurrentUser();
   if(todaysBirthdays.length && !isBirthdayNotifSeenToday()) unread += todaysBirthdays.length;
+  if(currentUser && currentUser.role==='parent') unread += getMonthlyAbsenceWarningsForCurrentUser().length;
   if(unread > 0){
     badge.style.display = 'flex';
     badge.textContent = unread > 99 ? '99+' : unread;
@@ -11563,6 +11564,90 @@ function updateNotifBadge(){
     badge.style.display = 'none';
     if(bellBtn) bellBtn.classList.remove('has-unread');
   }
+}
+
+/* ---------- Monthly "missed all evaluations" parent alerts ---------- */
+// Fires once the CURRENT month's last week begins (7 days before termMonthDates[..].end)
+// and stays visible until that month ends — giving the family a heads-up while there's
+// still time to act, instead of an instant ping on every single missed quiz.
+//
+// Detection: a quiz field only counts once the teacher has actually opened it for grading
+// (see isQuizFieldOpened below) — a field nobody in the class has touched yet is just
+// "not graded yet", not an absence. Once opened, still blank for this student = absent.
+const MONTHLY_ABSENCE_SEEN_LS_KEY = 'monthlyAbsenceSeen_v1';
+
+// Every (term, month) pair whose "last week" window we're currently inside.
+function activeMonthlyAlertWindows(){
+  const out = [];
+  ['term1','term2'].forEach(termPeriod=>{
+    ['month1','month2'].forEach(monthKey=>{
+      const r = termMonthDates[termPeriod] && termMonthDates[termPeriod][monthKey];
+      if(!r || !r.start || !r.end) return;
+      const end = new Date(r.end + 'T23:59:59');
+      const threshold = new Date(r.end + 'T00:00:00');
+      threshold.setDate(threshold.getDate() - 7);
+      const now = new Date();
+      if(now >= threshold && now <= end) out.push({ termPeriod, monthKey });
+    });
+  });
+  return out;
+}
+
+// A quiz field counts as "opened" for grading once the teacher has entered at least one
+// score for SOMEONE in that class/subject/term — a field nobody has touched yet just means
+// the teacher hasn't started that quiz, so it must never count as an absence on its own.
+function isQuizFieldOpened(sk, field, excludeStudentId){
+  const bucket = scores[sk] || {};
+  return Object.keys(bucket).some(sid=>{
+    if(sid===excludeStudentId) return false;
+    const v = bucket[sid] && bucket[sid][field];
+    return v!==null && v!==undefined && v!=='';
+  });
+}
+
+function subjectFullyMissedThisMonth(student, subject, termPeriod, monthKey){
+  const sk = `${student.section}|${student.stage}|${student.grade}|${termPeriod}|${subject}`;
+  const fields = [`${monthKey}E1`,`${monthKey}E2`,`${monthKey}E3`,`${monthKey}E4`]
+    .filter(f=> isQuizFieldOpened(sk, f, student.id));
+  if(!fields.length) return false; // teacher hasn't opened any quiz this month yet — not an absence
+  const sc = (scores[sk] || {})[student.id];
+  return fields.every(f => !sc || sc[f]===null || sc[f]===undefined || sc[f]==='');
+}
+
+// One entry per (linked student, active month) with the list of subjects they've missed
+// completely so far, plus an isFullAbsence flag when it's every subject, not just some.
+function getMonthlyAbsenceWarningsForCurrentUser(){
+  if(!currentUser || currentUser.role!=='parent') return [];
+  const windows = activeMonthlyAlertWindows();
+  if(!windows.length) return [];
+  let seen = {};
+  try{ seen = JSON.parse(localStorage.getItem(MONTHLY_ABSENCE_SEEN_LS_KEY) || '{}'); }catch(err){}
+  const out = [];
+  allStudentsFlat().filter(s=> scopeStudentAllowed(s.id)).forEach(student=>{
+    if(!STAGES[student.stage]) return;
+    const subjects = getSubjectsForStageAndSection(student.stage, student.section);
+    windows.forEach(w=>{
+      const seenKey = `${student.id}__${w.termPeriod}__${w.monthKey}`;
+      if(seen[seenKey]) return;
+      const missed = subjects.filter(subj=> subjectFullyMissedThisMonth(student, subj, w.termPeriod, w.monthKey));
+      if(!missed.length) return;
+      out.push({
+        studentId: student.id,
+        name: student.name,
+        seenKey,
+        missedSubjects: missed,
+        isFullAbsence: missed.length === subjects.length
+      });
+    });
+  });
+  return out;
+}
+
+function dismissMonthlyAbsenceWarning(seenKey){
+  let seen = {};
+  try{ seen = JSON.parse(localStorage.getItem(MONTHLY_ABSENCE_SEEN_LS_KEY) || '{}'); }catch(err){}
+  seen[seenKey] = true;
+  try{ localStorage.setItem(MONTHLY_ABSENCE_SEEN_LS_KEY, JSON.stringify(seen)); }catch(err){}
 }
 
 function renderNotifDropdown(){
@@ -11601,6 +11686,25 @@ function renderNotifDropdown(){
         </div>
       </div>`;
   }
+
+  const monthlyAbsenceWarnings = isParentBell ? getMonthlyAbsenceWarningsForCurrentUser() : [];
+  monthlyAbsenceWarnings.forEach(w=>{
+    const subjList = w.missedSubjects.join(', ');
+    const msg = w.isFullAbsence
+      ? `🚨 <b>${escapeHtml(w.name)}</b> hasn't been assessed in <b>any subject</b> this month — the last week of the month starts soon.`
+      : `<b>${escapeHtml(w.name)}</b> hasn't been assessed this month in: <b>${escapeHtml(subjList)}</b> — the last week of the month starts soon.`;
+    const barColor = w.isFullAbsence ? '#dc2626' : '#d97706'; // red = full absence, amber = partial
+    const bgColor  = w.isFullAbsence ? 'rgba(220,38,38,.07)' : 'rgba(217,119,6,.07)';
+    html += `
+      <div class="notif-item" style="border-left:3px solid ${barColor}; background:${bgColor};">
+        <div class="notif-row" style="display:flex; align-items:center; gap:8px;">
+          <span class="notif-icon">${w.isFullAbsence ? '🚨' : '⚠️'}</span>
+          <span class="notif-msg" style="flex:1;">${msg}</span>
+          <button type="button" title="Dismiss" style="border:none;background:none;cursor:pointer;font-size:16px;opacity:.6;line-height:1;"
+                  onclick="dismissMonthlyAbsenceWarning('${w.seenKey}'); renderNotifDropdown(); updateNotifBadge();">×</button>
+        </div>
+      </div>`;
+  });
 
   const activityItems = notifRelevantLog().slice(0, 10);
   if(activityItems.length === 0 && upcoming.length === 0 && todaysBirthdays.length === 0){
