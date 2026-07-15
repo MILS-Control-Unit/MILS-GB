@@ -4452,7 +4452,7 @@ function scoreInputHtml(studentId, field, value, max, lockedReason){
   // Grade 3 flexible Q.1–Q.4 cells: locked/inactive until the teacher has set that
   // question's maximum score in the "Set Question Max Scores" box above the table.
   if(!isMaxSet(max)){
-    return `<input class="score-input ${groupClass} score-input-locked" type="text" value="" placeholder="🔒"
+    return `<input class="score-input ${groupClass} score-input-locked" type="text" value=""
                readonly onclick="flashMaxRequiredError(this)" onfocus="this.blur(); flashMaxRequiredError(this);"
                title="Set the maximum score for this question first">`;
   }
