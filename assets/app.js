@@ -13007,6 +13007,8 @@ function downloadUserTemplate(){
       "Section":"French Section", "Subjects":"Mathematics", "Classes":"", "Student ID(s)":"" },
     { "Username":"sara.parent", "Display Name":"Sara's Parent", "Password":"12345", "Role":"Parent / Student",
       "Section":"English Section", "Subjects":"", "Classes":"", "Student ID(s)":"MILS-3188" },
+    { "Username":"omar.parent", "Display Name":"Omar's Parent", "Password":"12345", "Role":"Parent / Student",
+      "Section":"English Section", "Subjects":"", "Classes":"", "Student ID(s)":"MILS-3190; MILS-3191" },
     { "Username":"", "Display Name":"", "Password":"", "Role":"", "Section":"", "Subjects":"", "Classes":"", "Student ID(s)":"" }
   ];
   const wsData = XLSX.utils.json_to_sheet(sample);
