@@ -12045,7 +12045,16 @@ function updateReportCardCountdownBar(){
   }
   const rc = upcoming[0];
   const daysLeft = daysUntilCalendar(rc._releaseTs);
-  const dayLabel = daysLeft === 0 ? 'today' : (daysLeft === 1 ? '1 day' : `${daysLeft} days`);
+  let dayLabel;
+  if(daysLeft === 0){
+    const msLeft = Math.max(0, rc._releaseTs - Date.now());
+    const totalMinutes = Math.floor(msLeft / 60000);
+    const hLeft = Math.floor(totalMinutes / 60);
+    const mLeft = totalMinutes % 60;
+    dayLabel = (totalMinutes <= 0) ? 'now' : `${hLeft}h ${String(mLeft).padStart(2,'0')}m`;
+  } else {
+    dayLabel = daysLeft === 1 ? '1 day' : `${daysLeft} days`;
+  }
 
   label.innerHTML = `📊 ${escapeHtml(reportCardReleaseLabel(rc))} releases in <b>${dayLabel}</b>`;
   const pct = Math.max(4, Math.min(100, Math.round((1 - (daysLeft / RC_COUNTDOWN_WINDOW_DAYS)) * 100)));
@@ -13034,16 +13043,6 @@ function toggleDarkMode(){
   const btn = document.getElementById('themeToggleBtn');
   if(btn) btn.textContent = isDark ? '☀️ Light' : '🌙 Dark';
   try{ localStorage.setItem('mils_dark_mode', isDark ? '1' : '0'); }catch(err){}
-}
-/* ---------- Login screen: Principal's welcome message expand/collapse ---------- */
-function togglePrincipalNote(){
-  const body = document.getElementById('principalBody');
-  const btn = document.getElementById('principalToggleBtn');
-  if(!body || !btn) return;
-  const expanded = body.classList.toggle('expanded');
-  btn.classList.toggle('open', expanded);
-  const label = btn.querySelector('span:not(.chevron)') || btn.firstChild;
-  if(label) label.textContent = expanded ? 'Show less ' : 'Read full message ';
 }
 (function initLoginUX(){
   try{
