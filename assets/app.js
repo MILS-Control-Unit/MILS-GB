@@ -230,6 +230,56 @@ let attSubView = 'absence';
   else document.addEventListener('DOMContentLoaded', ()=> document.head.appendChild(style));
 })();
 
+// Styles for the Parent/Student "My Reports" feed (see renderParentReportsFeed) — replaces
+// the Academic Term -> Report Type stepper for linked parents with a single tap-to-open list
+// of every report card released so far, plus the "NEW" badge reused on the quick-cert card
+// and the sibling switchers to flag a report released in the last few days.
+(function injectParentReportsFeedStyles(){
+  const css = `
+    .parent-reports-feed{ margin:0 0 16px; }
+    .prf-heading{ font-weight:800; font-size:13px; color:var(--ink-soft,#667085); text-transform:uppercase;
+      letter-spacing:.04em; margin:0 0 8px 2px; }
+    .prf-card{ display:flex; align-items:center; gap:14px; margin:0 0 10px; padding:14px 16px;
+      border-radius:14px; cursor:pointer; user-select:none; background:#fff;
+      border:1px solid var(--line,#e5e7eb); box-shadow:0 2px 8px rgba(0,0,0,.05);
+      transition:transform .15s ease, box-shadow .15s ease; }
+    .prf-card:hover{ transform:translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,.08); }
+    .prf-card:active{ transform:translateY(0); }
+    .prf-icon{ font-size:24px; line-height:1; flex-shrink:0; }
+    .prf-body{ flex:1; min-width:0; }
+    .prf-title{ font-weight:700; font-size:14.5px; color:var(--ink,#1d2939); }
+    .prf-sub{ font-size:12px; color:var(--ink-soft,#667085); margin-top:2px; }
+    .prf-arrow{ font-size:20px; color:var(--ink-soft,#667085); flex-shrink:0; }
+    .prf-empty{ text-align:center; padding:24px 16px; color:var(--ink-soft,#667085); }
+    .prf-empty-icon{ font-size:28px; margin-bottom:8px; }
+    .prf-back-row{ display:flex; align-items:center; gap:10px; margin:0 0 14px; flex-wrap:wrap; }
+    .prf-back-btn{ border:1px solid var(--line,#e5e7eb); background:#fff; border-radius:10px;
+      padding:6px 12px; font-weight:700; font-size:13px; cursor:pointer; color:var(--ink,#1d2939); }
+    .prf-back-btn:hover{ background:#f7f7f8; }
+    .prf-current{ font-size:13px; color:var(--ink-soft,#667085); font-weight:600; }
+    .report-new-badge{ display:inline-block; font-size:10px; font-weight:800; letter-spacing:.03em;
+      color:#fff; background:#d64545; border-radius:6px; padding:2px 6px; margin-inline-start:6px;
+      vertical-align:middle; }
+    .cst-tabs{ display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+    .cst-pill{ display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:999px;
+      border:1px solid var(--line,#e5e7eb); background:#fff; cursor:pointer; user-select:none;
+      font-family:inherit; transition:transform .12s ease, box-shadow .12s ease, background .12s ease; }
+    .cst-pill:hover{ transform:translateY(-1px); box-shadow:0 3px 10px rgba(0,0,0,.08); }
+    .cst-pill:active{ transform:translateY(0); }
+    .cst-pill.active{ background:linear-gradient(135deg, var(--gold, #b8860b) 0%, #8a6d1f 100%);
+      border-color:transparent; box-shadow:0 3px 10px rgba(0,0,0,.12); }
+    .cst-name{ font-weight:700; font-size:13.5px; color:var(--ink,#1d2939); }
+    .cst-pill.active .cst-name{ color:#fff; }
+    .cst-sub{ font-size:11.5px; color:var(--ink-soft,#667085); }
+    .cst-pill.active .cst-sub{ color:rgba(255,255,255,.85); }
+    .cst-new-dot{ font-size:12px; line-height:1; }
+  `;
+  const style = document.createElement('style');
+  style.textContent = css;
+  if(document.head) document.head.appendChild(style);
+  else document.addEventListener('DOMContentLoaded', ()=> document.head.appendChild(style));
+})();
+
 // ===== GSAP: masthead & nav-icon choreography =====
 // Reorganizes how the header (logos, title, right-side widgets) and the nav bar's
 // icons appear: a staggered entrance on load instead of everything popping in at
@@ -1352,18 +1402,33 @@ function getLinkedDashboardChildren(){
     .sort((a,b)=> a.name.localeCompare(b.name));
 }
 
+// Shared markup for the Dashboard and Certificates sibling switchers: each linked child
+// renders as a tappable pill instead of a <select> dropdown, so a parent with two or three
+// kids can see and switch between them in one tap instead of opening a dropdown first. The
+// 🆕 dot (see childHasNewReport) surfaces directly on the pill.
+function buildChildSwitchTabsHtml(children, selectedId, onSelectFnName){
+  const pills = children.map(c=>{
+    const gradeObj = STAGES[c.stage] ? STAGES[c.stage].grades.find(g=>g.id===c.grade) : null;
+    const gradeLabel = gradeObj ? gradeObj.label : (c.grade||'');
+    const sub = [gradeLabel, c.classroom].filter(Boolean).join(' · ');
+    const newFlag = childHasNewReport(c) ? '<span class="cst-new-dot" title="New report">🆕</span>' : '';
+    const active = selectedId===c.id ? ' active' : '';
+    return `
+      <button type="button" class="cst-pill${active}" onclick="${onSelectFnName}('${c.id}')">
+        <span class="cst-name">${escapeHtml(c.name)}</span>
+        ${sub ? `<span class="cst-sub">${escapeHtml(sub)}</span>` : ''}
+        ${newFlag}
+      </button>`;
+  }).join('');
+  return `<div class="db-children-switch"><span class="dcs-label">My children:</span><div class="cst-tabs">${pills}</div></div>`;
+}
+
 function renderDashboardChildSwitch(){
   const wrap = document.getElementById('dashboardChildSwitch');
   if(!wrap) return;
   const children = getLinkedDashboardChildren();
   if(!children.length){ wrap.innerHTML = ''; return; }
-  const options = children.map(c=>{
-    const gradeObj = STAGES[c.stage] ? STAGES[c.stage].grades.find(g=>g.id===c.grade) : null;
-    const gradeLabel = gradeObj ? gradeObj.label : (c.grade||'');
-    const sub = [gradeLabel, c.classroom].filter(Boolean).join(' · ');
-    return `<option value="${c.id}" ${state.dashboardStudent===c.id?'selected':''}>${escapeHtml(c.name)}${sub?` (${sub})`:''}</option>`;
-  }).join('');
-  wrap.innerHTML = `<div class="db-children-switch"><span class="dcs-label">My children:</span><select onchange="selectDashboardChild(this.value)">${options}</select></div>`;
+  wrap.innerHTML = buildChildSwitchTabsHtml(children, state.dashboardStudent, 'selectDashboardChild');
 }
 
 function selectDashboardChild(studentId){
@@ -1407,6 +1472,20 @@ function renderParentQuickCertCard(){
   const scope = currentUser.effective.studentScope || [];
   const student = flat.find(s=> s.id===state.dashboardStudent && scope.includes(s.id)) || flat.find(s=> scope.includes(s.id));
   if(!student){ card.innerHTML = ''; return; }
+  
+  // Validate that student record is complete (has section/stage/grade)
+  if(!student.section || !student.stage || !student.grade){
+    card.innerHTML = `
+      <div class="parent-quick-cert-card locked">
+        <div class="pqc-icon">⚠️</div>
+        <div class="pqc-body">
+          <div class="pqc-title">${escapeXml(student.name)}'s Certificate</div>
+          <div class="pqc-sub">Student record is incomplete. Please contact the school.</div>
+        </div>
+      </div>`;
+    return;
+  }
+  
   const latest = getLatestReleasedCertForStudent(student);
   if(!latest){
     card.innerHTML = `
@@ -1419,11 +1498,12 @@ function renderParentQuickCertCard(){
       </div>`;
     return;
   }
+  const newBadge = isRecentlyReleased(latest.releaseTs) ? '<span class="report-new-badge">NEW</span>' : '';
   card.innerHTML = `
     <div class="parent-quick-cert-card" onclick="openLatestCertForCurrentChild()">
       <div class="pqc-icon">🎓</div>
       <div class="pqc-body">
-        <div class="pqc-title">${escapeXml(student.name)}'s Certificate</div>
+        <div class="pqc-title">${escapeXml(student.name)}'s Certificate${newBadge}</div>
         <div class="pqc-sub">${TERM_LABELS[latest.termPeriod]} • ${CERT_REPORT_TITLES[latest.reportType]} — tap to view</div>
       </div>
       <div class="pqc-arrow">›</div>
@@ -1473,13 +1553,7 @@ function renderCertChildSwitch(){
   if(!wrap) return;
   const children = getLinkedCertChildren();
   if(!children.length){ wrap.innerHTML = ''; return; }
-  const options = children.map(c=>{
-    const gradeObj = STAGES[c.stage] ? STAGES[c.stage].grades.find(g=>g.id===c.grade) : null;
-    const gradeLabel = gradeObj ? gradeObj.label : (c.grade||'');
-    const sub = [gradeLabel, c.classroom].filter(Boolean).join(' · ');
-    return `<option value="${c.id}" ${certState.studentId===c.id?'selected':''}>${escapeHtml(c.name)}${sub?` (${sub})`:''}</option>`;
-  }).join('');
-  wrap.innerHTML = `<div class="db-children-switch"><span class="dcs-label">My children:</span><select onchange="selectCertChild(this.value)">${options}</select></div>`;
+  wrap.innerHTML = buildChildSwitchTabsHtml(children, certState.studentId, 'selectCertChild');
 }
 
 function selectCertChild(studentId){
@@ -2732,8 +2806,81 @@ function renderCertReportsStepper(){
   const holder = document.getElementById('certReportsStepper');
   if(!holder) return;
   autoSelectCertChildForParent();
-  buildStepperHTML('certReportsStepper', certStepConfig(), 'c-');
   renderCertChildSwitch();
+  if(isLinkedParentViewer()){
+    renderParentReportsFeed();
+    return;
+  }
+  buildStepperHTML('certReportsStepper', certStepConfig(), 'c-');
+}
+
+/* ---------- Certificates: "My Reports" feed (linked Parent/Student accounts) ----------
+   Replaces the Academic Term -> Report Type stepper for linked parents with a single list of
+   every report card released so far for the current child, most recent first — one tap opens
+   it, no stepper to walk. A "NEW" badge (see isRecentlyReleased) flags anything released in
+   the last few days. Once a report is open, this collapses into a compact "‹ My Reports" link
+   so the parent can jump back to the list without losing the certificate view. */
+function renderParentReportsFeed(){
+  const holder = document.getElementById('certReportsStepper');
+  if(!holder) return;
+  const flat = allStudentsFlatRaw();
+  const scope = (currentUser.effective && currentUser.effective.studentScope) || [];
+  const student = flat.find(s=> s.id===certState.studentId && scope.includes(s.id)) || flat.find(s=> scope.includes(s.id));
+  if(!student){ holder.innerHTML = ''; return; }
+
+  const open = !!(certState.termPeriod && certState.reportType);
+  if(open){
+    holder.innerHTML = `
+      <div class="prf-back-row">
+        <button type="button" class="prf-back-btn" onclick="backToParentReportsFeed()">‹ My Reports</button>
+        <span class="prf-current">${TERM_LABELS[certState.termPeriod]} • ${CERT_REPORT_TITLES[certState.reportType]}</span>
+      </div>`;
+    return;
+  }
+
+  const reports = getAllReleasedCertsForStudent(student);
+  if(!reports.length){
+    holder.innerHTML = `
+      <div class="parent-reports-feed">
+        <div class="prf-empty">
+          <div class="prf-empty-icon">🔒</div>
+          <p>No report cards have been released yet for ${escapeHtml(student.name)} — check back later.</p>
+        </div>
+      </div>`;
+    return;
+  }
+  const rows = reports.map(r=>{
+    const badge = isRecentlyReleased(r.releaseTs) ? '<span class="report-new-badge">NEW</span>' : '';
+    const dateStr = new Date(r.releaseTs).toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'});
+    return `
+      <div class="prf-card" onclick="openParentReportsFeedItem('${r.termPeriod}','${r.reportType}')">
+        <div class="prf-icon">🎓</div>
+        <div class="prf-body">
+          <div class="prf-title">${TERM_LABELS[r.termPeriod]} • ${CERT_REPORT_TITLES[r.reportType]}${badge}</div>
+          <div class="prf-sub">Released ${dateStr}</div>
+        </div>
+        <div class="prf-arrow">›</div>
+      </div>`;
+  }).join('');
+  holder.innerHTML = `
+    <div class="parent-reports-feed">
+      <div class="prf-heading">My Reports${reports.length>1?` (${reports.length})`:''}</div>
+      ${rows}
+    </div>`;
+}
+
+function openParentReportsFeedItem(termPeriod, reportType){
+  certState.termPeriod = termPeriod;
+  certState.reportType = reportType;
+  renderCertReportsStepper();
+  renderCertReportsWorkspace();
+}
+
+function backToParentReportsFeed(){
+  certState.termPeriod = null;
+  certState.reportType = null;
+  renderCertReportsStepper();
+  renderCertReportsWorkspace();
 }
 
 // Runs fn() with the shared grade-book `state` temporarily pointed at certState's
@@ -2820,11 +2967,18 @@ function renderCertReportsWorkspace(){
   const ws = document.getElementById('certReportsWorkspace');
   const intro = document.getElementById('certReportsIntroState');
   if(!ws || !intro) return;
-  const cfgs = isLinkedParentViewer() ? certStepConfig() : certStepConfig().slice(0,5); // Term, Section, Stage, Grade, Report Type are required for the intro state (linked parents only ever see Term + Report Type)
+  const linkedParent = isLinkedParentViewer();
+  const cfgs = linkedParent ? certStepConfig() : certStepConfig().slice(0,5); // Term, Section, Stage, Grade, Report Type are required for the intro state (linked parents only ever see Term + Report Type)
   const ready = !!(certState.termPeriod && certState.section && certState.stage && certState.grade && certState.reportType);
   ws.style.display = ready ? '' : 'none';
   intro.style.display = ready ? 'none' : '';
-  if(!ready){ updateIntroState('certReportsIntroState', cfgs); return; }
+  if(!ready){
+    // The My Reports feed (renderParentReportsFeed) already lists every released report and
+    // invites a tap — a separate "Next: select the Academic Term" prompt would just duplicate it.
+    if(linkedParent){ intro.style.display = 'none'; return; }
+    updateIntroState('certReportsIntroState', cfgs);
+    return;
+  }
 
   const gradeLabel = STAGES[certState.stage].grades.find(g=>g.id===certState.grade).label;
   document.getElementById('certReportsCrumbs').innerHTML = `
@@ -9341,18 +9495,50 @@ function renderExamScheduleRows(){
     holder.innerHTML = `<p class="foot-note" style="padding:6px 2px;">${isAdmin ? 'No rows yet — click "＋ Add Row" to start.' : 'No exam schedule has been set yet.'}</p>`;
     return;
   }
-  const fieldStyle = "border:1.5px solid var(--border);border-radius:8px;padding:7px 8px;font-family:'Tajawal';font-size:12.5px;min-width:0;";
-  holder.innerHTML = examScheduleStaged.map(row => `
-    <div class="att-excl-add-row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;" data-row-id="${row.id}">
-      <input type="date" value="${row.date||''}" style="flex:1;${fieldStyle}" ${isAdmin?'':'disabled'} oninput="updateExamScheduleRow('${row.id}','date',this.value)">
-      <input type="text" value="${(row.day||'').replace(/"/g,'&quot;')}" placeholder="Day" style="flex:0.9;${fieldStyle}" ${isAdmin?'':'disabled'} oninput="updateExamScheduleRow('${row.id}','day',this.value)">
-      <input type="text" value="${(row.subject||'').replace(/"/g,'&quot;')}" placeholder="Subject" style="flex:1.3;${fieldStyle}" ${isAdmin?'':'disabled'} oninput="updateExamScheduleRow('${row.id}','subject',this.value)">
-      <input type="time" value="${row.timeFrom||''}" style="flex:0.7;${fieldStyle}" ${isAdmin?'':'disabled'} oninput="updateExamScheduleRow('${row.id}','timeFrom',this.value)">
-      <input type="time" value="${row.timeTo||''}" style="flex:0.7;${fieldStyle}" ${isAdmin?'':'disabled'} oninput="updateExamScheduleRow('${row.id}','timeTo',this.value)">
-      <input type="text" value="${(row.duration||'').replace(/"/g,'&quot;')}" placeholder="Duration" style="flex:0.9;${fieldStyle}" ${isAdmin?'':'disabled'} oninput="updateExamScheduleRow('${row.id}','duration',this.value)">
-      ${isAdmin ? `<button type="button" class="att-excl-chip-x" title="Remove this row" style="width:24px;height:24px;" onclick="removeExamScheduleRow('${row.id}')">×</button>` : `<span style="width:24px;"></span>`}
-    </div>
-  `).join('');
+  
+  // ADMIN: Full editable form with flex layout
+  if(isAdmin){
+    const fieldStyle = "border:1.5px solid var(--border);border-radius:8px;padding:7px 8px;font-family:'Tajawal';font-size:12.5px;min-width:0;";
+    holder.innerHTML = examScheduleStaged.map(row => `
+      <div class="att-excl-add-row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;" data-row-id="${row.id}">
+        <input type="date" value="${row.date||''}" style="flex:1;${fieldStyle}" oninput="updateExamScheduleRow('${row.id}','date',this.value)">
+        <input type="text" value="${(row.day||'').replace(/"/g,'&quot;')}" placeholder="Day" style="flex:0.9;${fieldStyle}" oninput="updateExamScheduleRow('${row.id}','day',this.value)">
+        <input type="text" value="${(row.subject||'').replace(/"/g,'&quot;')}" placeholder="Subject" style="flex:1.3;${fieldStyle}" oninput="updateExamScheduleRow('${row.id}','subject',this.value)">
+        <input type="time" value="${row.timeFrom||''}" style="flex:0.7;${fieldStyle}" oninput="updateExamScheduleRow('${row.id}','timeFrom',this.value)">
+        <input type="time" value="${row.timeTo||''}" style="flex:0.7;${fieldStyle}" oninput="updateExamScheduleRow('${row.id}','timeTo',this.value)">
+        <input type="text" value="${(row.duration||'').replace(/"/g,'&quot;')}" placeholder="Duration" style="flex:0.9;${fieldStyle}" oninput="updateExamScheduleRow('${row.id}','duration',this.value)">
+        <button type="button" class="att-excl-chip-x" title="Remove this row" style="width:24px;height:24px;" onclick="removeExamScheduleRow('${row.id}')">×</button>
+      </div>
+    `).join('');
+  }
+  // PARENT/STUDENT: Read-only table view (no input fields, no buttons)
+  else {
+    holder.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
+        <thead>
+          <tr style="background:var(--paper-2);">
+            <th style="text-align:left;padding:10px;border-bottom:2px solid var(--border);font-weight:600;">📅 Date</th>
+            <th style="text-align:left;padding:10px;border-bottom:2px solid var(--border);font-weight:600;">📆 Day</th>
+            <th style="text-align:left;padding:10px;border-bottom:2px solid var(--border);font-weight:600;">📚 Subject</th>
+            <th style="text-align:center;padding:10px;border-bottom:2px solid var(--border);font-weight:600;">⏰ From</th>
+            <th style="text-align:center;padding:10px;border-bottom:2px solid var(--border);font-weight:600;">⏰ To</th>
+            <th style="text-align:center;padding:10px;border-bottom:2px solid var(--border);font-weight:600;">⏳ Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${examScheduleStaged.map(row => `
+            <tr>
+              <td style="padding:10px;border-bottom:1px solid var(--border);">${escapeHtml(row.date||'—')}</td>
+              <td style="padding:10px;border-bottom:1px solid var(--border);">${escapeHtml(row.day||'—')}</td>
+              <td style="padding:10px;border-bottom:1px solid var(--border);"><strong>${escapeHtml(row.subject||'—')}</strong></td>
+              <td style="padding:10px;border-bottom:1px solid var(--border);text-align:center;">${escapeHtml(row.timeFrom||'—')}</td>
+              <td style="padding:10px;border-bottom:1px solid var(--border);text-align:center;">${escapeHtml(row.timeTo||'—')}</td>
+              <td style="padding:10px;border-bottom:1px solid var(--border);text-align:center;">${escapeHtml(row.duration||'—')}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  }
 }
 
 function updateExamScheduleRow(id, field, value){
@@ -9404,10 +9590,21 @@ function openExamScheduleModal(term, type){
     const eff = currentUser.effective;
     const ids = (eff && Array.isArray(eff.studentScope)) ? eff.studentScope : [];
     const flat = allStudentsFlatRaw();
+    
+    console.log('[Exam Schedule] Parent opened modal - Linked student IDs:', ids);
+    
     const comboMap = new Map();
     ids.forEach(id=>{
       const s = flat.find(x=> x.id===id);
-      if(!s || !s.section || !s.grade) return;
+      if(!s){
+        console.warn(`[Exam Schedule] Student ID ${id} not found in roster`);
+        return;
+      }
+      if(!s.section || !s.grade){
+        console.warn(`[Exam Schedule] Student ${s.name} (ID: ${id}) missing section/grade`, { section: s.section, grade: s.grade });
+        return;
+      }
+      console.log(`[Exam Schedule] Student: ${s.name}, Section: ${s.section}, Grade: ${s.grade}`);
       const key = `${s.section}|${s.grade}`;
       if(!comboMap.has(key)){
         const secLabel = SECTIONS[s.section] ? SECTIONS[s.section].label : s.section;
@@ -9416,6 +9613,7 @@ function openExamScheduleModal(term, type){
       }
     });
     const combos = [...comboMap.values()].sort((a,b)=> (GRADE_ORDER[a.grade]??0)-(GRADE_ORDER[b.grade]??0));
+    console.log('[Exam Schedule] Available combos for parent:', combos.length);
     examScheduleParentComboMode = true;
     if(sectionWrap) sectionWrap.style.display = 'none';
     if(gradeLabelEl) gradeLabelEl.textContent = 'Section & Grade';
@@ -10930,6 +11128,54 @@ function getLatestReleasedCertForStudent(student){
     });
   });
   return best;
+}
+
+// A released report counts as "new" for badge purposes (quick-cert card, My Reports feed,
+// sibling switchers) if it went live within this window. 7 days: long enough that a parent
+// who checks in weekly still sees it flagged, short enough that the badge stays meaningful.
+const NEW_REPORT_BADGE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+function isRecentlyReleased(releaseTs){
+  return typeof releaseTs === 'number' && (Date.now() - releaseTs) < NEW_REPORT_BADGE_WINDOW_MS;
+}
+
+// Same visibility rules as getLatestReleasedCertForStudent (release date reached, end date not
+// yet passed, Section/Term/Report Type/Grade match), but collects every currently-visible
+// released report instead of only the single latest one — powers the Parent/Student "My
+// Reports" feed (see renderParentReportsFeed) so a linked parent sees everything that's been
+// released at once instead of re-walking the Term -> Report Type stepper for each report.
+// Sorted most-recently-released first.
+function getAllReleasedCertsForStudent(student){
+  if(!student || !student.section || !student.stage || !student.grade) return [];
+  if(!STAGES[student.stage]) return [];
+  const now = Date.now();
+  const out = [];
+  ['term1','term2'].forEach(termPeriod=>{
+    const types = certReportTypeOptions(termPeriod, student.stage, student.grade).map(o=>o.id);
+    types.forEach(reportType=>{
+      (reportCardReleases||[]).forEach(rc=>{
+        if(rc.section!==student.section || rc.termPeriod!==termPeriod || rc.reportType!==reportType) return;
+        if(rc.grade && rc.grade!==student.grade) return;
+        const releaseTs = new Date(rc.releaseDate+'T'+rc.releaseTime).getTime();
+        if(isNaN(releaseTs) || releaseTs>now) return;
+        const endTs = rc.endDate ? new Date(rc.endDate+'T'+rc.endTime).getTime() : null;
+        if(endTs && endTs<now) return;
+        // The same (termPeriod, reportType) pair can have more than one release record if the
+        // Admin edited/rescheduled it — keep only the latest release timestamp for that pair.
+        const existing = out.find(o=> o.termPeriod===termPeriod && o.reportType===reportType);
+        if(existing){ if(releaseTs>existing.releaseTs) existing.releaseTs = releaseTs; return; }
+        out.push({ termPeriod, reportType, releaseTs });
+      });
+    });
+  });
+  return out.sort((a,b)=> b.releaseTs - a.releaseTs);
+}
+
+// True if this student has any released report card that's still within the "NEW" window —
+// used by the Dashboard and Certificates sibling switchers so a parent with more than one
+// linked child can tell, without opening each one, which child has something new to see.
+function childHasNewReport(student){
+  const reports = getAllReleasedCertsForStudent(student);
+  return reports.length>0 && isRecentlyReleased(reports[0].releaseTs);
 }
 
 /* ================== EXAMS SCHEDULES RELEASE ==================
