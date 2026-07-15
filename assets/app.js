@@ -526,7 +526,7 @@ function switchView(view){
   document.getElementById('statisticsView').style.display = view==='statistics' ? '' : 'none';
   document.getElementById('certReportsView').style.display = view==='certReports' ? '' : 'none';
   document.querySelectorAll('.nav-tab').forEach(b=> b.classList.toggle('active', b.dataset.view===view));
-  if(view==='database') renderDatabase();
+  if(view==='database') renderDatabaseNow();
   if(view==='teachers') renderTeachersDatabase();
   if(view==='teacherStatistics') renderTeacherStatistics();
   if(view==='markEntryReport'){ renderMarkEntryStepper(); renderMarkEntryWorkspace(); }
@@ -5531,7 +5531,19 @@ function deleteAttendanceForStudent(id){
   });
 }
 
+// preserveFocus used to be a no-op (passed as `true` everywhere but never read inside
+// the function) — the real annoyance it was meant to fix is that rebuilding the whole
+// table's innerHTML resets the scroll position of its scrolling container, so editing a
+// score far down a long class list would jump the view back to the top. This wrapper
+// saves/restores that scroll position around the (unchanged) real render logic below.
 function renderTable(preserveFocus){
+  const holder0 = document.getElementById('tableHolder');
+  const scrollParent = holder0 ? holder0.closest('.grade-table-scroll, .table-container') : null;
+  const savedScrollTop = scrollParent ? scrollParent.scrollTop : null;
+  renderTableInner(preserveFocus);
+  if(scrollParent && savedScrollTop!=null) scrollParent.scrollTop = savedScrollTop;
+}
+function renderTableInner(preserveFocus){
   const scoreMap = getScoreMap();
   const holder = document.getElementById('tableHolder');
   const footNote = document.getElementById('footNote');
@@ -5649,7 +5661,7 @@ function renderExamPaperScreen(roster, scoreMap, holder, footNote){
           <td><span class="badge ${col.c}">${col.t}</span></td>
           <td>${examFieldInputHtml(s.id,'examInitial',sc.examInitial)}</td>
           <td>${examFieldInputHtml(s.id,'examFinal',sc.examFinal)}</td>
-          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
         </tr>`;
     }).join('');
 
@@ -5682,7 +5694,7 @@ function renderExamPaperScreen(roster, scoreMap, holder, footNote){
         <td>${scoreInputHtml(s.id,'examPaper',val,max)}</td>
         <td class="pct-cell">${hasVal ? pct+'%' : '—'}</td>
         <td>${g ? `<span class="badge ${g.c}">${g.t}</span>` : '—'}</td>
-        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
   }).join('');
 
@@ -5747,7 +5759,7 @@ function renderStandardTable(roster, scoreMap, holder){
         <td class="total-cell">${total}</td>
         <td class="pct-cell">${pct}%</td>
         <td><span class="badge ${g.c}">${g.t}</span></td>
-        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
   }).join('');
 
@@ -5798,7 +5810,7 @@ function renderG9CycleTable(roster, scoreMap, holder){
         <td>${scoreInputHtml(s.id,field,val,max)}</td>
         <td class="pct-cell">${hasVal ? pct+'%' : '—'}</td>
         <td>${g ? `<span class="badge ${g.c}">${g.t}</span>` : '—'}</td>
-        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
   }).join('');
 
@@ -5895,7 +5907,7 @@ function renderPrimaryMonth1Table(roster, scoreMap, holder){
           <td>${scoreInputHtml(s.id,'m1Beh',sc.m1Beh,5)}</td>
           <td class="total-cell">${Math.round(t.month1Total*10)/10}</td>
           <td class="cycle-cell">${scoreInputHtml(s.id,'m1Cycle',sc.m1Cycle,5, sc.m1CycleAtt==='A' ? 'Student marked Absent for Cycle 1' : null)}${cycleAttButtonHtml(s.id,'m1CycleAtt',sc.m1CycleAtt)}</td>
-          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
         </tr>`;
     }).join('');
 
@@ -5954,7 +5966,7 @@ function renderPrimaryMonth1Table(roster, scoreMap, holder){
         <td>${scoreInputHtml(s.id,'m1Beh',sc.m1Beh,10)}</td>
         <td class="total-cell">${Math.round((qAv + (parseFloat(sc.m1CW)||0) + (parseFloat(sc.m1Beh)||0))*10)/10}</td>
         <td class="cycle-cell">${scoreInputHtml(s.id,'m1Cycle',sc.m1Cycle, cycleMax, sc.m1CycleAtt==='A' ? 'Student marked Absent for Cycle 1' : null)}${cycleAttButtonHtml(s.id,'m1CycleAtt',sc.m1CycleAtt)}</td>
-        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
   }).join('');
 
@@ -6012,7 +6024,7 @@ function renderPrimaryMonth2Table(roster, scoreMap, holder){
           <td>${scoreInputHtml(s.id,'m2Beh',sc.m2Beh,5)}</td>
           <td class="total-cell">${Math.round(t.month2Total*10)/10}</td>
           <td class="cycle-cell">${scoreInputHtml(s.id,'m2Cycle',sc.m2Cycle,5, sc.m2CycleAtt==='A' ? 'Student marked Absent for Cycle 2' : null)}${cycleAttButtonHtml(s.id,'m2CycleAtt',sc.m2CycleAtt)}</td>
-          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
         </tr>`;
     }).join('');
 
@@ -6071,7 +6083,7 @@ function renderPrimaryMonth2Table(roster, scoreMap, holder){
         <td>${scoreInputHtml(s.id,'m2Beh',sc.m2Beh,10)}</td>
         <td class="total-cell">${Math.round((qAv + (parseFloat(sc.m2CW)||0) + (parseFloat(sc.m2Beh)||0))*10)/10}</td>
         <td class="cycle-cell">${scoreInputHtml(s.id,'m2Cycle',sc.m2Cycle, cycleMax, sc.m2CycleAtt==='A' ? 'Student marked Absent for Cycle 2' : null)}${cycleAttButtonHtml(s.id,'m2CycleAtt',sc.m2CycleAtt)}</td>
-        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
   }).join('');
 
@@ -6123,7 +6135,7 @@ function renderPrimaryCourseworkTable(roster, scoreMap, holder){
           <td class="total-cell">${Math.round(t.totalCoursework*10)/10}</td>
           <td><span class="badge ${g.c}">${g.t}</span></td>
           <td><span class="badge ${col.c}">${col.t}</span></td>
-          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
         </tr>`;
     }).join('');
 
@@ -6163,7 +6175,7 @@ function renderPrimaryCourseworkTable(roster, scoreMap, holder){
           <td class="pct-cell">${Math.round(t.twoMonthsAvg*10)/10}</td>
           <td class="pct-cell">${Math.round(t.totalCycles*10)/10}</td>
           <td class="total-cell">${Math.round(t.totalCoursework*10)/10}</td>
-          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
         </tr>`;
     }).join('');
 
@@ -6199,7 +6211,7 @@ function renderPrimaryCourseworkTable(roster, scoreMap, holder){
         <td class="total-cell">${Math.round(t.totalCoursework*10)/10}</td>
         <td class="pct-cell">${pct}%</td>
         <td><span class="badge ${g.c}">${g.t}</span></td>
-        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
   }).join('');
 
@@ -6614,15 +6626,32 @@ function loadLastGradebookSelection(){
   }catch(err){}
 }
 
+let localSaveDebounceTimer = null;
+let localSavePending = false;
+
 function saveState(){
   saveStateLocalOnly();
   markGradeBookUnsaved();
 }
+// Splits the "instant" part (visual save feedback, so the user isn't left wondering
+// whether their edit registered) from the "expensive" part (serializing the ENTIRE app
+// state — every student, every subject's scores, attendance, etc. — to JSON and writing
+// it to localStorage). Previously both happened synchronously on every single score edit;
+// now the actual write is debounced ~500ms so a burst of edits (e.g. tabbing through a
+// row of students) only pays that cost once instead of once per field.
 function saveStateLocalOnly(){
+  localSavePending = true;
+  flashSaveIndicator();
+  updateQuickStatsWidget();
+  clearTimeout(localSaveDebounceTimer);
+  localSaveDebounceTimer = setTimeout(flushLocalSave, 500);
+}
+function flushLocalSave(){
+  clearTimeout(localSaveDebounceTimer);
+  if(!localSavePending) return;
   try{
     localStorage.setItem(LS_KEY, JSON.stringify({ students, scores, studentIdCounter, attendance, approvedLeave, teachers, teacherIdCounter, deletedTeacherIds, savedAt: new Date().toISOString() }));
-    flashSaveIndicator();
-    updateQuickStatsWidget();
+    localSavePending = false;
   }catch(err){ console.warn('Auto-save failed', err); }
 }
 
@@ -6958,6 +6987,7 @@ function showGbToast(type, text){
 // which all go through the debounced scheduleGithubPush()/pendingFirestorePush (~2.5s delay).
 // Closing/hard-refreshing during that window used to silently lose the edit.
 window.addEventListener('beforeunload', function(e){
+  flushLocalSave(); // force through any edit still sitting in the 500ms debounce window
   if(gbUnsavedChanges || pendingFirestorePush){ e.preventDefault(); e.returnValue = ''; }
 });
 
@@ -7018,7 +7048,7 @@ function restoreBackup(file){
         saveExamScheduleReleasesLocalOnly();
       }
       renderTable();
-      renderDatabase();
+      renderDatabaseNow();
       renderTeachersDatabase();
       renderAttendanceWorkspace();
       saveState();
@@ -7214,7 +7244,15 @@ function refreshBirthdayWidgets(){
   renderBirthdayTopBar();
 }
 
+// Debounced so typing quickly in the search box (bound to this same function from
+// index.html) coalesces into one table rebuild ~200ms after the user pauses, instead of
+// rebuilding the whole Student Database table on every keystroke.
+let dbRenderDebounceTimer = null;
 function renderDatabase(){
+  clearTimeout(dbRenderDebounceTimer);
+  dbRenderDebounceTimer = setTimeout(renderDatabaseNow, 200);
+}
+function renderDatabaseNow(){
   const search = (document.getElementById('dbSearch').value||'').trim().toLowerCase();
   const sectionSelect = document.getElementById('dbFilterSection');
   const lockedSection = (currentUser && currentUser.effective) ? currentUser.effective.sectionScope : null;
@@ -7350,7 +7388,7 @@ function renderDatabase(){
       <td>
         <input type="text" class="db-edit-select" value="${(s.notes||'').replace(/"/g,'&quot;')}" placeholder="Notes" title="${(s.notes||'').replace(/"/g,'&quot;')}" onchange="flashInlineSaved(this);updateStudentField('${s.classKey}','${s.id}','notes',this.value)">
       </td>
-      <td><button class="del-btn" onclick="deleteStudentFromDb('${s.classKey}','${s.id}')" title="Delete">✕</button></td>
+      <td><button class="del-btn" onclick="deleteStudentFromDb('${s.classKey}','${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
     </tr>`;
   }).join('');
 
@@ -7360,7 +7398,7 @@ function renderDatabase(){
     <table>
       <thead>
         <tr>
-          <th style="width:30px;"><input type="checkbox" id="dbSelectAllCheckbox" onclick="toggleSelectAllDb()"></th>
+          <th style="width:30px;"><input type="checkbox" id="dbSelectAllCheckbox" aria-label="Select all students" onclick="toggleSelectAllDb()"></th>
           <th>ID</th>
           <th class="name-col">Student Name</th>
           <th dir="rtl">اسم الطالب</th>
@@ -7457,7 +7495,7 @@ function updateStudentField(ck, studentId, field, value){
     if(autoDob) s.dob = autoDob;
   }
   saveState();
-  renderDatabase();
+  renderDatabaseNow();
 }
 
 function deleteStudentFromDb(ck, studentId){
@@ -7472,7 +7510,7 @@ function deleteStudentFromDb(ck, studentId){
       delete scores[sk][studentId];
     }
   });
-  renderDatabase();
+  renderDatabaseNow();
   if(currentView==='grades') renderTable();
   saveState();
   logActivity('delete', `Permanently deleted student "${removedName}" from the Student Database`);
@@ -7501,9 +7539,9 @@ function handleClassroomSelect(selectEl, ck, studentId){
   let value = selectEl.value;
   if(value === '__new__'){
     const newClass = prompt('Enter the new class name (e.g. 3/A):', '');
-    if(newClass === null){ renderDatabase(); return; }
+    if(newClass === null){ renderDatabaseNow(); return; }
     value = newClass.trim();
-    if(!value){ renderDatabase(); return; }
+    if(!value){ renderDatabaseNow(); return; }
   }
   updateStudentField(ck, studentId, 'classroom', value);
 }
@@ -7531,28 +7569,73 @@ function deleteSelectedDbStudents(){
     deleteAttendanceForStudent(id);
   });
 
-  renderDatabase();
+  renderDatabaseNow();
   if(currentView==='grades') renderTable();
   if(currentView==='attendance') renderAttendanceWorkspace();
   saveState();
 }
 
+// Reusable typed-confirmation dialog for the app's most destructive actions — built
+// entirely from JS (no dependency on a static overlay div in index.html), reusing the
+// existing .config-modal-overlay/.modal CSS classes for visual consistency. Unlike a
+// plain confirm(), requiring the admin to actually type a phrase makes it much harder
+// to click through by accident on something irreversible.
+function showTypedConfirmModal({title, message, requirePhrase, confirmLabel, onConfirm}){
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay show';
+  overlay.innerHTML = `
+    <div class="modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+      <h3>${escapeHtml(title)}</h3>
+      <p style="white-space:pre-line;">${escapeHtml(message)}</p>
+      ${requirePhrase ? `
+        <p style="font-size:12.5px;color:var(--ink-soft);margin:-6px 0 8px;">Type <b>${escapeHtml(requirePhrase)}</b> below to confirm:</p>
+        <input type="text" id="typedConfirmInput" autocomplete="off"
+               style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:16px;font-family:inherit;font-size:14px;">
+      ` : ''}
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" id="typedConfirmCancel">Cancel</button>
+        <button type="button" class="btn" id="typedConfirmOk" ${requirePhrase ? 'disabled' : ''}
+                style="background:var(--red);color:#fff;opacity:${requirePhrase?'.5':'1'};">${escapeHtml(confirmLabel||'Confirm')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const okBtn = overlay.querySelector('#typedConfirmOk');
+  const input = overlay.querySelector('#typedConfirmInput');
+  function close(){ overlay.remove(); }
+  if(input){
+    input.addEventListener('input', ()=>{
+      const match = input.value.trim() === requirePhrase;
+      okBtn.disabled = !match;
+      okBtn.style.opacity = match ? '1' : '.5';
+    });
+    setTimeout(()=> input.focus(), 30);
+  }
+  overlay.querySelector('#typedConfirmCancel').addEventListener('click', close);
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) close(); });
+  okBtn.addEventListener('click', ()=>{ close(); onConfirm(); });
+}
+
 function confirmDeleteAllDb(){
   const total = allStudentsFlat().length;
   if(total===0){ alert('There is no data to delete.'); return; }
-  if(!confirm(`⚠ WARNING: This will permanently delete ALL ${total} student(s) and ALL grades across every Section, Stage, Grade and Class in the entire system. This cannot be undone.\n\nAre you sure you want to continue?`)) return;
-  if(!confirm('Please confirm one more time: delete absolutely everything?')) return;
-
-  students = {};
-  scores = {};
-  attendance = {};
-  approvedLeave = {};
-  studentIdCounter = 1;
-  renderDatabase();
-  if(currentView==='grades'){ state.term=null; state.subject=null; renderStepper(); renderWorkspace(); }
-  if(currentView==='attendance'){ attState.term=null; attState.subject=null; attState.academicTerm=null; renderAttendanceStepper(); renderAttendanceWorkspace(); }
-  saveState();
-  alert('All data has been deleted.');
+  showTypedConfirmModal({
+    title: '⚠ Delete ALL data',
+    message: `This will permanently delete ALL ${total} student(s) and ALL grades across every Section, Stage, Grade and Class in the entire system. This cannot be undone.`,
+    requirePhrase: 'DELETE',
+    confirmLabel: 'Delete everything',
+    onConfirm: function(){
+      students = {};
+      scores = {};
+      attendance = {};
+      approvedLeave = {};
+      studentIdCounter = 1;
+      renderDatabaseNow();
+      if(currentView==='grades'){ state.term=null; state.subject=null; renderStepper(); renderWorkspace(); }
+      if(currentView==='attendance'){ attState.term=null; attState.subject=null; attState.academicTerm=null; renderAttendanceStepper(); renderAttendanceWorkspace(); }
+      saveState();
+      alert('All data has been deleted.');
+    }
+  });
 }
 
 function exportDatabase(){
@@ -7727,7 +7810,7 @@ function importDatabaseExcel(file){
         added++;
       });
 
-      renderDatabase();
+      renderDatabaseNow();
       saveState();
       document.getElementById('importTitle').textContent = 'Bulk Import Result';
       let msg = `${added} student(s) added successfully.`;
@@ -8135,7 +8218,7 @@ function renderTeachersDatabase(){
           <div class="teacher-classes-panel" id="tcPanel_${t.id}">${classesOptionsHtml}</div>
         </div>
       </td>
-      <td><button class="del-btn" onclick="deleteTeacherFromDb('${t.id}')" title="Delete">✕</button></td>
+      <td><button class="del-btn" onclick="deleteTeacherFromDb('${t.id}')" title="Delete" aria-label="Delete teacher">✕</button></td>
     </tr>`;
   }).join('');
 
@@ -8765,7 +8848,7 @@ function renderTmdHolidayChips(term, monthKey){
     const dd = String(d.getDate()).padStart(2,'0');
     const mm = String(d.getMonth()+1).padStart(2,'0');
     const label = `${dd}/${mm}/${d.getFullYear()}`;
-    return `<span class="att-excl-chip">🚫 ${label}${isAdmin ? `<button type="button" class="att-excl-chip-x" title="Remove this holiday" onclick="removeTmdHoliday('${term}','${monthKey}','${ds}')">×</button>` : ''}</span>`;
+    return `<span class="att-excl-chip">🚫 ${label}${isAdmin ? `<button type="button" class="att-excl-chip-x" title="Remove this holiday" aria-label="Remove this holiday" onclick="removeTmdHoliday('${term}','${monthKey}','${ds}')">×</button>` : ''}</span>`;
   }).join('');
 }
 
@@ -8933,7 +9016,7 @@ function renderBellTimesRows(){
           style="border:1.5px solid var(--border);border-radius:8px;padding:7px 9px;font-family:'Tajawal';font-size:13.5px;width:100%;">
       </div>
       <div style="width:24px;text-align:center;">
-        ${isAdmin ? `<span title="Remove this period" style="cursor:pointer;color:var(--red);font-weight:800;" onclick="removeBellTimesRow(${idx})">×</span>` : ''}
+        ${isAdmin ? `<span title="Remove this period" aria-label="Remove this period" role="button" tabindex="0" style="cursor:pointer;color:var(--red);font-weight:800;" onclick="removeBellTimesRow(${idx})">×</span>` : ''}
       </div>
     </div>
   `).join('');
@@ -9144,7 +9227,7 @@ function renderAdminStructureRows(){
         ${isAdmin ? `
           <span title="Move up" style="cursor:${idx===0?'default':'pointer'};opacity:${idx===0?0.3:1};font-weight:800;" onclick="moveAdminStructureRow(${idx},-1)">↑</span>
           <span title="Move down" style="cursor:${idx===adminStructureStaged.length-1?'default':'pointer'};opacity:${idx===adminStructureStaged.length-1?0.3:1};font-weight:800;" onclick="moveAdminStructureRow(${idx},1)">↓</span>
-          <span title="Remove this member" style="cursor:pointer;color:var(--red);font-weight:800;" onclick="removeAdminStructureRow(${idx})">×</span>
+          <span title="Remove this member" aria-label="Remove this member" role="button" tabindex="0" style="cursor:pointer;color:var(--red);font-weight:800;" onclick="removeAdminStructureRow(${idx})">×</span>
         ` : ''}
       </div>
     </div>
@@ -9522,7 +9605,7 @@ function renderExamScheduleRows(){
         <input type="time" value="${row.timeFrom||''}" style="flex:0.7;${fieldStyle}" oninput="updateExamScheduleRow('${row.id}','timeFrom',this.value)">
         <input type="time" value="${row.timeTo||''}" style="flex:0.7;${fieldStyle}" oninput="updateExamScheduleRow('${row.id}','timeTo',this.value)">
         <input type="text" value="${(row.duration||'').replace(/"/g,'&quot;')}" placeholder="Duration" style="flex:0.9;${fieldStyle}" oninput="updateExamScheduleRow('${row.id}','duration',this.value)">
-        <button type="button" class="att-excl-chip-x" title="Remove this row" style="width:24px;height:24px;" onclick="removeExamScheduleRow('${row.id}')">×</button>
+        <button type="button" class="att-excl-chip-x" title="Remove this row" aria-label="Remove this row" style="width:24px;height:24px;" onclick="removeExamScheduleRow('${row.id}')">×</button>
       </div>
     `).join('');
   }
@@ -10413,7 +10496,7 @@ function renderBlockedStudentsChips(){
   chipsWrap.innerHTML = blockedStudentIds.map(id=>{
     const s = byId[id];
     const label = s ? `${s.name}${s.displayId?` (${s.displayId})`:''}` : id;
-    return `<span class="att-excl-chip">🚫 ${escapeHtml(label)}<button type="button" class="att-excl-chip-x" title="Unblock this student" onclick="toggleBlockedStudent('${id}', false); renderBlockedStudentsPicker();">×</button></span>`;
+    return `<span class="att-excl-chip">🚫 ${escapeHtml(label)}<button type="button" class="att-excl-chip-x" title="Unblock this student" aria-label="Unblock this student" onclick="toggleBlockedStudent('${id}', false); renderBlockedStudentsPicker();">×</button></span>`;
   }).join('');
 }
 
@@ -10690,8 +10773,8 @@ function renderGradeEntryControlRules(){
           </div>
         </div>
         <div class="ge-rule-actions">
-          <button type="button" title="Edit" onclick="openGeRuleForm('${rule.id}')">✏️</button>
-          <button type="button" title="Delete" onclick="deleteGeRule('${rule.id}')">🗑️</button>
+          <button type="button" title="Edit" aria-label="Edit rule" onclick="openGeRuleForm('${rule.id}')">✏️</button>
+          <button type="button" title="Delete" aria-label="Delete rule" onclick="deleteGeRule('${rule.id}')">🗑️</button>
         </div>
       </div>`;
   }).join('');
@@ -11700,7 +11783,7 @@ function renderNotifDropdown(){
         <div class="notif-row" style="display:flex; align-items:center; gap:8px;">
           <span class="notif-icon">${w.isFullAbsence ? '🚨' : '⚠️'}</span>
           <span class="notif-msg" style="flex:1;">${msg}</span>
-          <button type="button" title="Dismiss" style="border:none;background:none;cursor:pointer;font-size:16px;opacity:.6;line-height:1;"
+          <button type="button" title="Dismiss" aria-label="Dismiss this alert" style="border:none;background:none;cursor:pointer;font-size:16px;opacity:.6;line-height:1;"
                   onclick="dismissMonthlyAbsenceWarning('${w.seenKey}'); renderNotifDropdown(); updateNotifBadge();">×</button>
         </div>
       </div>`;
@@ -14126,7 +14209,7 @@ function applyRemotePayload(payload){
     }
   }
   saveStateLocalOnly();
-  renderDatabase();
+  renderDatabaseNow();
   if(typeof renderTeachersDatabase==='function') renderTeachersDatabase();
   if(typeof renderTable==='function') renderTable();
   if(typeof renderAttendanceWorkspace==='function') renderAttendanceWorkspace();
@@ -14454,7 +14537,7 @@ renderStepper();
 renderAttendanceStepper();
 renderWorkspace();
 renderAttendanceWorkspace();
-renderDatabase();
+renderDatabaseNow();
 renderTeachersDatabase();
 renameAttendanceNavTab();
 // Renames the "Absence" nav tab button to "Absence & Approved Leave", preserving any leading
