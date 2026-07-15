@@ -341,6 +341,47 @@ function formatMilsId(rawId){
   const last4 = digits.slice(-4).padStart(4,'0');
   return 'MILS-' + last4;
 }
+// Builds a lookup index for matching typed/pasted Student ID(s) against the Students Database,
+// tolerant of the two ID formats this app can produce for the SAME student — the default
+// "STU-####" sequence number (nextDisplayId), or a "MILS-####" format derived from an external
+// ID typed in during bulk import (formatMilsId, above). A person retyping/guessing an ID from
+// memory often gets the digits right but the prefix wrong, so on top of the exact (trimmed,
+// case-insensitive) displayId this also indexes every student by their last 4 digits — the
+// same digits formatMilsId() itself keys off — so "STU-5186" and "MILS-5186" resolve to the
+// same student even though neither string matches the other exactly.
+function buildStudentIdIndex(students){
+  const byExact = new Map();
+  const byDigits = new Map();
+  (students||[]).forEach(s=>{
+    if(!s.displayId) return;
+    const exactKey = s.displayId.toString().trim().toLowerCase();
+    if(!byExact.has(exactKey)) byExact.set(exactKey, []);
+    byExact.get(exactKey).push(s);
+    const digits = s.displayId.toString().replace(/\D/g,'');
+    if(digits){
+      const digitKey = digits.slice(-4).padStart(4,'0');
+      if(!byDigits.has(digitKey)) byDigits.set(digitKey, []);
+      byDigits.get(digitKey).push(s);
+    }
+  });
+  return { byExact, byDigits };
+}
+// Resolves one typed Student ID token against the index above. Tries an exact (trimmed,
+// case-insensitive) match on the full ID first; only if that finds NOTHING does it fall back
+// to matching on the last 4 digits alone — so a guessed/wrong prefix still resolves as long as
+// those last 4 digits belong to exactly one student. `viaFallback` tells the caller whether the
+// match came from the digits-only fallback, so a result message can optionally flag it.
+function resolveStudentIdToken(rawToken, index){
+  const token = (rawToken||'').toString().trim();
+  if(!token) return { matches:[], viaFallback:false };
+  const exact = index.byExact.get(token.toLowerCase());
+  if(exact && exact.length) return { matches:exact, viaFallback:false };
+  const digits = token.replace(/\D/g,'');
+  if(!digits) return { matches:[], viaFallback:false };
+  const digitKey = digits.slice(-4).padStart(4,'0');
+  const fallback = index.byDigits.get(digitKey);
+  return { matches: fallback||[], viaFallback:true };
+}
 // Attendance is tracked per Class within its own Academic Term + Month selection (attState),
 // fully independent of the Grade Book tab. Each Term × Month combination is its own table.
 function attClassKey(){ return `${attState.section}|${attState.stage}|${attState.grade}|${attState.termPeriod}|${attState.term}|${attState.subject}|${attState.academicTerm}`; }
@@ -9577,21 +9618,17 @@ function handleSeatAssignmentExcelFile(file){
         return;
       }
       const flat = allStudentsFlatRaw();
-      const byDisplayId = new Map();
-      flat.forEach(s=>{
-        if(!s.displayId) return;
-        const key = s.displayId.toString().trim().toLowerCase();
-        if(!byDisplayId.has(key)) byDisplayId.set(key, []);
-        byDisplayId.get(key).push(s);
-      });
+      const idIndex = buildStudentIdIndex(flat);
       const problems = [];
       const parsed = [];
+      let viaFallbackCount = 0;
       rows.forEach(row=>{
         const idVal = (row['Student ID'] || row['ID'] || row['Student ID(s)'] || '').toString().trim();
         if(!idVal) return;
-        const matches = byDisplayId.get(idVal.toLowerCase());
-        if(!matches || matches.length===0){ problems.push(`${idVal}: student not found`); return; }
+        const { matches, viaFallback } = resolveStudentIdToken(idVal, idIndex);
+        if(!matches.length){ problems.push(`${idVal}: student not found`); return; }
         if(matches.length>1){ problems.push(`${idVal}: matches more than one student — fix the duplicate ID in Student Database first`); return; }
+        if(viaFallback) viaFallbackCount++;
         parsed.push({
           studentId: matches[0].id,
           displayId: matches[0].displayId,
@@ -9603,7 +9640,7 @@ function handleSeatAssignmentExcelFile(file){
         });
       });
       if(!parsed.length){
-        alert('Could not find any usable rows with valid Student IDs. Make sure the file has a "Student ID" column matching the STU-#### IDs from the Student Database.');
+        alert('Could not find any usable rows with valid Student IDs. Make sure the file has a "Student ID" column matching a student\'s ID from the Student Database (STU-#### or MILS-#### — the last 4 digits are enough).');
         document.getElementById('seatAssignmentExcelInput').value = '';
         return;
       }
@@ -9615,6 +9652,7 @@ function handleSeatAssignmentExcelFile(file){
       const statusEl = document.getElementById('seatAssignmentStatus');
       if(statusEl){
         statusEl.textContent = `✓ ${parsed.length} seat assignment(s) saved.` +
+          (viaFallbackCount ? ` (${viaFallbackCount} matched by last-4-digits — prefix in the file didn't match exactly.)` : '') +
           (problems.length ? ` ${problems.length} issue(s): ${problems.slice(0,5).join('; ')}${problems.length>5 ? '…' : ''}` : '');
       }
       renderExamSeatCards();
@@ -13019,7 +13057,7 @@ function downloadUserTemplate(){
     { "Field":"Section", "Allowed Values":"English Section / French Section — required for Teacher, HOS/Deputy, Head of Department and Parent/Student (leave blank for Admin)" },
     { "Field":"Subjects", "Allowed Values":"Semicolon-separated subject names — required for Teacher and Head of Department (a Head of Department normally has just one). Not used for Parent/Student. Available: " + ALL_SUBJECTS.join(', ') },
     { "Field":"Classes", "Allowed Values":"Semicolon-separated class values (must match the 'Class' step used in Grade Book, e.g. 3/A) — only for Teacher, leave blank for Head of Department and Parent/Student" },
-    { "Field":"Student ID(s)", "Allowed Values":"Only for Parent/Student rows — one or more Student ID(s) (the MILS-XXXX code from the Students Database), separated by semicolons for a parent with more than one child at the school. The account is created AND linked to that child in this same import — no separate 'Link Parent Accounts' step needed. Leave blank for every other role." }
+    { "Field":"Student ID(s)", "Allowed Values":"Only for Parent/Student rows — one or more Student ID(s) from the Students Database (either the STU-#### or MILS-#### format, whichever that student has), separated by semicolons for a parent with more than one child at the school. You don't need to get the prefix exactly right — the last 4 digits alone are enough to find the right student, as long as they're unique. The account is created AND linked to that child in this same import — no separate 'Link Parent Accounts' step needed. Leave blank for every other role." }
   ];
   const wsGuide = XLSX.utils.json_to_sheet(guide);
   const wb = XLSX.utils.book_new();
@@ -13038,7 +13076,7 @@ function downloadParentLinkTemplate(){
   const wsData = XLSX.utils.json_to_sheet(sample);
   const guide = [
     { "Field":"Username", "Notes":"Must match an EXISTING Parent/Student account username exactly (create the account first via 'Add Users from Excel' or the form above)." },
-    { "Field":"Student ID(s)", "Notes":"The student's 'STU-####' ID — visible in the Student Database Excel export (column 'ID') or in the Grade Book. Separate multiple IDs (for parents with more than one child) with a semicolon, e.g. STU-0034; STU-0035." },
+    { "Field":"Student ID(s)", "Notes":"The student's ID from the Students Database — either the 'STU-####' or 'MILS-####' format, whichever that student has (visible in the 'ID' column of a Student Database export, or in the Grade Book). The prefix doesn't need to match exactly — the last 4 digits alone are enough to find the right student, as long as they're unique. Separate multiple IDs (for parents with more than one child) with a semicolon, e.g. STU-0034; STU-0035." },
     { "Field":"Note", "Notes":"Re-uploading a username that was already linked REPLACES its previous student list — it does not add to it." }
   ];
   const wsGuide = XLSX.utils.json_to_sheet(guide);
@@ -13058,15 +13096,10 @@ function importParentLinksExcel(file){
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
       const flat = allStudentsFlat();
-      const byDisplayId = new Map();
-      flat.forEach(s=>{
-        if(!s.displayId) return;
-        const key = s.displayId.toString().trim().toLowerCase();
-        if(!byDisplayId.has(key)) byDisplayId.set(key, []);
-        byDisplayId.get(key).push(s);
-      });
+      const idIndex = buildStudentIdIndex(flat);
 
       let linked = 0;
+      let viaFallbackCount = 0;
       const problems = [];
       // Merge multiple rows for the same username into one final ID list, rather than
       // letting a later row silently wipe out IDs collected from an earlier row.
@@ -13087,9 +13120,10 @@ function importParentLinksExcel(file){
 
         const resolvedIds = pending.has(username) ? pending.get(username) : [];
         tokens.forEach(tok=>{
-          const matches = byDisplayId.get(tok.toLowerCase());
-          if(!matches || matches.length===0){ problems.push(`${username}: student ID "${tok}" not found`); return; }
+          const { matches, viaFallback } = resolveStudentIdToken(tok, idIndex);
+          if(!matches.length){ problems.push(`${username}: student ID "${tok}" not found — check the exact ID in Student Database, or just the last 4 digits`); return; }
           if(matches.length>1){ problems.push(`${username}: student ID "${tok}" matches more than one student — please fix the duplicate ID in Student Database first`); return; }
+          if(viaFallback) viaFallbackCount++;
           if(!resolvedIds.includes(matches[0].id)) resolvedIds.push(matches[0].id);
         });
         pending.set(username, resolvedIds);
@@ -13106,6 +13140,9 @@ function importParentLinksExcel(file){
 
       document.getElementById('importTitle').textContent = 'Parent Linking Result';
       let msg = `${linked} account(s) linked/updated successfully.`;
+      if(viaFallbackCount>0){
+        msg += `<br><span style="color:var(--green);font-weight:800;">🔗 ${viaFallbackCount} ID(s) matched by their last 4 digits (the prefix typed in the file didn't match exactly, e.g. STU- vs MILS-) — double-check these are the right student(s).</span>`;
+      }
       if(problems.length){
         msg += `<br><br><b>${problems.length} issue(s):</b><br>` +
           problems.slice(0,10).map(p=>`• ${p}`).join('<br>') +
@@ -13133,6 +13170,7 @@ function importUsersExcel(file){
       const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
       let added = 0;
       let linkedAuto = 0;
+      let viaFallbackIdCount = 0;
       const problems = [];
 
       // Column headers can vary slightly (extra spaces, different case, "Subject" instead
@@ -13155,13 +13193,7 @@ function importUsersExcel(file){
       // a Parent/Student row's "Student ID(s)" column can be resolved and linked in this same
       // pass — creating the account AND linking it to the child in one upload, instead of
       // needing a separate "Link Parent Accounts" import afterwards.
-      const byDisplayId = new Map();
-      allStudentsFlat().forEach(s=>{
-        if(!s.displayId) return;
-        const key = s.displayId.toString().trim().toLowerCase();
-        if(!byDisplayId.has(key)) byDisplayId.set(key, []);
-        byDisplayId.get(key).push(s);
-      });
+      const idIndex = buildStudentIdIndex(allStudentsFlat());
 
       rows.forEach((row, idx)=>{
         // Each row is now isolated in its own try/catch. Previously the entire
@@ -13217,9 +13249,10 @@ function importUsersExcel(file){
             const tokens = splitMulti(studentIdsRaw);
             const resolvedIds = [];
             tokens.forEach(tok=>{
-              const matches = byDisplayId.get(tok.toLowerCase());
-              if(!matches || matches.length===0){ problems.push(`${username}: student ID "${tok}" not found`); return; }
+              const { matches, viaFallback } = resolveStudentIdToken(tok, idIndex);
+              if(!matches.length){ problems.push(`${username}: student ID "${tok}" not found — check the exact ID in Student Database, or just the last 4 digits`); return; }
               if(matches.length>1){ problems.push(`${username}: student ID "${tok}" matches more than one student — please fix the duplicate ID in Student Database first`); return; }
+              if(viaFallback) viaFallbackIdCount++;
               if(!resolvedIds.includes(matches[0].id)) resolvedIds.push(matches[0].id);
             });
             if(!tokens.length){ problems.push(`${username}: no "Student ID(s)" given — account created but not linked to any student yet`); }
@@ -13292,6 +13325,9 @@ function importUsersExcel(file){
       }
       if(linkedAuto>0){
         msg += `<br><span style="color:var(--green);font-weight:800;">🔗 ${linkedAuto} Parent/Student account(s) were linked to their child automatically in this same step — no separate linking upload needed.</span>`;
+      }
+      if(viaFallbackIdCount>0){
+        msg += `<br><span style="color:var(--amber);font-weight:800;">⚠ ${viaFallbackIdCount} Student ID(s) matched by their last 4 digits only (the prefix typed in the file didn't match exactly, e.g. STU- vs MILS-) — double-check these are the right student(s) in the table below.</span>`;
       }
       if(problems.length){
         msg += `<br><br><b>${problems.length} row(s) could not be added:</b><br>` +
