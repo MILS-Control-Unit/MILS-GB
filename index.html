@@ -332,21 +332,33 @@
       </div>
     </div>
 
-    <div class="perm-grid" id="usersExcelRow" style="margin-bottom:12px;border-top:1px dashed var(--border);padding-top:14px;">
+    <div class="perm-grid" id="usersExcelRow" style="margin-bottom:8px;border-top:1px dashed var(--border);padding-top:14px;">
       <button class="btn btn-outline" onclick="downloadUserTemplate()">⬇ Download Users Import Template</button>
-      <button class="btn btn-ink" onclick="document.getElementById('usersExcelInput').click()">⇪ Add Users from Excel</button>
+      <button class="btn btn-ink" onclick="document.getElementById('usersExcelInput').click()">⇪ Add &amp; Link Users from Excel</button>
       <input type="file" id="usersExcelInput" accept=".xlsx,.xls,.csv" onchange="importUsersExcel(this.files[0])">
     </div>
+    <p class="uf-onestep-tip" style="margin-bottom:16px;">
+      💡 <b>One step is enough for Parent/Student accounts:</b> fill the <b>Student ID(s)</b> column in this same
+      file and the account is created <u>and</u> linked to the child together — no separate linking upload needed.
+    </p>
 
-    <div class="perm-grid" id="parentLinkExcelRow" style="margin-bottom:16px;border-top:1px dashed var(--border);padding-top:14px;">
-      <div style="min-width:100%;flex-basis:100%;">
-        <p class="uf-section-title" style="margin-bottom:4px;">Bulk-link Parents to Students (Excel)</p>
-        <p class="foot-note" style="margin:0 0 8px;">For linking many Parent/Student accounts at once. Each row: a <b>Username</b> (must already exist as a Parent/Student account) and one or more <b>Student ID(s)</b> (the "STU-####" ID shown in Student Database exports) — separate multiple IDs in one cell with a semicolon.</p>
+    <details class="uf-advanced" id="parentLinkExcelRow" style="margin-bottom:16px;">
+      <summary>⚙ Advanced: update linking for existing Parent/Student accounts</summary>
+      <div class="uf-advanced-body">
+        <p class="foot-note" style="margin:0 0 8px;text-align:left;">
+          Only needed to <b>change</b> which child(ren) an <b>already-existing</b> Parent/Student account can see
+          (e.g. a sibling joined the school, or a mistake needs fixing) — not for creating new accounts, since
+          that already happens above. Each row: a <b>Username</b> (must already exist as a Parent/Student account)
+          and one or more <b>Student ID(s)</b> (the "STU-####" ID shown in Student Database exports) — separate
+          multiple IDs in one cell with a semicolon. Re-uploading a username replaces its previous student list.
+        </p>
+        <div class="perm-grid">
+          <button class="btn btn-outline" onclick="downloadParentLinkTemplate()">⬇ Download Linking Template</button>
+          <button class="btn btn-ink" onclick="document.getElementById('parentLinkExcelInput').click()">⇪ Link Parents from Excel</button>
+          <input type="file" id="parentLinkExcelInput" accept=".xlsx,.xls,.csv" onchange="importParentLinksExcel(this.files[0])">
+        </div>
       </div>
-      <button class="btn btn-outline" onclick="downloadParentLinkTemplate()">⬇ Download Linking Template</button>
-      <button class="btn btn-ink" onclick="document.getElementById('parentLinkExcelInput').click()">⇪ Link Parents from Excel</button>
-      <input type="file" id="parentLinkExcelInput" accept=".xlsx,.xls,.csv" onchange="importParentLinksExcel(this.files[0])">
-    </div>
+    </details>
 
     <div class="users-bulk-toolbar" id="usersBulkToolbar">
       <label>Filter by role:</label>
