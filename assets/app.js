@@ -11571,12 +11571,29 @@ function saveUsers(){
   if(adminUser && adminUser.role !== 'admin'){
     adminUser.role = 'admin';
   }
-  saveUsersLocalOnly();
+  const savedOk = saveUsersLocalOnly();
   scheduleGithubPush();
+  return savedOk;
 }
 function saveUsersLocalOnly(){
-  try{ localStorage.setItem(USERS_LS_KEY, JSON.stringify({ users, deletedUsernames })); }
-  catch(err){ console.warn('Could not save users', err); }
+  try{
+    localStorage.setItem(USERS_LS_KEY, JSON.stringify({ users, deletedUsernames }));
+    return true;
+  }catch(err){
+    // This used to fail silently (console.warn only). If this write throws — most
+    // commonly a QuotaExceededError once localStorage fills up with years of
+    // students/scores/attendance data — the in-memory `users` array (and the table
+    // on screen) still look correct, so nothing seems wrong... until the next page
+    // refresh reloads `users` from localStorage and the never-actually-saved rows
+    // are gone. A single manual "Add User" rarely trips this (one small object), but
+    // a bulk Excel import adding many users at once is much more likely to push
+    // localStorage over its limit, which matches the "Excel-added users vanish on
+    // refresh, manually-added ones don't" pattern. Returning false lets callers
+    // (e.g. importUsersExcel) warn the admin immediately instead of the save
+    // failing invisibly.
+    console.warn('Could not save users', err);
+    return false;
+  }
 }
 function findUser(username){
   return users.find(u=> u.username.toLowerCase() === (username||'').trim().toLowerCase());
@@ -13075,70 +13092,115 @@ function importUsersExcel(file){
       const splitMulti = (raw) => raw ? raw.split(/[;,]/).map(s=>s.trim()).filter(Boolean) : [];
 
       rows.forEach((row, idx)=>{
-        const username = getField(row, ['Username']);
-        const displayName = getField(row, ['Display Name','DisplayName','Name']);
-        const password = getField(row, ['Password']);
-        const roleLabel = getField(row, ['Role']);
-        const sectionLabel = getField(row, ['Section']);
-        const subjectsRaw = getField(row, ['Subjects','Subject']);
-        const classesRaw = getField(row, ['Classes','Class']);
+        // Each row is now isolated in its own try/catch. Previously the entire
+        // rows.forEach ran inside ONE try block shared with saveUsers()/saveState()
+        // below — if any single row threw an unexpected error, the exception would
+        // abort the loop immediately and skip saveUsers() entirely. Any rows already
+        // pushed into the in-memory `users`/`teachers` arrays before the throw would
+        // still render on screen (looking like a successful import), but since
+        // saveUsers() never ran, nothing was actually written to localStorage or
+        // Firestore — so the "added" rows would silently disappear the moment the
+        // page was refreshed, while a one-at-a-time manual "Add User" (which always
+        // reaches its own saveUsers() call for that single user) would not be
+        // affected. Wrapping each row individually means one bad/unexpected row is
+        // reported as a problem and skipped, instead of quietly discarding every
+        // row that came after it — and before it, in memory only.
+        try{
+          const username = getField(row, ['Username']);
+          const displayName = getField(row, ['Display Name','DisplayName','Name']);
+          const password = getField(row, ['Password']);
+          const roleLabel = getField(row, ['Role']);
+          const sectionLabel = getField(row, ['Section']);
+          const subjectsRaw = getField(row, ['Subjects','Subject']);
+          const classesRaw = getField(row, ['Classes','Class']);
 
-        if(!username){ return; } // skip fully blank helper rows
-        if(!password){ problems.push(`${username}: missing password`); return; }
-        if(findUser(username)){ problems.push(`${username}: username already exists`); return; }
-        if(currentUser.role==='hod'){ problems.push(`${username}: bulk import is only available to Admin`); return; }
+          if(!username){ return; } // skip fully blank helper rows
+          if(!password){ problems.push(`${username}: missing password`); return; }
+          if(findUser(username)){ problems.push(`${username}: username already exists`); return; }
+          if(currentUser.role==='hod'){ problems.push(`${username}: bulk import is only available to Admin`); return; }
 
-        const role = findRoleId(roleLabel);
-        if(!role){ problems.push(`${username}: unrecognized "Role" value ("${roleLabel}")`); return; }
+          const role = findRoleId(roleLabel);
+          if(!role){ problems.push(`${username}: unrecognized "Role" value ("${roleLabel}")`); return; }
 
-        let sectionId = null;
-        if(role!=='admin'){
-          sectionId = findSectionId(sectionLabel);
-          if(!sectionId){ problems.push(`${username}: unrecognized "Section" value ("${sectionLabel}")`); return; }
-        }
-
-        const userObj = { username, displayName, password, role };
-        if(sectionId) userObj.section = sectionId;
-        if(role==='teacher' || role==='hod' || role==='parent'){
-          userObj.subjects = splitMulti(subjectsRaw);
-          userObj.classrooms = splitMulti(classesRaw);
-          if(role==='hod' && !userObj.subjects.length){
-            problems.push(`${username}: Head of Department has no "Subjects" value in this row — added with Subject left blank, please fill it in manually`);
+          let sectionId = null;
+          if(role!=='admin'){
+            sectionId = findSectionId(sectionLabel);
+            if(!sectionId){ problems.push(`${username}: unrecognized "Section" value ("${sectionLabel}")`); return; }
           }
-        }
-        // Clear any leftover deletion-tombstone for this username — see the matching
-        // comment in saveUserFromForm() above for why this is required.
-        deletedUsernames = deletedUsernames.filter(u=> u!==username);
-        users.push(userObj);
-        added++;
 
-        // Auto-import Teacher AND Head of Department accounts into the Teachers Database
-        // too, filling Section & Subject from the row just imported (Classes can be added
-        // later) — matching what the manual "Add User" form already does for both roles.
-        // (Previously this only checked role==='teacher', so HOD accounts silently never
-        // made it into the Teachers Database on bulk import.)
-        if(role === 'teacher' || role === 'hod'){
-          const alreadyLinked = teachers.some(t=> t.username === username);
-          if(!alreadyLinked){
-            teachers.push({
-              id: uid(),
-              displayId: nextTeacherDisplayId(),
-              name: displayName || username,
-              username: username,
-              section: sectionLabelFromCode(sectionId),
-              subject: userObj.subjects.join(', '),
-              classes: userObj.classrooms.join(', ')
-            });
+          const userObj = { username, displayName, password, role };
+          if(sectionId) userObj.section = sectionId;
+          if(role==='teacher' || role==='hod' || role==='parent'){
+            userObj.subjects = splitMulti(subjectsRaw);
+            userObj.classrooms = splitMulti(classesRaw);
+            if(role==='hod' && !userObj.subjects.length){
+              problems.push(`${username}: Head of Department has no "Subjects" value in this row — added with Subject left blank, please fill it in manually`);
+            }
           }
+          // Clear any leftover deletion-tombstone for this username — see the matching
+          // comment in saveUserFromForm() above for why this is required.
+          deletedUsernames = deletedUsernames.filter(u=> u!==username);
+          users.push(userObj);
+          added++;
+
+          // Auto-import Teacher AND Head of Department accounts into the Teachers Database
+          // too, filling Section & Subject from the row just imported (Classes can be added
+          // later) — matching what the manual "Add User" form already does for both roles.
+          // (Previously this only checked role==='teacher', so HOD accounts silently never
+          // made it into the Teachers Database on bulk import.)
+          if(role === 'teacher' || role === 'hod'){
+            const alreadyLinked = teachers.some(t=> t.username === username);
+            if(!alreadyLinked){
+              teachers.push({
+                id: uid(),
+                displayId: nextTeacherDisplayId(),
+                name: displayName || username,
+                username: username,
+                section: sectionLabelFromCode(sectionId),
+                subject: userObj.subjects.join(', '),
+                classes: userObj.classrooms.join(', ')
+              });
+            }
+          }
+        }catch(rowErr){
+          console.warn('Row import failed', row, rowErr);
+          problems.push(`Row ${idx+2}: unexpected error, skipped (${rowErr && rowErr.message ? rowErr.message : rowErr})`);
         }
       });
 
-      saveUsers();
+      const savedOk = saveUsers();
       saveState(); // Save teachers as well
+
+      // Verify the save actually reached localStorage instead of trusting that
+      // saveUsers() succeeded just because it didn't throw. This is the check that
+      // directly catches the "added successfully" message appearing while the data
+      // never actually persisted (e.g. localStorage quota exceeded) — the exact
+      // failure mode that makes Excel-imported users vanish after a page refresh
+      // while manually-added ones (a much smaller write) don't.
+      let persistedOk = savedOk;
+      if(persistedOk && added>0){
+        try{
+          const raw = localStorage.getItem(USERS_LS_KEY);
+          const parsed = raw ? JSON.parse(raw) : null;
+          const persistedUsernames = new Set((parsed && parsed.users || []).map(u=>u.username));
+          persistedOk = users.every(u => persistedUsernames.has(u.username));
+        }catch(verifyErr){
+          persistedOk = false;
+        }
+      }
+
       renderUsersTable();
       renderTeachersDatabase();
       document.getElementById('importTitle').textContent = 'Users Import Result';
-      let msg = `${added} user(s) added successfully.`;
+      let msg;
+      if(!persistedOk){
+        msg = `⚠️ ${added} user(s) were added on screen, but could NOT be saved to this browser's storage ` +
+          `(it may be full). <b>Do not refresh the page</b> — free up space (e.g. Manage Users → remove ` +
+          `unused accounts, or clear old browser data) and re-import this file, otherwise these users will ` +
+          `disappear on refresh.`;
+      }else{
+        msg = `${added} user(s) added successfully.`;
+      }
       if(problems.length){
         msg += `<br><br><b>${problems.length} row(s) could not be added:</b><br>` +
           problems.slice(0,8).map(p=>`• ${p}`).join('<br>') +
