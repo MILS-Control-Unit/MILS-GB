@@ -12,7 +12,7 @@
 //
 // Bump CACHE_NAME whenever you want to force old caches out (not usually
 // necessary with network-first, but harmless).
-const CACHE_NAME = 'mils-gb-v1';
+const CACHE_NAME = 'mils-gb-v2';
 const APP_SHELL = [
   './',
   './index.html',
