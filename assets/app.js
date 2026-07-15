@@ -13000,14 +13000,14 @@ function findRoleId(label){
 function downloadUserTemplate(){
   const sample = [
     { "Username":"mona.teacher", "Display Name":"Mona Adel", "Password":"12345", "Role":"Teacher",
-      "Section":"English Section", "Subjects":"Mathematics; Science", "Classes":"3/A; 4/B" },
+      "Section":"English Section", "Subjects":"Mathematics; Science", "Classes":"3/A; 4/B", "Student ID(s)":"" },
     { "Username":"fatima.hos", "Display Name":"Fatima Deputy", "Password":"12345", "Role":"HOS/Deputy",
-      "Section":"French Section", "Subjects":"", "Classes":"" },
+      "Section":"French Section", "Subjects":"", "Classes":"", "Student ID(s)":"" },
     { "Username":"ahmed.hod", "Display Name":"Ahmed Samir", "Password":"12345", "Role":"Head of Department",
-      "Section":"French Section", "Subjects":"Mathematics", "Classes":"" },
+      "Section":"French Section", "Subjects":"Mathematics", "Classes":"", "Student ID(s)":"" },
     { "Username":"sara.parent", "Display Name":"Sara's Parent", "Password":"12345", "Role":"Parent / Student",
-      "Section":"English Section", "Subjects":"", "Classes":"" },
-    { "Username":"", "Display Name":"", "Password":"", "Role":"", "Section":"", "Subjects":"", "Classes":"" }
+      "Section":"English Section", "Subjects":"", "Classes":"", "Student ID(s)":"MILS-3188" },
+    { "Username":"", "Display Name":"", "Password":"", "Role":"", "Section":"", "Subjects":"", "Classes":"", "Student ID(s)":"" }
   ];
   const wsData = XLSX.utils.json_to_sheet(sample);
   const guide = [
@@ -13015,8 +13015,9 @@ function downloadUserTemplate(){
     { "Field":"Password", "Allowed Values":"Any text — the user can change it later" },
     { "Field":"Role", "Allowed Values":"Admin / HOS/Deputy / Teacher / Head of Department / Parent / Student" },
     { "Field":"Section", "Allowed Values":"English Section / French Section — required for Teacher, HOS/Deputy, Head of Department and Parent/Student (leave blank for Admin)" },
-    { "Field":"Subjects", "Allowed Values":"Semicolon-separated subject names — required for Teacher and Head of Department (a Head of Department normally has just one), optional for Parent/Student. Available: " + ALL_SUBJECTS.join(', ') },
-    { "Field":"Classes", "Allowed Values":"Semicolon-separated class values (must match the 'Class' step used in Grade Book, e.g. 3/A) — only for Teacher/Parent/Student, leave blank for Head of Department" }
+    { "Field":"Subjects", "Allowed Values":"Semicolon-separated subject names — required for Teacher and Head of Department (a Head of Department normally has just one). Not used for Parent/Student. Available: " + ALL_SUBJECTS.join(', ') },
+    { "Field":"Classes", "Allowed Values":"Semicolon-separated class values (must match the 'Class' step used in Grade Book, e.g. 3/A) — only for Teacher, leave blank for Head of Department and Parent/Student" },
+    { "Field":"Student ID(s)", "Allowed Values":"Only for Parent/Student rows — one or more Student ID(s) (the MILS-XXXX code from the Students Database), separated by semicolons for a parent with more than one child at the school. The account is created AND linked to that child in this same import — no separate 'Link Parent Accounts' step needed. Leave blank for every other role." }
   ];
   const wsGuide = XLSX.utils.json_to_sheet(guide);
   const wb = XLSX.utils.book_new();
@@ -13147,6 +13148,18 @@ function importUsersExcel(file){
       // the template uses ";" but a hand-edited sheet commonly uses ",".
       const splitMulti = (raw) => raw ? raw.split(/[;,]/).map(s=>s.trim()).filter(Boolean) : [];
 
+      // Same Student ID -> student lookup importParentLinksExcel() uses, built once here so
+      // a Parent/Student row's "Student ID(s)" column can be resolved and linked in this same
+      // pass — creating the account AND linking it to the child in one upload, instead of
+      // needing a separate "Link Parent Accounts" import afterwards.
+      const byDisplayId = new Map();
+      allStudentsFlat().forEach(s=>{
+        if(!s.displayId) return;
+        const key = s.displayId.toString().trim().toLowerCase();
+        if(!byDisplayId.has(key)) byDisplayId.set(key, []);
+        byDisplayId.get(key).push(s);
+      });
+
       rows.forEach((row, idx)=>{
         // Each row is now isolated in its own try/catch. Previously the entire
         // rows.forEach ran inside ONE try block shared with saveUsers()/saveState()
@@ -13169,6 +13182,7 @@ function importUsersExcel(file){
           const sectionLabel = getField(row, ['Section']);
           const subjectsRaw = getField(row, ['Subjects','Subject']);
           const classesRaw = getField(row, ['Classes','Class']);
+          const studentIdsRaw = getField(row, ['Student ID(s)','Student IDs','Student ID','StudentIDs']);
 
           if(!username){ return; } // skip fully blank helper rows
           if(!password){ problems.push(`${username}: missing password`); return; }
@@ -13186,12 +13200,27 @@ function importUsersExcel(file){
 
           const userObj = { username, displayName, password, role };
           if(sectionId) userObj.section = sectionId;
-          if(role==='teacher' || role==='hod' || role==='parent'){
+          if(role==='teacher' || role==='hod'){
             userObj.subjects = splitMulti(subjectsRaw);
             userObj.classrooms = splitMulti(classesRaw);
             if(role==='hod' && !userObj.subjects.length){
               problems.push(`${username}: Head of Department has no "Subjects" value in this row — added with Subject left blank, please fill it in manually`);
             }
+          }
+          // Parent/Student rows link straight to their child(ren) via the "Student ID(s)"
+          // column — resolved against the Students Database the same way importParentLinksExcel()
+          // does, so the account is created AND linked in this one upload.
+          if(role==='parent'){
+            const tokens = splitMulti(studentIdsRaw);
+            const resolvedIds = [];
+            tokens.forEach(tok=>{
+              const matches = byDisplayId.get(tok.toLowerCase());
+              if(!matches || matches.length===0){ problems.push(`${username}: student ID "${tok}" not found`); return; }
+              if(matches.length>1){ problems.push(`${username}: student ID "${tok}" matches more than one student — please fix the duplicate ID in Student Database first`); return; }
+              if(!resolvedIds.includes(matches[0].id)) resolvedIds.push(matches[0].id);
+            });
+            if(!tokens.length){ problems.push(`${username}: no "Student ID(s)" given — account created but not linked to any student yet`); }
+            userObj.studentIds = resolvedIds;
           }
           // Clear any leftover deletion-tombstone for this username — see the matching
           // comment in saveUserFromForm() above for why this is required.
