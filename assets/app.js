@@ -13130,6 +13130,7 @@ function importUsersExcel(file){
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
       let added = 0;
+      let linkedAuto = 0;
       const problems = [];
 
       // Column headers can vary slightly (extra spaces, different case, "Subject" instead
@@ -13220,6 +13221,7 @@ function importUsersExcel(file){
               if(!resolvedIds.includes(matches[0].id)) resolvedIds.push(matches[0].id);
             });
             if(!tokens.length){ problems.push(`${username}: no "Student ID(s)" given — account created but not linked to any student yet`); }
+            else if(resolvedIds.length){ linkedAuto++; }
             userObj.studentIds = resolvedIds;
           }
           // Clear any leftover deletion-tombstone for this username — see the matching
@@ -13285,6 +13287,9 @@ function importUsersExcel(file){
           `disappear on refresh.`;
       }else{
         msg = `${added} user(s) added successfully.`;
+      }
+      if(linkedAuto>0){
+        msg += `<br><span style="color:var(--green);font-weight:800;">🔗 ${linkedAuto} Parent/Student account(s) were linked to their child automatically in this same step — no separate linking upload needed.</span>`;
       }
       if(problems.length){
         msg += `<br><br><b>${problems.length} row(s) could not be added:</b><br>` +

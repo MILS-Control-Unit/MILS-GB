@@ -2523,6 +2523,24 @@ body.dark-mode .login-quote{ background:rgba(0,0,0,0.18); }
   border:1.5px solid var(--border);border-radius:8px;padding:8px 10px;font-family:'Tajawal';
   font-size:13.5px;min-width:150px;
 }
+.uf-onestep-tip{
+  background:var(--green-bg);color:var(--green);border:1.5px solid var(--green);border-radius:10px;
+  padding:10px 14px;font-size:12.5px;font-weight:600;line-height:1.8;text-align:left;
+}
+.uf-advanced{
+  border:1.5px solid var(--border);border-radius:10px;background:var(--bg);overflow:hidden;
+}
+.uf-advanced summary{
+  cursor:pointer;list-style:none;padding:12px 14px;font-size:12.5px;font-weight:800;color:var(--ink-soft);
+  display:flex;align-items:center;gap:8px;user-select:none;
+}
+.uf-advanced summary::-webkit-details-marker{display:none;}
+.uf-advanced summary::before{content:'▸';font-size:11px;transition:transform .15s ease;}
+.uf-advanced[open] summary::before{transform:rotate(90deg);}
+.uf-advanced summary:hover{color:var(--ink);}
+.uf-advanced-body{padding:0 14px 14px;border-top:1px dashed var(--border);}
+.uf-advanced-body .perm-grid{margin-top:12px;}
+
 .uf-section-title{
   font-size:12.5px;font-weight:800;color:var(--ink);text-transform:uppercase;letter-spacing:.4px;
   margin:2px 0 8px;padding-top:12px;border-top:1px solid var(--border);
