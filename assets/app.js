@@ -200,6 +200,36 @@ let attSubView = 'absence';
   else document.addEventListener('DOMContentLoaded', ()=> document.head.appendChild(style));
 })();
 
+// Styles for the Parent/Student Dashboard's "My child's certificate" quick-access
+// card (see renderParentQuickCertCard) — a one-tap shortcut straight to the most
+// recently released report card, shown above the sibling switcher so a linked
+// parent never has to walk the Term -> Report Type stepper just to see it again.
+(function injectParentQuickCertCardStyles(){
+  const css = `
+    .parent-quick-cert-card{ display:flex; align-items:center; gap:14px; margin:0 0 16px;
+      padding:16px 18px; border-radius:14px; cursor:pointer; user-select:none;
+      background:linear-gradient(135deg, var(--gold, #b8860b) 0%, #8a6d1f 100%);
+      box-shadow:0 4px 14px rgba(0,0,0,.12); transition:transform .15s ease, box-shadow .15s ease;
+      animation: dbCardIn .45s cubic-bezier(.22,.9,.32,1) both; }
+    .parent-quick-cert-card:hover{ transform:translateY(-2px); box-shadow:0 8px 20px rgba(0,0,0,.16); }
+    .parent-quick-cert-card:active{ transform:translateY(0); }
+    .parent-quick-cert-card.locked{ cursor:default; background:#f1f2f5; box-shadow:none; }
+    .parent-quick-cert-card.locked:hover{ transform:none; box-shadow:none; }
+    .parent-quick-cert-card .pqc-icon{ font-size:26px; line-height:1; flex-shrink:0; }
+    .parent-quick-cert-card .pqc-body{ flex:1; min-width:0; }
+    .parent-quick-cert-card .pqc-title{ font-weight:800; font-size:15px; color:#fff; }
+    .parent-quick-cert-card.locked .pqc-title{ color:var(--ink,#1d2939); }
+    .parent-quick-cert-card .pqc-sub{ font-size:12.5px; color:rgba(255,255,255,.9); margin-top:2px; }
+    .parent-quick-cert-card.locked .pqc-sub{ color:var(--ink-soft,#667085); }
+    .parent-quick-cert-card .pqc-arrow{ font-size:20px; color:#fff; flex-shrink:0; }
+    @media (prefers-reduced-motion: reduce){ .parent-quick-cert-card{ animation:none !important; } }
+  `;
+  const style = document.createElement('style');
+  style.textContent = css;
+  if(document.head) document.head.appendChild(style);
+  else document.addEventListener('DOMContentLoaded', ()=> document.head.appendChild(style));
+})();
+
 // ===== GSAP: masthead & nav-icon choreography =====
 // Reorganizes how the header (logos, title, right-side widgets) and the nav bar's
 // icons appear: a staggered entrance on load instead of everything popping in at
@@ -1271,6 +1301,7 @@ function renderDashboard(){
   if(crumbs) crumbs.innerHTML = `<span class="crumb subj">${label}</span><span class="crumb subj">${modeLabel}</span>`;
   autoSelectDashboardChildForParent();
   renderDashboardChildSwitch();
+  renderParentQuickCertCard();
   renderDashboardFilters();
   renderDashboardCharts();
 }
@@ -1345,6 +1376,80 @@ function selectDashboardChild(studentId){
   state.dashboardClassroom = s.classroom || null;
   state.dashboardStudent = s.id;
   renderDashboard();
+}
+
+/* ---------- Dashboard: "My child's certificate" quick-access card ----------
+   A one-tap shortcut for a linked Parent/Student account, sitting above the sibling
+   switcher on the Dashboard (the parent's landing tab). Instead of opening the
+   Certificates tab and walking Term -> Report Type every single time, this card
+   auto-detects the most recently released report card for whichever child is
+   currently active in the Dashboard (state.dashboardStudent) and jumps straight to
+   it in one tap. Shows a locked/disabled state if nothing has been released yet.
+   Re-rendered every time renderDashboard() runs, so switching siblings via the
+   switcher above instantly updates which child's certificate it points to. */
+function renderParentQuickCertCard(){
+  // Anchored immediately above the sibling switcher, which is a stable element in the
+  // Dashboard markup regardless of role — safe to use as an insertion point even
+  // though this card itself isn't part of the static HTML.
+  const anchor = document.getElementById('dashboardChildSwitch');
+  if(!anchor || !anchor.parentNode) return;
+  let card = document.getElementById('parentQuickCertCard');
+  if(!isLinkedParentViewer()){
+    if(card) card.remove();
+    return;
+  }
+  if(!card){
+    card = document.createElement('div');
+    card.id = 'parentQuickCertCard';
+    anchor.parentNode.insertBefore(card, anchor);
+  }
+  const flat = allStudentsFlatRaw();
+  const scope = currentUser.effective.studentScope || [];
+  const student = flat.find(s=> s.id===state.dashboardStudent && scope.includes(s.id)) || flat.find(s=> scope.includes(s.id));
+  if(!student){ card.innerHTML = ''; return; }
+  const latest = getLatestReleasedCertForStudent(student);
+  if(!latest){
+    card.innerHTML = `
+      <div class="parent-quick-cert-card locked">
+        <div class="pqc-icon">🔒</div>
+        <div class="pqc-body">
+          <div class="pqc-title">${escapeXml(student.name)}'s Certificate</div>
+          <div class="pqc-sub">No report card has been released yet — check back later.</div>
+        </div>
+      </div>`;
+    return;
+  }
+  card.innerHTML = `
+    <div class="parent-quick-cert-card" onclick="openLatestCertForCurrentChild()">
+      <div class="pqc-icon">🎓</div>
+      <div class="pqc-body">
+        <div class="pqc-title">${escapeXml(student.name)}'s Certificate</div>
+        <div class="pqc-sub">${TERM_LABELS[latest.termPeriod]} • ${CERT_REPORT_TITLES[latest.reportType]} — tap to view</div>
+      </div>
+      <div class="pqc-arrow">›</div>
+    </div>`;
+}
+
+// Click handler for the quick-access card above: scopes certState straight to the
+// current child + their latest released report, then opens the Certificates tab —
+// skipping the Term/Report Type stepper entirely for this one tap.
+function openLatestCertForCurrentChild(){
+  if(!isLinkedParentViewer()) return;
+  const flat = allStudentsFlatRaw();
+  const scope = currentUser.effective.studentScope || [];
+  const student = flat.find(s=> s.id===state.dashboardStudent && scope.includes(s.id)) || flat.find(s=> scope.includes(s.id));
+  if(!student) return;
+  const latest = getLatestReleasedCertForStudent(student);
+  if(!latest) return;
+  certParentSelectedStudentId = student.id;
+  certState.section = student.section || null;
+  certState.stage = student.stage || null;
+  certState.grade = student.grade || null;
+  certState.term = student.classroom || null;
+  certState.studentId = student.id;
+  certState.termPeriod = latest.termPeriod;
+  certState.reportType = latest.reportType;
+  switchView('certReports');
 }
 
 /* ---------- Certificates: linked-children quick switch (parents w/ multiple kids) ----------
@@ -9049,6 +9154,30 @@ function examScheduleKey(section, grade){
   return (section && grade) ? `${section}_${grade}` : null;
 }
 
+// Single source of truth for the Exam Schedule modal's action-button visibility.
+// Previously this same "Admin gets the full edit toolbar, everyone else is view-only"
+// rule was duplicated in four separate places (initial modal open, row re-render, after
+// Save, after Delete) with slightly different logic each time — which is exactly how a
+// Parent/Student account could end up seeing "+ Add Row" / "Save Schedule" / "Delete
+// Schedule" if any one of those spots drifted out of sync. Every one of those call sites
+// now just calls this instead, so there is only ever one rule to get right: Add Row and
+// Save are Admin-only, full stop; Delete is Admin-only AND requires existing data; View is
+// shown to anyone (Admin included) once there's data to view. Safe to call at any time —
+// every element lookup is null-checked, so a missing button in the DOM never throws and
+// silently skips the rest of a caller's cleanup.
+function syncExamScheduleActionButtons(){
+  const isAdmin = !!(currentUser && currentUser.role==='admin');
+  const hasData = !!(examScheduleStaged && examScheduleStaged.length > 0);
+  const addRowBtn = document.getElementById('examScheduleAddRowBtn');
+  const saveBtn = document.getElementById('examScheduleSaveBtn');
+  const viewBtn = document.getElementById('examScheduleViewBtn');
+  const deleteBtn = document.getElementById('examScheduleDeleteBtn');
+  if(addRowBtn) addRowBtn.style.display = isAdmin ? '' : 'none';
+  if(saveBtn) saveBtn.style.display = isAdmin ? '' : 'none';
+  if(viewBtn) viewBtn.style.display = hasData ? '' : 'none';
+  if(deleteBtn) deleteBtn.style.display = (hasData && isAdmin) ? '' : 'none';
+}
+
 // Returns the staged rows for one Section+Grade's schedule, falling back to the MILS default
 // First Term/End-of-Year schedule when that Section+Grade hasn't had its own rows set yet.
 function getExamScheduleRows(term, type, section, grade){
@@ -9206,16 +9335,8 @@ function renderExamScheduleRows(){
   const holder = document.getElementById('examScheduleRowsContainer');
   if(!holder) return;
   const isAdmin = !!(currentUser && currentUser.role==='admin');
-  
-  // Update View Schedule and Delete buttons visibility
-  const viewBtn = document.getElementById('examScheduleViewBtn');
-  const deleteBtn = document.getElementById('examScheduleDeleteBtn');
-  if(viewBtn || deleteBtn){
-    const hasData = examScheduleStaged && examScheduleStaged.length > 0;
-    if(viewBtn) viewBtn.style.display = hasData ? '' : 'none';
-    if(deleteBtn) deleteBtn.style.display = hasData && isAdmin ? '' : 'none';
-  }
-  
+  syncExamScheduleActionButtons();
+
   if(!examScheduleStaged.length){
     holder.innerHTML = `<p class="foot-note" style="padding:6px 2px;">${isAdmin ? 'No rows yet — click "＋ Add Row" to start.' : 'No exam schedule has been set yet.'}</p>`;
     return;
@@ -9330,16 +9451,7 @@ function openExamScheduleModal(term, type){
   }
   applyExamScheduleReleaseGateForParent(term, defaultSection, defaultGrade);
   renderExamScheduleRows();
-  document.getElementById('examScheduleAddRowBtn').style.display = isAdmin ? '' : 'none';
-  document.getElementById('examScheduleSaveBtn').style.display = isAdmin ? '' : 'none';
-  // Show View Schedule and Delete buttons if there's data
-  const viewBtn = document.getElementById('examScheduleViewBtn');
-  const deleteBtn = document.getElementById('examScheduleDeleteBtn');
-  if(viewBtn || deleteBtn){
-    const hasData = examScheduleStaged && examScheduleStaged.length > 0;
-    if(viewBtn) viewBtn.style.display = hasData ? '' : 'none';
-    if(deleteBtn) deleteBtn.style.display = hasData && isAdmin ? '' : 'none';
-  }
+  syncExamScheduleActionButtons();
   const subtitleEl = document.getElementById('examScheduleSubtitle');
   if(subtitleEl){
     subtitleEl.textContent = isAdmin
@@ -9810,12 +9922,7 @@ function saveExamSchedule(){
   logActivity('edit', `Updated Exam Schedule — ${examScheduleLabel(term, type, section, grade)}`);
   const statusEl = document.getElementById('examScheduleStatus');
   if(statusEl) statusEl.textContent = `Saved — visible to everyone in ${SECTIONS[section].label} — ${GRADE_LABEL_BY_ID[grade]||grade} now.`;
-  
-  // Show the View and Delete Schedule buttons after saving
-  const viewBtn = document.getElementById('examScheduleViewBtn');
-  if(viewBtn) viewBtn.style.display = 'block';
-  const deleteBtn = document.getElementById('examScheduleDeleteBtn');
-  if(deleteBtn) deleteBtn.style.display = 'block';
+  syncExamScheduleActionButtons();
 }
 
 function openViewExamScheduleModal(){
@@ -9862,14 +9969,9 @@ function deleteExamSchedule(){
     const statusEl = document.getElementById('examScheduleStatus');
     if(statusEl) statusEl.textContent = `✓ Schedule deleted. Please add a new one or refresh the page.`;
     
-    // Hide the View and Delete buttons
-    const viewBtn = document.getElementById('examScheduleViewBtn');
-    if(viewBtn) viewBtn.style.display = 'none';
-    const deleteBtn = document.getElementById('examScheduleDeleteBtn');
-    if(deleteBtn) deleteBtn.style.display = 'none';
-    
-    // Clear the staged rows
+    // Clear the staged rows, then re-sync the buttons off the now-empty state
     examScheduleStaged = [];
+    syncExamScheduleActionButtons();
     renderExamScheduleTable();
   }
 }
@@ -10798,6 +10900,36 @@ function isReportCardVisible(section, termPeriod, reportType, grade){
     }
   }
   return false;
+}
+
+// Finds the most recently released report card (across both Academic Terms and every
+// Report Type that applies to this student's Stage/Grade) that is CURRENTLY visible to
+// Parent/Student accounts right now, per the Admin's Report Card Release Configuration.
+// "Most recent" = the release with the latest release date/time — i.e. whichever
+// certificate the school actually published last — not just the highest-numbered term.
+// Powers the Dashboard's "My child's certificate" quick-access card (see
+// renderParentQuickCertCard) so a parent can jump straight to it in one tap instead of
+// re-walking the Term -> Report Type stepper. Returns null if nothing is released yet.
+function getLatestReleasedCertForStudent(student){
+  if(!student || !student.section || !student.stage || !student.grade) return null;
+  if(!STAGES[student.stage]) return null;
+  const now = Date.now();
+  let best = null;
+  ['term1','term2'].forEach(termPeriod=>{
+    const types = certReportTypeOptions(termPeriod, student.stage, student.grade).map(o=>o.id);
+    types.forEach(reportType=>{
+      (reportCardReleases||[]).forEach(rc=>{
+        if(rc.section!==student.section || rc.termPeriod!==termPeriod || rc.reportType!==reportType) return;
+        if(rc.grade && rc.grade!==student.grade) return;
+        const releaseTs = new Date(rc.releaseDate+'T'+rc.releaseTime).getTime();
+        if(isNaN(releaseTs) || releaseTs>now) return;
+        const endTs = rc.endDate ? new Date(rc.endDate+'T'+rc.endTime).getTime() : null;
+        if(endTs && endTs<now) return;
+        if(!best || releaseTs>best.releaseTs) best = { termPeriod, reportType, releaseTs };
+      });
+    });
+  });
+  return best;
 }
 
 /* ================== EXAMS SCHEDULES RELEASE ==================
