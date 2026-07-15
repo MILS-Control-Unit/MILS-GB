@@ -2595,6 +2595,11 @@ body.dark-mode .login-quote{ background:rgba(0,0,0,0.18); }
 .nav-tab:focus-visible,.btn:focus-visible,.dark-toggle-btn:focus-visible,.notif-bell-btn:focus-visible{outline:2px solid #66e8ff!important;outline-offset:3px!important;}
 .dark-toggle-btn,.notif-bell-btn{position:relative;transition:transform .18s ease,background .18s ease,box-shadow .18s ease!important;}.dark-toggle-btn:hover,.notif-bell-btn:hover{transform:translateY(-2px) scale(1.06);box-shadow:0 0 0 4px rgba(70,215,255,.11),0 8px 18px rgba(0,0,0,.20)!important;}.dark-toggle-btn:active,.notif-bell-btn:active{transform:translateY(0) scale(.94);}
 .btn{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:8px!important;}.btn:hover{filter:brightness(1.07);}.btn:active{filter:brightness(.96);}
+/* Respect an inline display:none explicitly set by JS (e.g. role-based show/hide logic like
+   syncExamScheduleActionButtons()). The .btn rule above uses !important, which otherwise wins
+   over inline style="display:none" and silently forces the button visible again. This selector
+   has higher specificity than plain .btn, so it wins the tie regardless of source order. */
+.btn[style*="display: none"],.btn[style*="display:none"]{display:none!important;}
 .toolbar .btn,.modal-actions .btn{min-height:38px;}.row-actions button,.close-x{border-radius:9px!important;transition:transform .16s ease,background .16s ease,box-shadow .16s ease!important;}.row-actions button:hover,.close-x:hover{transform:translateY(-1px) scale(1.08);background:rgba(70,215,255,.13)!important;box-shadow:0 4px 11px rgba(0,0,0,.14);}
 .perm-pill{display:inline-flex!important;align-items:center!important;gap:5px!important;}.perm-pill::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor;}
 @media (prefers-reduced-motion:reduce){.nav-tab svg,.dark-toggle-btn,.notif-bell-btn,.row-actions button,.close-x{transition:none!important;}}
