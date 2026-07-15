@@ -14109,7 +14109,15 @@ function scheduleGithubPush(){
   if(!githubReady() || fbApplyingRemote) return; // don't echo back a change we just received
   pendingFirestorePush = true; // there is now an edit sitting only in memory until the debounced push below lands
   clearTimeout(githubPushTimer);
-  githubPushTimer = setTimeout(()=> pushToGithub(), 1000);
+  githubPushTimer = setTimeout(()=>{
+    pushToGithub().then(ok=>{
+      // This is the ONLY place most saves (Users/Parent accounts, Teachers, Bell Times, Admin
+      // Structure, Exam Schedules, Blocked Students, Releases, etc.) ever get a visible
+      // confirmation that the edit truly reached the server — closing the form/modal earlier
+      // only meant the edit was accepted locally, not that it was safe to close the tab yet.
+      showGbToast(ok ? 'success' : 'error', ok ? '✓ Saved' : '✕ Save failed — check your internet connection');
+    });
+  }, 1000);
 }
 
 /* ---------- Firebase Sync modal ---------- */
