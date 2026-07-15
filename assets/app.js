@@ -6953,8 +6953,12 @@ function showGbToast(type, text){
 }
 
 // Warn before closing/reloading the tab if there's anything not yet synced to Firestore.
+// Covers Grade Book scores (gbUnsavedChanges) AND every other save path in the app — users,
+// teachers, bell times, admin structure, exam schedules, blocked students, releases, etc. —
+// which all go through the debounced scheduleGithubPush()/pendingFirestorePush (~2.5s delay).
+// Closing/hard-refreshing during that window used to silently lose the edit.
 window.addEventListener('beforeunload', function(e){
-  if(gbUnsavedChanges){ e.preventDefault(); e.returnValue = ''; }
+  if(gbUnsavedChanges || pendingFirestorePush){ e.preventDefault(); e.returnValue = ''; }
 });
 
 function downloadBackup(){
@@ -13789,6 +13793,14 @@ let fbLastPushedAt = 0;
 // echo/snapshot is recognized as not-newer and is ignored instead of overwriting the freshly
 // entered grades still sitting only in memory/localStorage.
 let knownDataVersion = 0;
+// Tracks whether ANY edit made via scheduleGithubPush() (users, teachers, bell times, admin
+// structure, exam schedules, blocked students, report card/exam releases, etc.) has actually
+// finished round-tripping to Firestore yet. Unlike gbUnsavedChanges (which only covers Grade
+// Book scores), this covers every other save path in the app, all of which are debounced by
+// ~2.5s. Without this flag, closing or hard-refreshing the tab inside that 2.5s window loses
+// the edit silently: it looked "saved" locally, but the write never reached the server, and
+// the very next page load pulls the older server copy over it.
+let pendingFirestorePush = false;
 
 function loadGithubConfig(){
   try{
@@ -14085,15 +14097,19 @@ async function pushToGithub(){
   // actually reached Firestore — from this point on, the next incoming snapshot's copy of
   // `users` is at least as fresh as ours, so it's safe to trust it fully again instead of
   // defensively preferring our local copy.
-  if(ok) usersUnsavedChanges = false;
+  if(ok){
+    usersUnsavedChanges = false;
+    pendingFirestorePush = false; // this device's memory now matches the server — safe to close/reload
+  }
   return ok;
 }
 
 let githubPushTimer = null;
 function scheduleGithubPush(){
   if(!githubReady() || fbApplyingRemote) return; // don't echo back a change we just received
+  pendingFirestorePush = true; // there is now an edit sitting only in memory until the debounced push below lands
   clearTimeout(githubPushTimer);
-  githubPushTimer = setTimeout(()=> pushToGithub(), 2500);
+  githubPushTimer = setTimeout(()=> pushToGithub(), 1000);
 }
 
 /* ---------- Firebase Sync modal ---------- */
