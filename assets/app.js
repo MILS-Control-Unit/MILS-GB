@@ -730,24 +730,27 @@ function selectValue(key, id, targetState){
 // hover and a smooth fade-out ~350ms after the cursor actually leaves the button+menu
 // area, so moving diagonally into the menu doesn't accidentally close it. Click-to-toggle
 // (for touch devices) keeps working exactly as before.
-// Positions a nav-dropdown-menu as position:fixed directly under (or, if it would run
-// off-screen, above/left-aligned to stay on-screen) its trigger button. This is required
-// because .nav-row-tabs scrolls horizontally (overflow-x:auto), which per the CSS spec
-// forces overflow-y to also clip — so a plain position:absolute menu gets sliced off by
-// that scroll container. Fixed positioning, computed from the live button rect, escapes
-// that clipping entirely regardless of any ancestor's overflow/scroll state.
+// Positions a nav-dropdown-menu as position:fixed to the right of its trigger icon
+// (or, if it would run off-screen, to the left / clamped vertically), computed from the
+// live button rect. The nav is now a vertical icon rail down the left edge, so menus flow
+// out sideways from each icon rather than dropping down beneath it.
 function positionFixedNavMenu(wrap, menu){
   if(!wrap || !menu) return;
   const rect = wrap.getBoundingClientRect();
   menu.style.position = 'fixed';
-  menu.style.top = (rect.bottom + 8) + 'px';
   menu.style.margin = '0';
   const menuWidth = Math.max(menu.offsetWidth, 230);
-  let left = rect.left;
+  let left = rect.right + 8;
   if(left + menuWidth > window.innerWidth - 8){
-    left = Math.max(8, rect.right - menuWidth);
+    left = Math.max(8, rect.left - menuWidth - 8);
   }
   menu.style.left = left + 'px';
+  const menuHeight = menu.offsetHeight || 200;
+  let top = rect.top;
+  if(top + menuHeight > window.innerHeight - 8){
+    top = Math.max(8, window.innerHeight - 8 - menuHeight);
+  }
+  menu.style.top = top + 'px';
 }
 
 (function(){
@@ -13756,15 +13759,12 @@ function initHeaderInfo(){
 initHeaderInfo();
 
 /* ================== STICKY NAV + BREADCRUMB SPACING ================== */
-// Keeps the breadcrumb bar sticking directly under the nav bar, whatever its actual height is
-// (the nav can wrap onto two lines on narrow screens, changing its height).
+// The nav is now a fixed vertical rail down the left edge, so it no longer reserves any
+// vertical space above the page content — the breadcrumb stepper just sticks near the top
+// of the viewport with a small fixed gap, the same way it would on any page without a top bar.
 function updateStickySpacing(){
-  const nav = document.getElementById('mainNav');
-  if(!nav) return;
-  const navTopGap = 12; // matches .main-nav{ top:12px }
-  const gapBelowNav = 12;
-  const top = navTopGap + nav.getBoundingClientRect().height + gapBelowNav;
-  document.querySelectorAll('.stepper').forEach(el=>{ el.style.top = top + 'px'; });
+  const STEPPER_TOP_GAP = 12;
+  document.querySelectorAll('.stepper').forEach(el=>{ el.style.top = STEPPER_TOP_GAP + 'px'; });
 }
 window.addEventListener('resize', updateStickySpacing);
 window.addEventListener('load', updateStickySpacing);
