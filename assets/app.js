@@ -6514,11 +6514,25 @@ async function pushMergedToFirestore(){
       // Union of every teacher ID either device has deleted, so a deletion made on THIS
       // device isn't silently re-added just because the server's copy of `teachers`
       // (from before the deletion reached it) still contains that row.
-      const mergedDeletedTeacherIds = Array.from(new Set([...(remote.deletedTeacherIds||[]), ...deletedTeacherIds]));
+      // EXCEPT: if a teacher id currently exists in our own in-memory `teachers` (this
+      // device just added/re-added them), that row wins over any stale tombstone —
+      // otherwise a teacher re-added under an id/username that was ever deleted in the
+      // past (on this device or another) would get silently stripped back out by this
+      // very push, the moment the merge below filters it against the tombstone list.
+      const currentTeacherIds = new Set(teachers.map(t=>t.id));
+      const mergedDeletedTeacherIds = Array.from(new Set([...(remote.deletedTeacherIds||[]), ...deletedTeacherIds]))
+        .filter(id => !currentTeacherIds.has(id));
       const mergedTeachers = mergeArrayById(remote.teachers, teachers, 'id')
         .filter(t=> !mergedDeletedTeacherIds.includes(t.id));
-      // Union of every username either device has deleted, same reasoning as teachers above.
-      const mergedDeletedUsernames = Array.from(new Set([...(remote.deletedUsernames||[]), ...deletedUsernames]));
+      // Union of every username either device has deleted, same reasoning as teachers above —
+      // and the same fix: a username currently present in our own `users` array (just
+      // added/re-added, e.g. via a fresh Excel import) is excluded from the tombstone list
+      // instead of being blindly unioned back in from the server's older copy. Without this,
+      // re-importing a username that had EVER been deleted (even long ago, even on another
+      // device) would silently vanish again the moment this very push round-trips.
+      const currentUsernamesSet = new Set(users.map(u=>u.username));
+      const mergedDeletedUsernames = Array.from(new Set([...(remote.deletedUsernames||[]), ...deletedUsernames]))
+        .filter(u => !currentUsernamesSet.has(u));
       const mergedUsers = mergeArrayById(remote.users, users, 'username')
         .filter(u=> !mergedDeletedUsernames.includes(u.username));
       const merged = {
@@ -13314,7 +13328,13 @@ function applyRemotePayload(payload){
   // Union deleted-teacher tombstones from the incoming snapshot with whatever this device
   // already knows about, then use that to keep any resurrected-by-merge rows out of the
   // final teachers list, however teachers ends up being set below.
-  deletedTeacherIds = Array.from(new Set([...(payload.deletedTeacherIds||[]), ...deletedTeacherIds]));
+  // EXCEPTION: a teacher id currently present in our own in-memory `teachers` (just added
+  // or re-added on this device, e.g. via Excel import) is excluded from the tombstone list —
+  // otherwise a stale tombstone that reached the server from an earlier, unrelated deletion
+  // would keep silently stripping that row back out on every pull/page-refresh forever.
+  const currentTeacherIdsAtApply = new Set(teachers.map(t=>t.id));
+  deletedTeacherIds = Array.from(new Set([...(payload.deletedTeacherIds||[]), ...deletedTeacherIds]))
+    .filter(id => !currentTeacherIdsAtApply.has(id));
   // teachers is ALWAYS merged (never hard-replaced), regardless of gbUnsavedChanges. A pure
   // replace here was the remaining path that could make a just-imported/just-added teacher
   // vanish: if this device's own push hadn't fully round-tripped yet, or a same-document
@@ -13343,7 +13363,17 @@ function applyRemotePayload(payload){
   try{ localStorage.setItem(GRADE3_MAXIMA_LS_KEY, JSON.stringify(grade3FlexibleMaximaBySubject)); }catch(err){}
   knownDataVersion = Math.max(knownDataVersion, payload.dataVersion || 0);
   if(Array.isArray(payload.users) && payload.users.length){
-    deletedUsernames = Array.from(new Set([...(payload.deletedUsernames||[]), ...deletedUsernames]));
+    // Same fix as deletedTeacherIds above, and the direct cause of the reported bug:
+    // a username currently present in our own in-memory `users` (just added/re-imported
+    // on this device) is excluded from the merged tombstone list instead of being unioned
+    // in from the server's copy. Previously, if that exact username had EVER been deleted
+    // before — even long ago, even by a different admin/device, unrelated to this import —
+    // its tombstone would still be sitting in the server's `deletedUsernames`, and the very
+    // next pull (e.g. the page refresh right after a bulk Excel import) would silently
+    // filter the freshly-added user back out, making it look "auto-deleted".
+    const currentUsernamesAtApply = new Set(users.map(u=>u.username));
+    deletedUsernames = Array.from(new Set([...(payload.deletedUsernames||[]), ...deletedUsernames]))
+      .filter(u => !currentUsernamesAtApply.has(u));
     // This used to hard-replace `users` with whatever the incoming snapshot contained. If an
     // admin had just added/edited a user (e.g. a Teacher) and that edit hadn't reached
     // Firestore yet (saveUsers()'s push is debounced by ~2.5s — see scheduleGithubPush()),
