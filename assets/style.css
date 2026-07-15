@@ -1056,9 +1056,9 @@ tbody tr:hover{background:var(--row-hover);}
 #dbTableHolder td.name-col{font-size:16.5px;}
 
 /* Header polish: consistent gold underline across the whole row (was previously only
-   implied by the freeze-zone divider), tighter uppercase letterforms, and rounded
-   container corners so the header reads as one cohesive band instead of a plain bar. */
-#dbTableHolder{border-radius:12px;overflow:hidden;}
+   implied by the freeze-zone divider) and tighter uppercase letterforms. No overflow:hidden
+   here — #dbTableHolder is the scrolling container (.db-table-scroll sets overflow:auto),
+   clipping it breaks horizontal/vertical scroll for the rest of the table. */
 #dbTableHolder thead th{
   font-size:12.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;
   border-bottom:3px solid var(--gold);
