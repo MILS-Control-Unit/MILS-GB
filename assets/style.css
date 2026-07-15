@@ -2578,47 +2578,50 @@ body.dark-mode .login-quote{ background:rgba(0,0,0,0.18); }
 @media (prefers-reduced-motion:reduce){.nav-tab svg,.dark-toggle-btn,.notif-bell-btn,.row-actions button,.close-x{transition:none!important;}}
 
 /* ================== SIDEBAR NAVIGATION (icon rail) ================== */
-/* The main nav is now a fixed vertical icon rail down the left edge instead of a
+/* The main nav is now a fixed vertical rail down the left edge instead of a
    horizontal bar across the top — same buttons/dropdowns/onclick handlers, just a
-   different container shape. Each icon shows its label as a native tooltip (title
-   attribute) since the text itself is visually collapsed via font-size:0. */
+   different container shape. Icon + label side by side, sized to fit the viewport
+   height with no inner scrollbar. */
 .main-nav{
   position:fixed!important;left:0;top:0;bottom:0;margin:0!important;z-index:120;
-  width:64px;flex-direction:column!important;align-items:center;
-  gap:6px!important;padding:14px 0!important;border-radius:0!important;
+  width:176px;flex-direction:column!important;align-items:stretch;
+  gap:2px!important;padding:12px 8px!important;border-radius:0!important;
   box-shadow:2px 0 10px rgba(0,0,0,.06)!important;border-right:1px solid var(--border);
-  overflow-y:auto;overflow-x:hidden;
+  overflow:visible;
 }
 .nav-row-tabs{
-  flex-direction:column!important;flex-wrap:nowrap!important;gap:6px!important;
-  width:100%;align-items:center;padding:0!important;overflow:visible!important;
+  flex-direction:column!important;flex-wrap:nowrap!important;gap:2px!important;
+  width:100%;align-items:stretch;padding:0!important;overflow:visible!important;
 }
 .nav-row-tick{display:none!important;}
 /* Group labels become a thin horizontal rule between icon clusters instead of text,
-   since there's no room for a text row in a 64px-wide rail. */
+   since the school still groups things visually but the label text is redundant
+   once every item already shows its own name. */
 .nav-group-label{
-  display:block;width:32px;height:1px;background:var(--border);
-  margin:6px 0 2px;padding:0;font-size:0;
+  display:block;width:100%;height:1px;background:var(--border);
+  margin:6px 0;padding:0;font-size:0;
 }
 .nav-group-label::after{content:none;}
 .nav-tab{
-  width:44px;height:44px;padding:0!important;justify-content:center;
-  border-radius:12px;font-size:0!important;gap:0!important;
+  width:100%;height:38px;padding:0 10px!important;justify-content:flex-start;
+  border-radius:9px;font-size:12.5px!important;gap:9px!important;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .nav-tab::after{display:none;}
 .nav-dropdown-menu{ top:0!important;left:100%!important;margin:0 0 0 10px!important; }
 .nav-row-config{
   margin-inline-start:0!important;margin-top:auto!important;padding-inline-start:0!important;
   border-inline-start:none!important;border-top:1px solid var(--border);padding-top:10px!important;
-  width:100%;display:flex;justify-content:center;
+  width:100%;display:flex;justify-content:stretch;
 }
 .nav-row-config::before{content:none!important;}
+.nav-row-config .nav-tab{width:100%;}
 /* Shift the centered page container right so it clears the fixed rail. */
-#appWrap.wrap{margin-left:80px!important;margin-right:auto!important;}
+#appWrap.wrap{margin-left:196px!important;margin-right:auto!important;}
 @media (max-width:900px){
-  .main-nav{width:56px;}
-  .nav-tab{width:38px;height:38px;}
-  #appWrap.wrap{margin-left:70px!important;}
+  .main-nav{width:64px;padding:12px 6px!important;}
+  .nav-tab{font-size:0!important;justify-content:center;padding:0!important;width:44px;height:44px;margin:0 auto;}
+  #appWrap.wrap{margin-left:80px!important;}
 }
 
 /* Mark Entry Report: calm scanning, compact counts, and visual completion. */
