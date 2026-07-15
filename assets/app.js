@@ -9250,7 +9250,7 @@ function startClassAlertWatcher(){
   loadBellTimes();
   checkUpcomingClassAlert();
   clearInterval(classAlertTimer);
-  classAlertTimer = setInterval(checkUpcomingClassAlert, 20*1000);
+  classAlertTimer = setInterval(()=>{ if(!document.hidden) checkUpcomingClassAlert(); }, 20*1000);
 }
 function stopClassAlertWatcher(){
   clearInterval(classAlertTimer);
@@ -11053,6 +11053,7 @@ function saveGradeEntryControl(){
 // or the Grade Entry Control modal itself is open, re-check every 30s so a scheduled lock
 // disables the score inputs (and an auto-unlock re-enables them) without user action.
 setInterval(function(){
+  if(document.hidden) return;
   if(typeof currentView!=='undefined' && currentView==='grades' && typeof renderTable==='function') renderTable();
   const modal = document.getElementById('gradeEntryControlOverlay');
   if(modal && modal.classList.contains('show')) renderGradeEntryControlRules();
@@ -12085,7 +12086,7 @@ document.addEventListener('click', (e)=>{
   }
 });
 
-setInterval(refreshHeaderQuickWidgets, 60 * 1000);
+setInterval(function(){ if(!document.hidden) refreshHeaderQuickWidgets(); }, 60 * 1000);
 
 const ROLE_LABELS = { 
   admin:'Admin', 
@@ -13065,7 +13066,14 @@ function toggleDarkMode(){
     const uField = document.getElementById('loginUsername');
     const overlay = document.getElementById('loginOverlay');
     if(uField && overlay && overlay.style.display !== 'none') uField.focus();
-    setInterval(updateLockoutUI, 1000);
+    // Only tick every second while the login screen is actually visible (i.e. a
+    // lockout countdown may be showing). Once the user logs in and the overlay
+    // is hidden, stop the interval instead of letting it run forever in the background.
+    const lockoutTimer = setInterval(()=>{
+      const ov = document.getElementById('loginOverlay');
+      if(!ov || ov.style.display === 'none'){ clearInterval(lockoutTimer); return; }
+      updateLockoutUI();
+    }, 1000);
   });
 })();
 
