@@ -8524,6 +8524,17 @@ let currentUser = null;
 // next time this device (or another) syncs, because the server's copy from before the
 // deletion still has that row.
 let deletedUsernames = [];
+// True from the moment a local edit to `users` is made (saveUsers()) until that edit has
+// actually round-tripped to Firestore (cleared in pushToGithub() on a successful push). The
+// incoming-snapshot handler uses this to decide how to reconcile `users` with the server copy
+// — see the merge-vs-replace branch around mergeArrayById(payload.users, ...) below. Without
+// it, a device's own stale local cache of `users` would permanently block any future update to
+// a record it "already knows" (e.g. a Parent/Student account gaining a second linked child from
+// another device never appearing here, even after logging out and back in on this device) —
+// mergeArrayById always prefers the local copy for a username present on both sides, which is
+// exactly right while THIS device has a real unpushed edit in flight, but wrong once that edit
+// is old news and the remote copy has since moved on.
+let usersUnsavedChanges = false;
 
 /* ================== ACTIVITY & LOGIN LOG ==================
    Records who signed in/out and who changed what, with a timestamp.
@@ -12018,6 +12029,7 @@ function saveUsers(){
   if(adminUser && adminUser.role !== 'admin'){
     adminUser.role = 'admin';
   }
+  usersUnsavedChanges = true;
   const savedOk = saveUsersLocalOnly();
   scheduleGithubPush();
   return savedOk;
@@ -13897,7 +13909,18 @@ function applyRemotePayload(payload){
     // Teacher account) appear to have been "deleted" right after saving. Merge with the
     // current in-memory `users` instead, the same way `teachers` is merged above, so a local
     // edit that hasn't round-tripped to Firestore yet always survives.
-    users = mergeArrayById(payload.users, users, 'username').filter(u=> !deletedUsernames.includes(u.username));
+    //
+    // BUT only while usersUnsavedChanges is actually true (a real edit on THIS device still
+    // in flight) — mergeArrayById prefers the LOCAL copy for any username present on both
+    // sides, so once that condition is no longer true, merging would instead permanently trap
+    // this device on its own stale cache: e.g. a Parent/Student account that gains a second
+    // linked child on another device would never pick that up here, even after logging out and
+    // back in, because this device's own (older) copy of that same username keeps winning the
+    // merge forever. With nothing genuinely unsaved locally, the server's copy is strictly at
+    // least as fresh as ours, so trust it outright instead.
+    users = usersUnsavedChanges
+      ? mergeArrayById(payload.users, users, 'username').filter(u=> !deletedUsernames.includes(u.username))
+      : payload.users.filter(u=> !deletedUsernames.includes(u.username));
     saveUsersLocalOnly();
   }
   if(Array.isArray(payload.activityLog) && payload.activityLog.length){
@@ -14058,6 +14081,11 @@ async function pushToGithub(){
   setSyncStatus('syncing');
   const ok = await pushMergedToFirestoreWithRetry();
   setSyncStatus(ok ? 'synced' : 'error');
+  // A successful push means whatever local `users` edit triggered it (see saveUsers()) has now
+  // actually reached Firestore — from this point on, the next incoming snapshot's copy of
+  // `users` is at least as fresh as ours, so it's safe to trust it fully again instead of
+  // defensively preferring our local copy.
+  if(ok) usersUnsavedChanges = false;
   return ok;
 }
 
