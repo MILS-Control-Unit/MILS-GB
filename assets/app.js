@@ -14537,8 +14537,13 @@ renderStepper();
 renderAttendanceStepper();
 renderWorkspace();
 renderAttendanceWorkspace();
-renderDatabaseNow();
-renderTeachersDatabase();
+// renderDatabaseNow() and renderTeachersDatabase() used to run here unconditionally on
+// every page load, building the FULL unfiltered student/teacher tables (sticky columns,
+// badges, etc.) into #appWrap — which is display:none until login. That work is pure
+// waste before login (nobody can see it yet) and is redundant even after login, since
+// switchView() already renders each table on demand the moment its tab is actually
+// opened (see the 'database'/'teachers' cases above). Removing them here noticeably
+// speeds up the time the login screen becomes responsive.
 renameAttendanceNavTab();
 // Renames the "Absence" nav tab button to "Absence & Approved Leave", preserving any leading
 // icon element inside the button (only the trailing text node is replaced) since the button's
