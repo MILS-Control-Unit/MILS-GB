@@ -12285,8 +12285,32 @@ function toggleDarkMode(){
   });
 })();
 
+// Makes the Teachers Database the single source of truth for which Classes/Subjects a
+// Teacher (or HOD's Subjects) account sees. Previously a Teacher's classrooms/subjects only
+// ever came from whatever was picked in the "Manage Users" form when the account was created —
+// if that step was skipped, or the Teachers Database row was edited afterwards, the account's
+// Class/Subject steppers stayed empty even though the Teachers Database clearly listed classes
+// and a subject for that teacher. Called right after login (and re-login), this looks up the
+// matching Teachers Database row (by linked username first, falling back to a name match for
+// older rows that pre-date the linking) and — whenever that row actually has data — overwrites
+// the account's classrooms/subjects with it, so the database's "Classes"/"Subject" columns are
+// always what the Teacher/HOD account actually sees.
+function syncTeacherScopeFromDb(user){
+  if(!user || (user.role!=='teacher' && user.role!=='hod')) return;
+  let t = teachers.find(x=> x.username===user.username);
+  if(!t) t = teachers.find(x=> !x.username && (x.name===user.displayName || x.name===user.username));
+  if(!t) return;
+  const dbSubjects = (t.subject||'').split(',').map(s=>s.trim()).filter(Boolean);
+  if(dbSubjects.length) user.subjects = dbSubjects;
+  if(user.role==='teacher'){
+    const dbClassrooms = (t.classes||'').split(',').map(c=>c.trim()).filter(Boolean);
+    if(dbClassrooms.length) user.classrooms = dbClassrooms;
+  }
+}
+
 function loginAs(user, remember, showWelcome){
   currentUser = user;
+  syncTeacherScopeFromDb(currentUser);
   currentUser.effective = getEffectivePermissions(user);
   sanitizeScopedState();
   try{
@@ -12770,6 +12794,7 @@ function saveUserFromForm(){
     
     if(currentUser && currentUser.username === user.username){
       currentUser = user;
+      syncTeacherScopeFromDb(currentUser);
       currentUser.effective = getEffectivePermissions(user);
     }
     saveUsers();
@@ -13432,6 +13457,19 @@ function applyRemotePayload(payload){
   if(Array.isArray(payload.examScheduleReleases)){
     examScheduleReleases = payload.examScheduleReleases;
     saveExamScheduleReleasesLocalOnly();
+  }
+  // A Teacher/HOD who was already logged in before this snapshot arrived (e.g. right after
+  // page load, before the very first Firestore pull completes) had their Class/Subject scope
+  // computed with an empty/stale `teachers` list. Now that `teachers` has just been merged
+  // in above, re-sync that scope from it and refresh the stepper so the Teacher immediately
+  // sees the Classes/Subjects actually assigned to them in the database, instead of only
+  // picking them up on next login.
+  if(currentUser && (currentUser.role==='teacher' || currentUser.role==='hod')){
+    syncTeacherScopeFromDb(currentUser);
+    currentUser.effective = getEffectivePermissions(currentUser);
+    sanitizeScopedState();
+    if(typeof renderStepper==='function') renderStepper();
+    if(typeof renderAttendanceStepper==='function') renderAttendanceStepper();
   }
   saveStateLocalOnly();
   renderDatabase();
