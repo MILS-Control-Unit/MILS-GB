@@ -2608,7 +2608,6 @@ body.dark-mode .login-quote{ background:rgba(0,0,0,0.18); }
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .nav-tab::after{display:none;}
-.nav-dropdown-menu{ top:0!important;left:100%!important;margin:0 0 0 10px!important; }
 .nav-row-config{
   margin-inline-start:0!important;margin-top:auto!important;padding-inline-start:0!important;
   border-inline-start:none!important;border-top:1px solid var(--border);padding-top:10px!important;
