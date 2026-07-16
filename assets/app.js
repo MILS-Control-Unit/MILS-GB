@@ -13790,12 +13790,23 @@ function usersMatchingCurrentFilter(){
     list = users.filter(u=> (u.role==='teacher' || u.role==='parent') && hodSectionMatches(u.section));
   }
   if(roleFilter!=='all') list = list.filter(u=> u.role===roleFilter);
-  // Sort by role (Admin → HOS → HOD → Teacher → Parent/Student), then alphabetically
-  // by display name (falling back to username) within each role, so accounts of the
-  // same type sit together instead of appearing in whatever order they were created.
+  // Sort by role (Admin → HOS → HOD → Teacher → Parent/Student), then — for Teacher
+  // accounts specifically — by Section (English → French → Both) then Subject(s) A-Z,
+  // mirroring the Teachers Database order, so teachers of the same subject sit together.
+  // Non-teacher roles just fall back to alphabetical by display name (or username).
+  const TEACHER_SECTION_SORT_ORDER = { 'English': 0, 'French': 1, 'Both': 2 };
   return list.slice().sort((a,b)=>{
     const ra = ROLE_ORDER.indexOf(a.role), rb = ROLE_ORDER.indexOf(b.role);
     if(ra!==rb) return ra-rb;
+    if(a.role==='teacher' && b.role==='teacher'){
+      const sa = TEACHER_SECTION_SORT_ORDER.hasOwnProperty(a.section) ? TEACHER_SECTION_SORT_ORDER[a.section] : 99;
+      const sb = TEACHER_SECTION_SORT_ORDER.hasOwnProperty(b.section) ? TEACHER_SECTION_SORT_ORDER[b.section] : 99;
+      if(sa!==sb) return sa-sb;
+      const subjA = (a.subjects||[]).join(', ').trim();
+      const subjB = (b.subjects||[]).join(', ').trim();
+      const subjCmp = subjA.localeCompare(subjB, undefined, { sensitivity:'base' });
+      if(subjCmp!==0) return subjCmp;
+    }
     return (a.displayName||a.username).localeCompare(b.displayName||b.username);
   });
 }
@@ -13803,6 +13814,7 @@ function renderUsersTable(){
   const body = document.getElementById('usersTableBody');
   const list = usersMatchingCurrentFilter();
   let lastRole = null;
+  let lastTeacherSubjectKey = null;
   body.innerHTML = list.map(u=>{
     const needsSectionCol = u.role==='teacher' || u.role==='hod' || u.role==='hos';
     const sectionLabel = u.section ? SECTIONS[u.section].label : (needsSectionCol ? 'Both' : '—');
@@ -13817,10 +13829,24 @@ function renderUsersTable(){
     let groupHeader = '';
     if(u.role !== lastRole){
       lastRole = u.role;
+      lastTeacherSubjectKey = null; // reset so the first teacher subject also gets a subheader
       const count = list.filter(x=>x.role===u.role).length;
       groupHeader = `<tr class="user-group-row"><td colspan="7" style="padding:8px 10px;font-weight:600;background:rgba(0,0,0,0.04);">${ROLE_LABELS[u.role]||u.role} <span style="font-weight:400;opacity:.7;">(${count})</span></td></tr>`;
     }
-    return `${groupHeader}
+    // Within the Teacher group, also break out a subheader per Section + Subject(s)
+    // combo (matches the Section→Subject→Name order applied in usersMatchingCurrentFilter),
+    // so teachers of the same subject are visually clustered together.
+    let subjectHeader = '';
+    if(u.role==='teacher'){
+      const subjectsLabel = (u.subjects||[]).length ? u.subjects.join(', ') : '—';
+      const subjectKey = `${sectionLabel}||${subjectsLabel}`;
+      if(subjectKey !== lastTeacherSubjectKey){
+        lastTeacherSubjectKey = subjectKey;
+        const subjCount = list.filter(x=> x.role==='teacher' && (x.section?SECTIONS[x.section].label:'Both')===sectionLabel && ((x.subjects||[]).length?x.subjects.join(', '):'—')===subjectsLabel).length;
+        subjectHeader = `<tr class="user-subgroup-row"><td colspan="7" style="padding:6px 10px 6px 26px;font-weight:500;font-size:0.9em;opacity:.85;background:rgba(0,0,0,0.02);">${escapeHtml(sectionLabel)} · ${escapeHtml(subjectsLabel)} <span style="font-weight:400;opacity:.7;">(${subjCount})</span></td></tr>`;
+      }
+    }
+    return `${groupHeader}${subjectHeader}
       <tr>
         <td>${isProtected ? '' : `<input type="checkbox" class="user-row-cb" value="${u.username}" onchange="updateUsersBulkCount()">`}</td>
         <td><b>${u.username}</b></td>
