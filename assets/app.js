@@ -987,8 +987,21 @@ function toggleBirthdayDropdown(e){
   if(!dd) return;
   const opening = !dd.classList.contains('open');
   dd.classList.toggle('open');
-  if(opening) renderBirthdayWidget();
+  if(opening){
+    // The dropdown used to rely on CSS position:absolute relative to its header
+    // parent, which on narrow screens let it overlap sibling header widgets
+    // (quick-stats, Notify Parents) and whatever page content sat underneath it
+    // instead of floating cleanly above everything. Reusing the same fixed-position
+    // helper the nav menus already use (positionFixedNavMenu) fixes that.
+    positionFixedNavMenu(document.getElementById('birthdayWidget'), dd);
+    dd.style.zIndex = '9999';
+    renderBirthdayWidget();
+  }
 }
+window.addEventListener('resize', ()=>{
+  const dd = document.getElementById('birthdayDropdown');
+  if(dd && dd.classList.contains('open')) positionFixedNavMenu(document.getElementById('birthdayWidget'), dd);
+});
 
 function toggleConfigMenu(e){
   e.stopPropagation();
@@ -7139,7 +7152,7 @@ function getTodaysBirthdays(flat){
     const dd = parseInt(parts[0],10), mm = parseInt(parts[1],10);
     if(!dd || !mm || dd!==td || mm!==tm) return;
     const classLabel = [s.grade, s.classroom].filter(Boolean).join(' - ');
-    list.push({ id: s.id, name: s.name || s.displayId || 'Student', classLabel });
+    list.push({ id: s.id, name: s.name || s.displayId || 'Student', classLabel, grade: s.grade || '' });
   });
   list.sort((a,b)=> a.name.localeCompare(b.name));
   return list;
@@ -7163,6 +7176,7 @@ function renderBirthdayWidget(){
   const countEl = document.getElementById('birthdayCount');
   const listEl = document.getElementById('birthdayList');
   if(!widget || !countEl || !listEl) return;
+  ensureBirthdayListStyles();
   const list = getTodaysBirthdays();
   countEl.textContent = list.length;
   widget.classList.toggle('has-birthdays', list.length>0);
@@ -7170,12 +7184,61 @@ function renderBirthdayWidget(){
     listEl.innerHTML = '<span class="birthday-chip-empty">No birthdays today</span>';
     return;
   }
-  listEl.innerHTML = list.map(b=>`
-    <div class="birthday-chip">
-      <span>🎂 ${(b.name||'').replace(/</g,'&lt;')}</span>
-      ${b.classLabel ? `<small>${b.classLabel.replace(/</g,'&lt;')}</small>` : ''}
-    </div>
-  `).join('');
+  // Group by grade so a long list reads as clearly separated sections (one small
+  // header per grade) instead of one undifferentiated column of names.
+  const groups = new Map();
+  list.forEach(b=>{
+    const key = b.grade || 'Other';
+    if(!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(b);
+  });
+  // Order groups by the grade's natural numeric order where possible, so "Grade 2"
+  // comes before "Grade 10" instead of sorting alphabetically.
+  const orderedKeys = Array.from(groups.keys()).sort((a,b)=>{
+    const na = parseInt((a.match(/\d+/)||[])[0], 10);
+    const nb = parseInt((b.match(/\d+/)||[])[0], 10);
+    if(!isNaN(na) && !isNaN(nb) && na!==nb) return na-nb;
+    return a.localeCompare(b);
+  });
+  listEl.innerHTML = orderedKeys.map(key=>{
+    const items = groups.get(key);
+    const rows = items.map(b=>{
+      const esc = (b.name||'').replace(/</g,'&lt;');
+      const clsEsc = (b.classLabel||'').replace(/</g,'&lt;');
+      return `
+      <div class="birthday-chip" title="${esc}${clsEsc ? ' — '+clsEsc : ''}">
+        <span class="birthday-chip-name">🎂 ${esc}</span>
+        ${clsEsc ? `<small>${clsEsc}</small>` : ''}
+      </div>`;
+    }).join('');
+    return `<div class="birthday-group">
+      <div class="birthday-group-title">${key.replace(/</g,'&lt;')} (${items.length})</div>
+      ${rows}
+    </div>`;
+  }).join('');
+}
+// Injects (once) a small stylesheet that makes the birthday list more compact:
+// long names collapse to a single line with an ellipsis (full name still available
+// via the row's title tooltip) instead of wrapping to two lines, spacing is tightened,
+// and each grade-group gets a small muted header. Left as an additive override rather
+// than touching the original .birthday-chip rule, whose definition lives in the HTML
+// file rather than here.
+function ensureBirthdayListStyles(){
+  if(document.getElementById('birthdayListStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'birthdayListStyles';
+  style.textContent = `
+    #birthdayList .birthday-group{ margin-bottom:2px; }
+    #birthdayList .birthday-group-title{
+      font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.03em;
+      opacity:.55; margin:10px 6px 3px; }
+    #birthdayList .birthday-group:first-child .birthday-group-title{ margin-top:2px; }
+    #birthdayList .birthday-chip{ padding:5px 8px !important; min-height:0 !important; line-height:1.25 !important; }
+    #birthdayList .birthday-chip-name{
+      display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; font-size:13px; }
+    #birthdayList .birthday-chip small{ display:block; opacity:.6; font-size:11px; margin-top:1px; }
+  `;
+  document.head.appendChild(style);
 }
 
 /* ---------- Shared "today" key used to remember dismiss/seen state per day ---------- */
