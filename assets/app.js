@@ -8156,6 +8156,7 @@ function deleteSelectedTeachers(){
   if(checked.length===0){ alert('Please select one or more teachers to delete.'); return; }
   if(!confirm(`Permanently delete ${checked.length} selected teacher(s)? This cannot be undone.`)) return;
   const ids = checked.map(cb=>cb.value);
+  console.log('[Sync] deleteSelectedTeachers running — removing', ids.length, 'of', teachers.length, 'teachers. IDs:', ids);
   teachers = teachers.filter(t=> !ids.includes(t.id));
   ids.forEach(id=>{ if(!deletedTeacherIds.includes(id)) deletedTeacherIds.push(id); });
   renderTeachersDatabase();
@@ -8430,7 +8431,6 @@ function importTeachersExcel(file){
 
       renderTeachersDatabase();
       saveState();
-      console.log('[Sync] Teacher import finished — added:', added, '| teachers in memory now:', teachers.length, '| auto-sync enabled:', githubReady());
       // Push immediately instead of only marking "unsaved". Excel-imported teachers used to
       // sit only in localStorage until the separate Grade Book Save button was pressed; if a
       // remote Firestore snapshot arrived first (another device, a live-sync tick, or simply
@@ -13755,6 +13755,7 @@ function bulkDeleteUsernames(usernames){
     if(user && (user.role==='teacher' || user.role==='hod')){
       const displayName = user.displayName || username;
       const droppedIds = teachers.filter(t=> t.username ? t.username===username : (t.name===displayName || t.name===username)).map(t=>t.id);
+      console.log('[Sync] bulkDeleteUsernames dropping', droppedIds.length, 'linked teacher row(s) for user:', username);
       droppedIds.forEach(id=>{ if(!deletedTeacherIds.includes(id)) deletedTeacherIds.push(id); });
       teachers = teachers.filter(t=> t.username ? t.username!==username : (t.name!==displayName && t.name!==username));
     }
@@ -14272,10 +14273,6 @@ function applyRemotePayload(payload){
   const currentTeacherIdsAtApply = new Set(teachers.map(t=>t.id));
   deletedTeacherIds = Array.from(new Set([...(payload.deletedTeacherIds||[]), ...deletedTeacherIds]))
     .filter(id => !currentTeacherIdsAtApply.has(id));
-  console.log('[Sync] snapshot received — teachers before merge:', teachers.length,
-    '| remote teachers:', (payload.teachers||[]).length,
-    '| deletedTeacherIds after union:', deletedTeacherIds.length,
-    '| dataVersion (remote/local):', payload.dataVersion, '/', knownDataVersion);
   // teachers is ALWAYS merged (never hard-replaced), regardless of gbUnsavedChanges. A pure
   // replace here was the remaining path that could make a just-imported/just-added teacher
   // vanish: if this device's own push hadn't fully round-tripped yet, or a same-document
@@ -14301,7 +14298,6 @@ function applyRemotePayload(payload){
     grade3FlexibleMaximaBySubject = payload.grade3FlexibleMaxima || grade3FlexibleMaximaBySubject || {};
   }
   teachers = teachers.filter(t=> !deletedTeacherIds.includes(t.id));
-  console.log('[Sync] teachers after merge+filter:', teachers.length);
   try{ localStorage.setItem(GRADE3_MAXIMA_LS_KEY, JSON.stringify(grade3FlexibleMaximaBySubject)); }catch(err){}
   knownDataVersion = Math.max(knownDataVersion, payload.dataVersion || 0);
   if(Array.isArray(payload.users) && payload.users.length){
@@ -14493,10 +14489,9 @@ function stopFirebaseLiveSync(){
 }
 
 async function pushToGithub(){
-  if(!githubReady()){ console.log('[Sync] pushToGithub skipped — auto-sync is OFF'); return false; }
+  if(!githubReady()) return false;
   setSyncStatus('syncing');
   const ok = await pushMergedToFirestoreWithRetry();
-  console.log('[Sync] push finished — success:', ok, '| teachers pushed:', teachers.length);
   setSyncStatus(ok ? 'synced' : 'error');
   // A successful push means whatever local `users` edit triggered it (see saveUsers()) has now
   // actually reached Firestore — from this point on, the next incoming snapshot's copy of
