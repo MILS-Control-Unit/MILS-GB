@@ -988,20 +988,15 @@ function toggleBirthdayDropdown(e){
   const opening = !dd.classList.contains('open');
   dd.classList.toggle('open');
   if(opening){
-    // The dropdown used to rely on CSS position:absolute relative to its header
-    // parent, which on narrow screens let it overlap sibling header widgets
-    // (quick-stats, Notify Parents) and whatever page content sat underneath it
-    // instead of floating cleanly above everything. Reusing the same fixed-position
-    // helper the nav menus already use (positionFixedNavMenu) fixes that.
-    positionFixedNavMenu(document.getElementById('birthdayWidget'), dd);
+    // Keep the stylesheet's own position:absolute behavior (switching this to
+    // position:fixed broke the dropdown's width, since its sizing is computed
+    // relative to its absolutely-positioned parent) — only raise its stacking
+    // order so it reliably draws above sibling header widgets (quick-stats,
+    // Notify Parents) instead of underneath them.
     dd.style.zIndex = '9999';
     renderBirthdayWidget();
   }
 }
-window.addEventListener('resize', ()=>{
-  const dd = document.getElementById('birthdayDropdown');
-  if(dd && dd.classList.contains('open')) positionFixedNavMenu(document.getElementById('birthdayWidget'), dd);
-});
 
 function toggleConfigMenu(e){
   e.stopPropagation();
