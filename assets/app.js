@@ -94,8 +94,7 @@ const ATT_STAGES = JSON.parse(JSON.stringify(STAGES));
 let state = { termPeriod:null, section:null, stage:null, grade:null, term:null, academicTerm:null, subject:null,
   dashboardTerm:null, dashboardMode:null, dashboardSection:null, dashboardStage:null, dashboardGrade:null, dashboardClassroom:null, dashboardStudent:null,
   examsTerm:null, examsMode:null, examsSection:null, examsStage:null, examsGrade:null, examsClassroom:null, examsSubject:null,
-  perfTerm:null, perfCycle:null, perfCategory:null,
-  tcSection:null, tcStage:null, tcGrade:null };
+  perfTerm:null, perfCycle:null, perfCategory:null };
 
 // Top Performance / At Risk keeps its own independent Section/Stage/Grade/Class filter,
 // fully separate from the Grade Book's state. Each Term × Cycle × Category combination gets
@@ -490,7 +489,7 @@ function classKeyLabels(ck){
 // Students — the block applies to the whole account, not just Reports.
 function showAccountBlockedScreen(){
   currentView = null;
-  ['gradesView','databaseView','markEntryReportView','attendanceView','dashboardView','examsAnalysisView','teachersView','teacherStatisticsView','perfAlertsView','teachersAndClassesView'].forEach(id=>{
+  ['gradesView','databaseView','markEntryReportView','attendanceView','dashboardView','examsAnalysisView','teachersView','teacherStatisticsView','perfAlertsView'].forEach(id=>{
     const el = document.getElementById(id);
     if(el) el.style.display = 'none';
   });
@@ -526,7 +525,6 @@ function switchView(view){
   document.getElementById('classListsView').style.display = view==='classLists' ? '' : 'none';
   document.getElementById('statisticsView').style.display = view==='statistics' ? '' : 'none';
   document.getElementById('certReportsView').style.display = view==='certReports' ? '' : 'none';
-  document.getElementById('teachersAndClassesView').style.display = view==='teachersAndClasses' ? '' : 'none';
   document.querySelectorAll('.nav-tab').forEach(b=> b.classList.toggle('active', b.dataset.view===view));
   if(view==='database') renderDatabaseNow();
   if(view==='teachers'){
@@ -563,7 +561,6 @@ function switchView(view){
   if(view==='classLists'){ renderClassListsStepper(); renderClassListsWorkspace(); }
   if(view==='statistics'){ renderStatistics(); }
   if(view==='certReports'){ renderCertReportsStepper(); renderCertReportsWorkspace(); }
-  if(view==='teachersAndClasses'){ renderTeachersAndClassesStepper(); renderTeachersAndClassesTable(); }
 }
 
 let openTermGroup = null;
@@ -13338,7 +13335,6 @@ function canAccessTab(tab){
   if(isViewerAccountBlocked()) return false; // blocked accounts can't open ANY tab
   if(tab==='teachers') return currentUser.role === 'admin'; // Teachers Database only for Admin
   if(tab==='teacherStatistics') return currentUser.role === 'admin'; // Teachers Statistics only for Admin
-  if(tab==='teachersAndClasses') return currentUser.role === 'admin'; // Teachers and Classes only for Admin
   if(tab==='statistics') return currentUser.role === 'admin' || currentUser.role === 'hod'; // Statistics for Admin & HOD
   if(tab==='certReports') return !!currentUser.effective.reports; // Certificates tab shares the Reports permission
   if(tab==='markEntryReport') return currentUser.role!=='parent' && !!currentUser.effective.reports; // Mark Entry Report shares the Reports permission, but is staff-only
@@ -15984,251 +15980,4 @@ function downloadStatisticsExcel(){
 
 function downloadStatisticsPDF(){
   alert('PDF export is coming soon. For now, you can use the Print function (Ctrl+P or Cmd+P) to save as PDF.');
-}
-
-/* ========== TEACHERS AND CLASSES TAB ========== */
-
-function renderTeachersAndClassesStepper(){
-  const stepperHolder = document.getElementById('tcStepper');
-  if(!stepperHolder) return;
-
-  let html = `
-  <div class="stepper">
-    <div class="stepper-section">
-      <label>📍 Section:</label>
-      <select id="tcSectionFilter" onchange="state.tcSection = this.value; renderTeachersAndClassesTable()">
-        <option value="">-- All Sections --</option>
-        ${Object.entries(SECTIONS).map(([id, sec]) => `
-          <option value="${id}" ${state.tcSection === id ? 'selected' : ''}>${sec.label}</option>
-        `).join('')}
-      </select>
-    </div>
-    <div class="stepper-section">
-      <label>🎓 Stage:</label>
-      <select id="tcStageFilter" onchange="state.tcStage = this.value; renderTeachersAndClassesTable()">
-        <option value="">-- All Stages --</option>
-        ${Object.entries(STAGES).map(([id, stage]) => `
-          <option value="${id}" ${state.tcStage === id ? 'selected' : ''}>${stage.label}</option>
-        `).join('')}
-      </select>
-    </div>
-    <div class="stepper-section">
-      <label>📚 Grade:</label>
-      <select id="tcGradeFilter" onchange="state.tcGrade = this.value; renderTeachersAndClassesTable()">
-        <option value="">-- All Grades --</option>
-        ${(() => {
-          let grades = [];
-          Object.values(STAGES).forEach(stage => {
-            stage.grades.forEach(grade => {
-              grades.push(`<option value="${grade.id}" ${state.tcGrade === grade.id ? 'selected' : ''}>${grade.label}</option>`);
-            });
-          });
-          return grades.join('');
-        })()}
-      </select>
-    </div>
-  </div>`;
-
-  stepperHolder.innerHTML = html;
-}
-
-function renderTeachersAndClassesTable(){
-  const tableHolder = document.getElementById('tcTableHolder');
-  if(!tableHolder) return;
-
-  // تصفية المعلمين بناءً على القسم المختار
-  let filteredTeachers = teachers;
-  if(state.tcSection){
-    filteredTeachers = filteredTeachers.filter(t => {
-      if(state.tcSection === 'en') return t.section === 'English' || t.section === 'Both';
-      if(state.tcSection === 'fr') return t.section === 'French' || t.section === 'Both';
-      return true;
-    });
-  }
-
-  // بناء جدول المواد والفصول
-  if(filteredTeachers.length === 0){
-    tableHolder.innerHTML = `
-      <div class="empty-state">
-        <div class="seal-lg">👨‍🏫</div>
-        <h3>No teachers found</h3>
-        <p>No teachers match the selected filters.</p>
-      </div>`;
-    return;
-  }
-
-  // تجميع البيانات: مادة → فصل → معلمون
-  const subjectData = {};
-  
-  filteredTeachers.forEach(teacher => {
-    const subject = teacher.subject || 'No Subject';
-    const teacherClasses = (teacher.classes || '').split(',').map(c => c.trim()).filter(Boolean);
-    
-    if(!subjectData[subject]) subjectData[subject] = {};
-    
-    teacherClasses.forEach(className => {
-      if(!subjectData[subject][className]) subjectData[subject][className] = [];
-      subjectData[subject][className].push(teacher);
-    });
-  });
-
-  // الحصول على جميع الفصول الفريدة
-  const allClasses = new Set();
-  Object.values(subjectData).forEach(subjects => {
-    Object.keys(subjects).forEach(cls => allClasses.add(cls));
-  });
-  const sortedClasses = Array.from(allClasses).sort();
-
-  // تصفية الفصول بناءً على المرحلة والصف
-  let classesToShow = sortedClasses;
-  if(state.tcStage || state.tcGrade){
-    classesToShow = sortedClasses.filter(className => {
-      // استخراج معرف الصف من اسم الفصل (مثل "Grade 1 A" → "g1")
-      for(let stageId in STAGES){
-        for(let grade of STAGES[stageId].grades){
-          if(className.includes(grade.label)){
-            if(state.tcStage && stageId !== state.tcStage) return false;
-            if(state.tcGrade && grade.id !== state.tcGrade) return false;
-            return true;
-          }
-        }
-      }
-      return !state.tcStage && !state.tcGrade;
-    });
-  }
-
-  const sortedSubjects = Object.keys(subjectData).sort();
-
-  // بناء الجدول
-  let tableHtml = `
-    <table class="teachers-classes-table">
-      <thead>
-        <tr>
-          <th class="subject-col">📚 Subject</th>
-          ${sortedClasses.map(cls => `<th class="class-col">${escapeHtml(cls)}</th>`).join('')}
-        </tr>
-      </thead>
-      <tbody>`;
-
-  sortedSubjects.forEach(subject => {
-    tableHtml += `
-        <tr>
-          <td class="subject-col">
-            <strong>${subjectIcon(subject)} ${escapeHtml(subject)}</strong>
-          </td>`;
-    
-    sortedClasses.forEach(className => {
-      const teachersInCell = (subjectData[subject] && subjectData[subject][className]) || [];
-      const cellContent = teachersInCell.length > 0
-        ? teachersInCell.map(t => `<div class="teacher-badge">${escapeHtml(t.name)}</div>`).join('')
-        : '<div class="empty-cell">—</div>';
-      
-      tableHtml += `<td class="class-cell">${cellContent}</td>`;
-    });
-
-    tableHtml += `</tr>`;
-  });
-
-  tableHtml += `
-      </tbody>
-    </table>`;
-
-  // إضافة أنماط خاصة بالجدول
-  if(!document.getElementById('tcTableStyles')){
-    const style = document.createElement('style');
-    style.id = 'tcTableStyles';
-    style.textContent = `
-      .teachers-classes-table {
-        width: 100%;
-        border-collapse: collapse;
-        background: var(--bg);
-        border: 1px solid var(--border);
-        margin-top: 12px;
-      }
-      .teachers-classes-table thead {
-        background: var(--header-bg, #f0f3f7);
-        border-bottom: 2px solid var(--border);
-      }
-      .teachers-classes-table th {
-        padding: 12px 8px;
-        text-align: center;
-        font-weight: 700;
-        font-size: 13px;
-        color: var(--ink);
-        white-space: nowrap;
-      }
-      .teachers-classes-table td {
-        padding: 12px 8px;
-        border: 1px solid var(--border);
-        text-align: center;
-        vertical-align: middle;
-      }
-      .teachers-classes-table .subject-col {
-        text-align: left;
-        background: var(--subject-bg, #f9fafb);
-        font-weight: 600;
-        width: 180px;
-        min-width: 180px;
-      }
-      .teachers-classes-table .class-col {
-        width: 120px;
-        min-width: 120px;
-      }
-      .teachers-classes-table .class-cell {
-        background: #fafbfc;
-      }
-      .teacher-badge {
-        display: inline-block;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 6px 10px;
-        border-radius: 6px;
-        font-size: 12px;
-        font-weight: 600;
-        margin: 4px;
-        text-align: center;
-        box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
-      }
-      .empty-cell {
-        color: var(--disabled);
-        font-style: italic;
-      }
-      .teachers-classes-table tbody tr:hover {
-        background: var(--hover-bg, #f5f7fa);
-      }
-      #tcStepper {
-        display: flex;
-        gap: 16px;
-        margin-bottom: 20px;
-        flex-wrap: wrap;
-      }
-      .stepper-section {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
-      .stepper-section label {
-        font-weight: 600;
-        font-size: 13px;
-        color: var(--ink);
-      }
-      .stepper-section select {
-        padding: 8px 12px;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        background: white;
-        font-size: 13px;
-        cursor: pointer;
-        min-width: 200px;
-      }
-      .stepper-section select:focus {
-        outline: none;
-        border-color: var(--primary, #2563eb);
-        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-      }
-    `;
-    if(document.head) document.head.appendChild(style);
-  }
-
-  tableHolder.innerHTML = tableHtml;
 }
