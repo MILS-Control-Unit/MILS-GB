@@ -13794,13 +13794,17 @@ function usersMatchingCurrentFilter(){
   // accounts specifically — by Section (English → French → Both) then Subject(s) A-Z,
   // mirroring the Teachers Database order, so teachers of the same subject sit together.
   // Non-teacher roles just fall back to alphabetical by display name (or username).
-  const TEACHER_SECTION_SORT_ORDER = { 'English': 0, 'French': 1, 'Both': 2 };
+  // NOTE: Teacher/HOD/HOS accounts store their section as the dropdown's underlying
+  // code — 'en', 'fr', or '' (empty string) for "Both" — not the display words, so the
+  // sort key below must match those codes (see #ufSection's <option value="en"|"fr"|"">).
+  const TEACHER_SECTION_SORT_ORDER = { 'en': 0, 'fr': 1, '': 2 };
   return list.slice().sort((a,b)=>{
     const ra = ROLE_ORDER.indexOf(a.role), rb = ROLE_ORDER.indexOf(b.role);
     if(ra!==rb) return ra-rb;
     if(a.role==='teacher' && b.role==='teacher'){
-      const sa = TEACHER_SECTION_SORT_ORDER.hasOwnProperty(a.section) ? TEACHER_SECTION_SORT_ORDER[a.section] : 99;
-      const sb = TEACHER_SECTION_SORT_ORDER.hasOwnProperty(b.section) ? TEACHER_SECTION_SORT_ORDER[b.section] : 99;
+      const aSec = a.section || '', bSec = b.section || '';
+      const sa = TEACHER_SECTION_SORT_ORDER.hasOwnProperty(aSec) ? TEACHER_SECTION_SORT_ORDER[aSec] : 99;
+      const sb = TEACHER_SECTION_SORT_ORDER.hasOwnProperty(bSec) ? TEACHER_SECTION_SORT_ORDER[bSec] : 99;
       if(sa!==sb) return sa-sb;
       const subjA = (a.subjects||[]).join(', ').trim();
       const subjB = (b.subjects||[]).join(', ').trim();
