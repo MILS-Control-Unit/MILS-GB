@@ -7001,22 +7001,54 @@ async function pushMergedToFirestore(){
       // otherwise a teacher re-added under an id/username that was ever deleted in the
       // past (on this device or another) would get silently stripped back out by this
       // very push, the moment the merge below filters it against the tombstone list.
-      const currentTeacherIds = new Set(teachers.map(t=>t.id));
-      const mergedDeletedTeacherIds = Array.from(new Set([...(remote.deletedTeacherIds||[]), ...deletedTeacherIds]))
-        .filter(id => !currentTeacherIds.has(id));
-      const mergedTeachers = mergeArrayById(remote.teachers, teachers, 'id')
-        .filter(t=> !mergedDeletedTeacherIds.includes(t.id));
+      //
+      // SAFETY GUARD (added after an incident where the entire Teachers Database was
+      // wiped with zero activity-log entries): a device whose in-memory `teachers` is
+      // empty while the server's copy is NOT empty has, by definition, either not
+      // finished loading real data yet or lost it locally — it must never be allowed to
+      // "vote" on which teacher ids are tombstoned. Before this guard, such a device
+      // would contribute an empty `currentTeacherIds` set, so nothing was excluded from
+      // the tombstone union; if that device's local `deletedTeacherIds` (loaded from an
+      // old/incorrect localStorage snapshot) happened to already contain every teacher
+      // id, this push would tombstone — and filter out — the server's entire, correct
+      // teachers list in one shot, with no deleteTeacherFromDb()/bulk-delete call ever
+      // running, hence no activity-log trace. When this fires, this push simply leaves
+      // teachers/deletedTeacherIds exactly as the server already has them, untouched.
+      const remoteTeachersCount = (remote.teachers||[]).length;
+      let mergedTeachers, mergedDeletedTeacherIds;
+      if(teachers.length===0 && remoteTeachersCount>0){
+        console.warn('pushMergedToFirestore: local teachers is empty but server has '+remoteTeachersCount+' — skipping teachers/deletedTeacherIds merge on this push to avoid wiping the server copy.');
+        mergedTeachers = remote.teachers;
+        mergedDeletedTeacherIds = remote.deletedTeacherIds || [];
+      }else{
+        const currentTeacherIds = new Set(teachers.map(t=>t.id));
+        mergedDeletedTeacherIds = Array.from(new Set([...(remote.deletedTeacherIds||[]), ...deletedTeacherIds]))
+          .filter(id => !currentTeacherIds.has(id));
+        mergedTeachers = mergeArrayById(remote.teachers, teachers, 'id')
+          .filter(t=> !mergedDeletedTeacherIds.includes(t.id));
+      }
       // Union of every username either device has deleted, same reasoning as teachers above —
       // and the same fix: a username currently present in our own `users` array (just
       // added/re-added, e.g. via a fresh Excel import) is excluded from the tombstone list
       // instead of being blindly unioned back in from the server's older copy. Without this,
       // re-importing a username that had EVER been deleted (even long ago, even on another
       // device) would silently vanish again the moment this very push round-trips.
-      const currentUsernamesSet = new Set(users.map(u=>u.username));
-      const mergedDeletedUsernames = Array.from(new Set([...(remote.deletedUsernames||[]), ...deletedUsernames]))
-        .filter(u => !currentUsernamesSet.has(u));
-      const mergedUsers = mergeArrayById(remote.users, users, 'username')
-        .filter(u=> !mergedDeletedUsernames.includes(u.username));
+      //
+      // SAME SAFETY GUARD as teachers above, mirrored for `users` — an unloaded/empty local
+      // `users` array must never be allowed to tombstone the server's real list either.
+      const remoteUsersCount = (remote.users||[]).length;
+      let mergedUsers, mergedDeletedUsernames;
+      if(users.length===0 && remoteUsersCount>0){
+        console.warn('pushMergedToFirestore: local users is empty but server has '+remoteUsersCount+' — skipping users/deletedUsernames merge on this push to avoid wiping the server copy.');
+        mergedUsers = remote.users;
+        mergedDeletedUsernames = remote.deletedUsernames || [];
+      }else{
+        const currentUsernamesSet = new Set(users.map(u=>u.username));
+        mergedDeletedUsernames = Array.from(new Set([...(remote.deletedUsernames||[]), ...deletedUsernames]))
+          .filter(u => !currentUsernamesSet.has(u));
+        mergedUsers = mergeArrayById(remote.users, users, 'username')
+          .filter(u=> !mergedDeletedUsernames.includes(u.username));
+      }
       const merged = {
         students: mergeObjectField(remote.students, students),
         scores: mergeObjectField(remote.scores, scores),
@@ -14695,9 +14727,21 @@ function applyRemotePayload(payload){
   // same fix already applied to `users` below: merge (local wins) only while THIS device has
   // an edit of its own still in flight (pendingFirestorePush) — otherwise trust the server's
   // copy outright, since with nothing pending, the server is guaranteed at least as fresh.
-  teachers = pendingFirestorePush
-    ? mergeArrayById(payload.teachers, teachers, 'id')
-    : (Array.isArray(payload.teachers) ? payload.teachers : teachers);
+  // SAFETY GUARD (mirrors the one added in pushMergedToFirestore): if the incoming
+  // snapshot's teachers is an empty array while THIS device already holds a real,
+  // non-empty local copy, don't trust it "outright" — an empty incoming list here is
+  // far more likely to be a corrupted/incomplete server write than 200 legitimate
+  // deletions happening at once. Keep the local copy and surface a warning instead of
+  // silently wiping the screen (and re-saving that empty list back to localStorage).
+  const incomingTeachersEmpty = Array.isArray(payload.teachers) && payload.teachers.length===0;
+  if(incomingTeachersEmpty && teachers.length>0 && !pendingFirestorePush){
+    console.warn('applyRemotePayload: incoming teachers is empty but this device has '+teachers.length+' locally — ignoring the incoming empty list to avoid wiping the screen.');
+    // teachers stays as-is (do nothing)
+  }else{
+    teachers = pendingFirestorePush
+      ? mergeArrayById(payload.teachers, teachers, 'id')
+      : (Array.isArray(payload.teachers) ? payload.teachers : teachers);
+  }
   teacherIdCounter = Math.max(payload.teacherIdCounter || 1, teacherIdCounter || 1);
   if(gbUnsavedChanges){
     students = mergeObjectField(payload.students, students);
