@@ -14426,14 +14426,18 @@ function applyRemotePayload(payload){
   const currentTeacherIdsAtApply = new Set(teachers.map(t=>t.id));
   deletedTeacherIds = Array.from(new Set([...(payload.deletedTeacherIds||[]), ...deletedTeacherIds]))
     .filter(id => !currentTeacherIdsAtApply.has(id));
-  // teachers is ALWAYS merged (never hard-replaced), regardless of gbUnsavedChanges. A pure
-  // replace here was the remaining path that could make a just-imported/just-added teacher
-  // vanish: if this device's own push hadn't fully round-tripped yet, or a same-document
-  // snapshot arrived from a source (this tab's own listener re-attaching, a delayed/duplicate
-  // event, etc.) carrying a copy of teachers older than what's in memory, a hard replace would
-  // silently drop the new rows. Merging is safe even when there's nothing pending locally —
-  // it's a superset by id, and deletedTeacherIds still prunes anything genuinely deleted.
-  teachers = mergeArrayById(payload.teachers, teachers, 'id');
+  // teachers used to be ALWAYS merged (never hard-replaced) regardless of whether this
+  // device had anything pending — but mergeArrayById always keeps the LOCAL value for any
+  // id present on both sides. That meant once a browser had ever cached a teacher row, a
+  // genuine edit to that same teacher (e.g. renaming them) made and *confirmed* on another
+  // device would never overwrite this browser's stale copy on later pulls — this was the
+  // direct cause of "teacher name edits don't show correctly on another browser". Mirror the
+  // same fix already applied to `users` below: merge (local wins) only while THIS device has
+  // an edit of its own still in flight (pendingFirestorePush) — otherwise trust the server's
+  // copy outright, since with nothing pending, the server is guaranteed at least as fresh.
+  teachers = pendingFirestorePush
+    ? mergeArrayById(payload.teachers, teachers, 'id')
+    : (Array.isArray(payload.teachers) ? payload.teachers : teachers);
   teacherIdCounter = Math.max(payload.teacherIdCounter || 1, teacherIdCounter || 1);
   if(gbUnsavedChanges){
     students = mergeObjectField(payload.students, students);
