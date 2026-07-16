@@ -13296,7 +13296,29 @@ function openUsersModal(){
   }
   onRoleFormChange();
   renderUsersTable();
+  widenUsersModalBox();
   document.getElementById('usersOverlay').classList.add('show');
+}
+// Injects (once) a small stylesheet that overrides the Manage Users modal's box size.
+// Uses a <style> tag with !important rather than inline styles because the modal box's
+// class name isn't known here (its markup lives in the HTML file, not this script) —
+// this targets it structurally via #usersOverlay instead, and !important guarantees it
+// wins over whatever fixed width/max-height the original CSS set.
+// Effect: the box gets much wider (up to 1200px) and its own internal max-height/overflow
+// is removed, so its content lays out fully instead of scrolling in a cramped inner box.
+// If the form is ever taller than the screen, the overlay itself scrolls as a whole
+// (kept as a safety net so fields can never be clipped and unreachable) rather than
+// trapping the scroll inside a small nested box.
+function widenUsersModalBox(){
+  if(document.getElementById('ufWideModalStyle')) return;
+  const style = document.createElement('style');
+  style.id = 'ufWideModalStyle';
+  style.textContent = `
+    #usersOverlay { overflow-y: auto !important; padding: 24px 0 !important; }
+    #usersOverlay > * { max-width: min(1200px, 96vw) !important; width: 96vw !important;
+      max-height: none !important; overflow: visible !important; }
+  `;
+  document.head.appendChild(style);
 }
 function closeUsersModal(){
   document.getElementById('usersOverlay').classList.remove('show');
