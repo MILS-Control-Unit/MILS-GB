@@ -527,7 +527,31 @@ function switchView(view){
   document.getElementById('certReportsView').style.display = view==='certReports' ? '' : 'none';
   document.querySelectorAll('.nav-tab').forEach(b=> b.classList.toggle('active', b.dataset.view===view));
   if(view==='database') renderDatabaseNow();
-  if(view==='teachers') renderTeachersDatabase();
+  if(view==='teachers'){
+    // ✅ إذا كانت قائمة المدرسين فارغة وكان Firestore متاحاً
+    // حاول جلب البيانات مباشرة (قد تكون الـ sync الحي لم تصل بعد عند البداية)
+    if(teachers.length === 0 && githubReady() && fbDb){
+      FB_DOC_REF.get().then(snap => {
+        if(snap.exists){
+          const data = snap.data();
+          if(data && Array.isArray(data.teachers) && data.teachers.length > 0){
+            // تطبيق البيانات إذا كانت موجودة
+            const deletedIds = new Set((data.deletedTeacherIds || [])
+              .filter(id => !new Set(teachers.map(t=>t.id)).has(id)));
+            teachers = data.teachers.filter(t => !deletedIds.has(t.id));
+            teacherIdCounter = data.teacherIdCounter || 1;
+            // إعادة تصيير الواجهة
+            renderTeachersDatabase();
+          }
+        }
+      }).catch(err => {
+        console.warn('Manual fetch from Firestore failed:', err);
+        renderTeachersDatabase(); // رسم ما هو موجود على أي حال
+      });
+    } else {
+      renderTeachersDatabase();
+    }
+  }
   if(view==='teacherStatistics') renderTeacherStatistics();
   if(view==='markEntryReport'){ renderMarkEntryStepper(); renderMarkEntryWorkspace(); }
   if(view==='attendance'){ renderAttendanceStepper(); renderAttendanceWorkspace(); }
@@ -14342,6 +14366,9 @@ const fbDb  = firebase.firestore();
 // listener (onSnapshot) to keep every open browser in sync automatically.
 const FB_DOC_REF = fbDb.collection('gradebook').doc('main');
 
+// ✅ تتبع ما إذا كانت بيانات المدرسين قد تم تحديثها من Firestore
+let teachersUpdatedFlag = false;
+
 const GITHUB_CFG_KEY = 'gradesSystemFirebaseCfg_v1'; // kept name for minimal disruption to storage; holds { enabled }
 
 // Tracks when this browser last actually received confirmed data from Firestore (a
@@ -14519,6 +14546,17 @@ function applyRemotePayload(payload){
     grade3FlexibleMaximaBySubject = payload.grade3FlexibleMaxima || grade3FlexibleMaximaBySubject || {};
   }
   teachers = teachers.filter(t=> !deletedTeacherIds.includes(t.id));
+  
+  // ✅ حفظ في localStorage أيضاً للأداء والموثوقية
+  // إذا حدث تأخير في Firestore، سيكون لدينا الأحدث محفوظاً
+  try{
+    localStorage.setItem(LS_KEY, JSON.stringify({ 
+      students, scores, studentIdCounter, attendance, approvedLeave, 
+      teachers, teacherIdCounter, deletedTeacherIds, 
+      savedAt: new Date().toISOString() 
+    }));
+  }catch(err){ /* localStorage full أو محظور - لا مشكلة */ }
+  
   try{ localStorage.setItem(GRADE3_MAXIMA_LS_KEY, JSON.stringify(grade3FlexibleMaximaBySubject)); }catch(err){}
   knownDataVersion = Math.max(knownDataVersion, payload.dataVersion || 0);
   if(Array.isArray(payload.users) && payload.users.length){
@@ -14661,6 +14699,17 @@ function applyRemotePayload(payload){
       else document.getElementById('noAccessPanel').style.display = 'flex';
     }
   }
+  
+  // ✅ إعادة تصيير Manage Users إذا كانت البيانات قد تحديثت من Firestore
+  // هذا يضمن ظهور المدرسين الجدد على الفور في Manage Users tab على جميع المتصفحات
+  if(Array.isArray(payload.teachers) && payload.teachers.length > 0 && currentView === 'teachers'){
+    setTimeout(() => {
+      if(typeof renderTeachersDatabase === 'function'){
+        renderTeachersDatabase();
+      }
+    }, 50);
+  }
+  
   fbApplyingRemote = false;
   // gbUnsavedChanges is deliberately left untouched here: if this device had
   // pending local edits, the merge above kept them in memory and they still
@@ -14698,7 +14747,22 @@ function startFirebaseLiveSync(){
     const incomingVersion = data.dataVersion || 0;
     if(incomingVersion>0 && incomingVersion<=knownDataVersion) return;
     if(Date.now() - fbLastPushedAt < 1500) return;
+    
+    // ✅ تتبع عدد المدرسين قبل تطبيق البيانات
+    const teachersCountBefore = teachers.length;
+    
     applyRemotePayload(data);
+    
+    // ✅ إذا تغير عدد المدرسين وكنا على Manage Users tab
+    const teachersCountAfter = teachers.length;
+    if(currentView === 'teachers' && teachersCountBefore !== teachersCountAfter){
+      setTimeout(() => {
+        if(typeof renderTeachersDatabase === 'function'){
+          renderTeachersDatabase();
+        }
+      }, 100);
+    }
+    
     setSyncStatus('synced');
   }, err=>{
     console.warn('Firebase live sync error', err);
