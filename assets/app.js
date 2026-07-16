@@ -12096,6 +12096,11 @@ const ROLE_LABELS = {
   teacher:'Teacher', 
   parent:'Parent / Student' 
 };
+// Display order for roles in the Manage Users table (highest scope/authority first).
+// Used to sort the table and to group rows under a role header instead of one long
+// mixed list — makes it much faster to scan for a particular Teacher/Parent account
+// among dozens of accounts.
+const ROLE_ORDER = ['admin','hos','hod','teacher','parent'];
 
 function showWelcomeModal(user){
   const nameEl = document.getElementById('welcomeName');
@@ -13481,6 +13486,7 @@ function setUfSelectedStages(stages){
   document.querySelectorAll('.uf-stage-cb').forEach(cb=>{ cb.checked = stages.includes(cb.value); });
 }
 function resetUserForm(){
+  removeUfEditingBanner();
   document.getElementById('editingUsername').value = '';
   document.getElementById('ufUsername').value = '';
   document.getElementById('ufUsername').disabled = false;
@@ -13526,6 +13532,28 @@ function editUser(username){
   onRoleFormChange();
   document.getElementById('ufSubmitBtn').textContent = '💾 Save Changes';
   document.getElementById('ufCancelBtn').style.display = '';
+  showUfEditingBanner(user);
+}
+// Inserts a visible "Editing <user>" banner right above the form (with a one-click
+// way to back out) and scrolls the form into view. Without this, clicking "Edit" on
+// a row far down the Manage Users table silently repopulates a form the admin can no
+// longer see, which reads as if nothing happened.
+function showUfEditingBanner(user){
+  removeUfEditingBanner();
+  const anchor = document.getElementById('usersModalSub');
+  if(anchor){
+    anchor.insertAdjacentHTML('afterend',
+      `<div id="ufEditingBanner" style="margin:8px 0;padding:10px 14px;border-radius:8px;background:#fff7e0;border:1px solid #f0d98c;font-size:14px;">
+        ✏️ Editing <b>${escapeHtml(user.displayName || user.username)}</b> (${escapeHtml(user.username)}) —
+        <a onclick="resetUserForm()" style="cursor:pointer;text-decoration:underline;">cancel and add a new user instead</a>
+      </div>`);
+  }
+  const formStart = document.getElementById('ufUsername');
+  if(formStart && formStart.scrollIntoView) formStart.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+function removeUfEditingBanner(){
+  const el = document.getElementById('ufEditingBanner');
+  if(el) el.remove();
 }
 function saveUserFromForm(){
   const editing = document.getElementById('editingUsername').value;
@@ -13683,11 +13711,19 @@ function usersMatchingCurrentFilter(){
     list = users.filter(u=> (u.role==='teacher' || u.role==='parent') && hodSectionMatches(u.section));
   }
   if(roleFilter!=='all') list = list.filter(u=> u.role===roleFilter);
-  return list;
+  // Sort by role (Admin → HOS → HOD → Teacher → Parent/Student), then alphabetically
+  // by display name (falling back to username) within each role, so accounts of the
+  // same type sit together instead of appearing in whatever order they were created.
+  return list.slice().sort((a,b)=>{
+    const ra = ROLE_ORDER.indexOf(a.role), rb = ROLE_ORDER.indexOf(b.role);
+    if(ra!==rb) return ra-rb;
+    return (a.displayName||a.username).localeCompare(b.displayName||b.username);
+  });
 }
 function renderUsersTable(){
   const body = document.getElementById('usersTableBody');
   const list = usersMatchingCurrentFilter();
+  let lastRole = null;
   body.innerHTML = list.map(u=>{
     const needsSectionCol = u.role==='teacher' || u.role==='hod' || u.role==='hos';
     const sectionLabel = u.section ? SECTIONS[u.section].label : (needsSectionCol ? 'Both' : '—');
@@ -13697,7 +13733,15 @@ function renderUsersTable(){
         ? `${(u.subjects||[]).length} subject(s), ${(u.classrooms||[]).length} class(es)`
         : (u.role==='hod' ? 'Entire department' : (u.role==='hos' ? 'Relevant stages' : 'Full system access')));
     const isProtected = u.username==='admin' || (currentUser && currentUser.username===u.username);
-    return `
+    // The list is already sorted by role (see usersMatchingCurrentFilter), so a role
+    // change here means a new group is starting — drop in a labeled header row above it.
+    let groupHeader = '';
+    if(u.role !== lastRole){
+      lastRole = u.role;
+      const count = list.filter(x=>x.role===u.role).length;
+      groupHeader = `<tr class="user-group-row"><td colspan="7" style="padding:8px 10px;font-weight:600;background:rgba(0,0,0,0.04);">${ROLE_LABELS[u.role]||u.role} <span style="font-weight:400;opacity:.7;">(${count})</span></td></tr>`;
+    }
+    return `${groupHeader}
       <tr>
         <td>${isProtected ? '' : `<input type="checkbox" class="user-row-cb" value="${u.username}" onchange="updateUsersBulkCount()">`}</td>
         <td><b>${u.username}</b></td>
