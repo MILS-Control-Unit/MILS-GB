@@ -15119,6 +15119,23 @@ if(githubReady()){ setSyncStatus('idle'); }
 showInitialSyncIndicator();
 pullFromGithub(true).then(()=>{ if(githubReady()) startFirebaseLiveSync(); refreshHeaderQuickWidgets(); hideInitialSyncIndicator(); });
 
+// Safety net for a gap in the live listener: browsers heavily throttle timers/network
+// activity in a backgrounded tab, and Firestore's onSnapshot listener can end up sitting
+// on a stale snapshot for a while as a result — so a device left open in the background
+// during a big change elsewhere (e.g. a 200-row Teacher Excel import on another browser)
+// can still be showing old data minutes later even though the server-side write itself
+// succeeded immediately. Force a fresh pull the moment the tab becomes visible again,
+// so switching back to it always shows current data without needing a manual refresh.
+let lastVisibilityPullAt = 0;
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState !== 'visible') return;
+  if(!githubReady()) return;
+  const now = Date.now();
+  if(now - lastVisibilityPullAt < 5000) return; // avoid piling up pulls from rapid tab-switching
+  lastVisibilityPullAt = now;
+  pullFromGithub(true);
+});
+
 /* ================== BULK GRADES IMPORT BY SUBJECT(S) ================== */
 
 let bulkImportState = { mode: null, subjects: [] };
