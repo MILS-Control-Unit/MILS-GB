@@ -13299,24 +13299,23 @@ function openUsersModal(){
   widenUsersModalBox();
   document.getElementById('usersOverlay').classList.add('show');
 }
-// Injects (once) a small stylesheet that overrides the Manage Users modal's box size.
+// Injects (once) a small stylesheet that widens the Manage Users modal box.
 // Uses a <style> tag with !important rather than inline styles because the modal box's
 // class name isn't known here (its markup lives in the HTML file, not this script) —
 // this targets it structurally via #usersOverlay instead, and !important guarantees it
-// wins over whatever fixed width/max-height the original CSS set.
-// Effect: the box gets much wider (up to 1200px) and its own internal max-height/overflow
-// is removed, so its content lays out fully instead of scrolling in a cramped inner box.
-// If the form is ever taller than the screen, the overlay itself scrolls as a whole
-// (kept as a safety net so fields can never be clipped and unreachable) rather than
-// trapping the scroll inside a small nested box.
+// wins over whatever fixed width the original CSS set.
+// IMPORTANT: this only touches width/max-width. It deliberately leaves the box's own
+// max-height/overflow-y alone — that's the scrolling container the table's sticky
+// header (position:sticky) is pinned to, so removing it detaches the sticky header
+// from its scroll parent and breaks it. Only the height ceiling is raised a bit (90vh)
+// so there's more room before that inner scroll ever kicks in.
 function widenUsersModalBox(){
   if(document.getElementById('ufWideModalStyle')) return;
   const style = document.createElement('style');
   style.id = 'ufWideModalStyle';
   style.textContent = `
-    #usersOverlay { overflow-y: auto !important; padding: 24px 0 !important; }
     #usersOverlay > * { max-width: min(1200px, 96vw) !important; width: 96vw !important;
-      max-height: none !important; overflow: visible !important; }
+      max-height: 90vh !important; }
   `;
   document.head.appendChild(style);
 }
