@@ -954,25 +954,6 @@ body.dark-mode .exam-analysis-table th, body.dark-mode .exam-analysis-table td{ 
 .gb-toast.error{background:var(--red);}
 .gb-toast.reminder{background:var(--amber);}
 
-/* Shown to every role (unlike the Admin-only header sync pill) for the few moments
-   the app's very first Firestore pull is in flight on page load. Fixed + pointer-events
-   none so it never blocks the login form or the header underneath it. */
-#initialSyncBanner{
-  position:fixed;top:14px;left:50%;transform:translateX(-50%) translateY(-14px);
-  z-index:10000;display:flex;align-items:center;gap:9px;
-  padding:9px 18px;border-radius:999px;font-family:'Tajawal',sans-serif;
-  font-weight:700;font-size:13px;color:#fff;background:var(--ink);
-  box-shadow:0 8px 24px rgba(0,0,0,.28);
-  opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s ease;
-}
-#initialSyncBanner.show{opacity:1;transform:translateX(-50%) translateY(0);}
-.initial-sync-spinner{
-  width:13px;height:13px;border-radius:50%;flex:none;
-  border:2px solid rgba(255,255,255,.35);border-top-color:#fff;
-  animation:initialSyncSpin .7s linear infinite;
-}
-@keyframes initialSyncSpin{ to{ transform:rotate(360deg); } }
-
 .toolbar{
   display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;
 }
@@ -1074,18 +1055,6 @@ tbody tr:hover{background:var(--row-hover);}
 #dbTableHolder td.name-col{min-width:260px;}
 #dbTableHolder td.name-col{font-size:16.5px;}
 
-/* Header polish: consistent gold underline across the whole row (was previously only
-   implied by the freeze-zone divider) and tighter uppercase letterforms. No overflow:hidden
-   here — #dbTableHolder is the scrolling container (.db-table-scroll sets overflow:auto),
-   clipping it breaks horizontal/vertical scroll for the rest of the table. */
-#dbTableHolder thead th{
-  font-size:12.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;
-  border-bottom:3px solid var(--gold);
-}
-#dbTableHolder thead th[dir="rtl"]{text-transform:none;letter-spacing:normal;}
-#dbTableHolder thead th:first-child{border-top-left-radius:12px;}
-#dbTableHolder thead th:last-child{border-top-right-radius:12px;}
-
 /* ---------- Teachers Database table: bigger name font + classes summary + classes multi-select ---------- */
 #teachersTableHolder td.name-col{font-size:16.5px;}
 #teachersTableHolder td.name-col input.teacher-name-input{font-size:14px;font-weight:700;border-width:1.5px;border-color:var(--border);padding:8px 10px;text-align:left;}
@@ -1130,40 +1099,16 @@ tbody tr:hover{background:var(--row-hover);}
 #dbTableHolder td:nth-child(7){position:sticky;left:890px;min-width:110px;background:var(--paper);z-index:9;border-right:1px solid var(--border);}
 #dbTableHolder thead th:nth-child(7){z-index:12;background:var(--ink);color:#fff;border-right:1px solid rgba(0,0,0,0.12);}
 /* Freeze zone now ends after the "Class" column (8th column): Religion and
-   2nd Language (9th/10th) scroll normally like the rest of the table.
-   Divider kept subtle (thin border + soft shadow) so it reads as a separator,
-   not a stray line. */
+   2nd Language (9th/10th) scroll normally like the rest of the table. */
 #dbTableHolder th:nth-child(8),
-#dbTableHolder td:nth-child(8){position:sticky;left:1000px;min-width:90px;background:var(--paper);z-index:9;border-right:1.5px solid var(--gold-deep);box-shadow:2px 0 4px -2px rgba(0,0,0,0.18);}
-#dbTableHolder thead th:nth-child(8){z-index:12;background:var(--ink);color:#fff;border-right:1.5px solid var(--gold-deep);border-bottom:3px solid var(--gold);}
+#dbTableHolder td:nth-child(8){position:sticky;left:1000px;min-width:90px;background:var(--paper);z-index:9;border-right:2px solid var(--gold);}
+#dbTableHolder thead th:nth-child(8){z-index:12;background:var(--ink);color:#fff;border-right:2px solid var(--gold);}
 #dbTableHolder th:nth-child(9),
 #dbTableHolder td:nth-child(9){min-width:90px;}
 #dbTableHolder th:nth-child(10),
 #dbTableHolder td:nth-child(10){min-width:100px;}
 #dbTableHolder td[data-dob-auto="1"]{background:var(--green-bg);}
 #dbTableHolder td[data-dob-auto="1"] input{background:transparent;cursor:not-allowed;}
-.db-columns-bar{
-  position:relative;display:flex;justify-content:flex-end;
-  padding:10px 10px;border-bottom:1px solid var(--border);background:var(--paper);
-}
-.db-columns-bar .btn{padding:6px 14px;font-size:13px;}
-.db-columns-panel{
-  display:none;position:absolute;top:calc(100% + 6px);right:10px;z-index:20;
-  background:var(--paper);border:1px solid var(--border);border-radius:10px;
-  box-shadow:0 10px 28px rgba(0,0,0,.16);padding:10px 14px;min-width:180px;
-}
-.db-columns-panel.open{display:flex;flex-direction:column;gap:8px;}
-.db-columns-panel label{
-  display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);
-  cursor:pointer;white-space:nowrap;
-}
-.db-pagination{
-  display:flex;align-items:center;justify-content:center;gap:14px;
-  padding:14px 10px;border-top:1px solid var(--border);background:var(--paper);
-}
-.db-pagination .btn{padding:6px 16px;font-size:13px;}
-.db-pagination .btn:disabled{opacity:.4;cursor:not-allowed;box-shadow:none;}
-.db-pagination-status{font-size:13px;color:var(--ink-soft);font-weight:600;white-space:nowrap;}
 .seat-badge{
   display:inline-block;background:var(--bg);border:1px solid var(--border);border-radius:6px;
   padding:2px 8px;font-size:12px;color:var(--ink-soft);
@@ -2091,7 +2036,7 @@ body.dark-mode .stats-table tbody tr.stats-grand-total{
 
 @media print{
   @page{ size:A4 portrait; margin:10mm; }
-  .masthead, .main-nav, #markEntryStepper, #attendanceStepper, #certReportsStepper, .cert-report-toolbar, .att-add-month, .att-excl-chips, .cert-toolbar, .classbar button, .gb-save-fab, .gb-toast, .class-alert-bar, .rc-countdown, .birthday-topbar, #initialSyncBanner, .db-pagination, .db-columns-bar{ display:none !important; }
+  .masthead, .main-nav, #markEntryStepper, #attendanceStepper, #certReportsStepper, .cert-report-toolbar, .att-add-month, .att-excl-chips, .cert-toolbar, .classbar button, .gb-save-fab, .gb-toast, .class-alert-bar, .rc-countdown, .birthday-topbar{ display:none !important; }
   .cert2-print-page{ page-break-after:always; break-after:page; }
   .cert2-print-page:last-child{ page-break-after:auto; break-after:auto; }
   .wrap{ max-width:none; padding:0; }
