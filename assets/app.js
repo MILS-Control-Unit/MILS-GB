@@ -8265,6 +8265,64 @@ function syncTeachersFromUserAccounts(){
   alert(`Sync complete: ${added} new row(s) added, ${updated} existing row(s) refreshed from Manage Users.`);
 }
 
+// Merges duplicate Teachers Database rows that describe the same person into a single
+// row. These duplicates are leftover fallout from the teachers-merge bug (fixed above in
+// applyRemotePayload): before that fix, a browser holding a stale/incomplete local copy of
+// `teachers` could fail to recognize a teacher that already existed on the server, and
+// "Sync from Manage Users" (or the auto-link in saveUserFromForm) would then create a
+// brand-new row for them instead of reusing the existing one — two different ids for the
+// same teacher, both surviving the old always-local-wins merge forever.
+// Grouping key: linked accounts are grouped by username (the reliable identity — this is
+// how the two rows in the screenshot, e.g. "Abd El Rahman Hassan" TCH-2246 and TCH-1861,
+// actually get recognized as the same person). Rows with no username (never linked to a
+// Manage Users account) are grouped more conservatively by name+section+subject, so two
+// unrelated teachers who simply share a name are never merged by mistake.
+// Returns the number of duplicate rows removed (0 if nothing needed merging).
+function dedupeTeachersDatabase(){
+  const groups = {};
+  const order = [];
+  teachers.forEach(t=>{
+    const key = t.username
+      ? `u:${t.username}`
+      : `n:${(t.name||'').trim().toLowerCase()}|${t.section||''}|${(t.subject||'').trim().toLowerCase()}`;
+    if(!groups[key]){ groups[key] = []; order.push(key); }
+    groups[key].push(t);
+  });
+
+  let removedCount = 0;
+  const survivors = [];
+  order.forEach(key=>{
+    const group = groups[key];
+    if(group.length===1){ survivors.push(group[0]); return; }
+    // Keep the row with the lowest displayId number as the "primary" (oldest/original
+    // record), and fold every other duplicate's assigned classes into it before discarding
+    // them — so a duplicate that happened to be the one holding real class assignments
+    // (like TCH-1861 in the screenshot) never loses that data in the merge.
+    const primary = group.slice().sort((a,b)=>{
+      const na = parseInt(String(a.displayId||'').replace(/\D/g,''), 10);
+      const nb = parseInt(String(b.displayId||'').replace(/\D/g,''), 10);
+      return (isNaN(na)?Infinity:na) - (isNaN(nb)?Infinity:nb);
+    })[0];
+    const mergedClasses = new Set();
+    group.forEach(t=> (t.classes||'').split(',').map(c=>c.trim()).filter(Boolean).forEach(c=>mergedClasses.add(c)));
+    primary.classes = Array.from(mergedClasses).join(', ');
+    group.forEach(t=>{
+      if(t===primary) return;
+      if(!deletedTeacherIds.includes(t.id)) deletedTeacherIds.push(t.id);
+      removedCount++;
+    });
+    survivors.push(primary);
+  });
+
+  if(removedCount>0){
+    teachers = survivors;
+    saveState();
+    scheduleGithubPush();
+    logActivity('edit', `Auto-merged ${removedCount} duplicate Teachers Database row(s) left over from a sync conflict`);
+  }
+  return removedCount;
+}
+
 function renderTeachersDatabase(){
   // Teachers Database access restricted to Admin users only
   if(!currentUser || currentUser.role !== 'admin'){
@@ -8272,6 +8330,9 @@ function renderTeachersDatabase(){
     if(holder) holder.innerHTML = '<p style="color: var(--red); padding: 20px; text-align: center;">⛔ Access Denied - Teachers Database is only available to Administrators.</p>';
     return;
   }
+  // Self-heals any duplicate rows before rendering (see function doc above) — cheap and a
+  // no-op once nothing needs merging, so it's safe to run on every render.
+  dedupeTeachersDatabase();
   
   const search = (document.getElementById('teacherSearch').value||'').trim().toLowerCase();
   const fSection = document.getElementById('teacherFilterSection').value;
