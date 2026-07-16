@@ -200,6 +200,86 @@ let attSubView = 'absence';
   else document.addEventListener('DOMContentLoaded', ()=> document.head.appendChild(style));
 })();
 
+// Styles for the Parent/Student Dashboard's "My child's certificate" quick-access
+// card (see renderParentQuickCertCard) — a one-tap shortcut straight to the most
+// recently released report card, shown above the sibling switcher so a linked
+// parent never has to walk the Term -> Report Type stepper just to see it again.
+(function injectParentQuickCertCardStyles(){
+  const css = `
+    .parent-quick-cert-card{ display:flex; align-items:center; gap:14px; margin:0 0 16px;
+      padding:16px 18px; border-radius:14px; cursor:pointer; user-select:none;
+      background:linear-gradient(135deg, var(--gold, #b8860b) 0%, #8a6d1f 100%);
+      box-shadow:0 4px 14px rgba(0,0,0,.12); transition:transform .15s ease, box-shadow .15s ease;
+      animation: dbCardIn .45s cubic-bezier(.22,.9,.32,1) both; }
+    .parent-quick-cert-card:hover{ transform:translateY(-2px); box-shadow:0 8px 20px rgba(0,0,0,.16); }
+    .parent-quick-cert-card:active{ transform:translateY(0); }
+    .parent-quick-cert-card.locked{ cursor:default; background:#f1f2f5; box-shadow:none; }
+    .parent-quick-cert-card.locked:hover{ transform:none; box-shadow:none; }
+    .parent-quick-cert-card .pqc-icon{ font-size:26px; line-height:1; flex-shrink:0; }
+    .parent-quick-cert-card .pqc-body{ flex:1; min-width:0; }
+    .parent-quick-cert-card .pqc-title{ font-weight:800; font-size:15px; color:#fff; }
+    .parent-quick-cert-card.locked .pqc-title{ color:var(--ink,#1d2939); }
+    .parent-quick-cert-card .pqc-sub{ font-size:12.5px; color:rgba(255,255,255,.9); margin-top:2px; }
+    .parent-quick-cert-card.locked .pqc-sub{ color:var(--ink-soft,#667085); }
+    .parent-quick-cert-card .pqc-arrow{ font-size:20px; color:#fff; flex-shrink:0; }
+    @media (prefers-reduced-motion: reduce){ .parent-quick-cert-card{ animation:none !important; } }
+  `;
+  const style = document.createElement('style');
+  style.textContent = css;
+  if(document.head) document.head.appendChild(style);
+  else document.addEventListener('DOMContentLoaded', ()=> document.head.appendChild(style));
+})();
+
+// Styles for the Parent/Student "My Reports" feed (see renderParentReportsFeed) — replaces
+// the Academic Term -> Report Type stepper for linked parents with a single tap-to-open list
+// of every report card released so far, plus the "NEW" badge reused on the quick-cert card
+// and the sibling switchers to flag a report released in the last few days.
+(function injectParentReportsFeedStyles(){
+  const css = `
+    .parent-reports-feed{ margin:0 0 16px; }
+    .prf-heading{ font-weight:800; font-size:13px; color:var(--ink-soft,#667085); text-transform:uppercase;
+      letter-spacing:.04em; margin:0 0 8px 2px; }
+    .prf-card{ display:flex; align-items:center; gap:14px; margin:0 0 10px; padding:14px 16px;
+      border-radius:14px; cursor:pointer; user-select:none; background:#fff;
+      border:1px solid var(--line,#e5e7eb); box-shadow:0 2px 8px rgba(0,0,0,.05);
+      transition:transform .15s ease, box-shadow .15s ease; }
+    .prf-card:hover{ transform:translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,.08); }
+    .prf-card:active{ transform:translateY(0); }
+    .prf-icon{ font-size:24px; line-height:1; flex-shrink:0; }
+    .prf-body{ flex:1; min-width:0; }
+    .prf-title{ font-weight:700; font-size:14.5px; color:var(--ink,#1d2939); }
+    .prf-sub{ font-size:12px; color:var(--ink-soft,#667085); margin-top:2px; }
+    .prf-arrow{ font-size:20px; color:var(--ink-soft,#667085); flex-shrink:0; }
+    .prf-empty{ text-align:center; padding:24px 16px; color:var(--ink-soft,#667085); }
+    .prf-empty-icon{ font-size:28px; margin-bottom:8px; }
+    .prf-back-row{ display:flex; align-items:center; gap:10px; margin:0 0 14px; flex-wrap:wrap; }
+    .prf-back-btn{ border:1px solid var(--line,#e5e7eb); background:#fff; border-radius:10px;
+      padding:6px 12px; font-weight:700; font-size:13px; cursor:pointer; color:var(--ink,#1d2939); }
+    .prf-back-btn:hover{ background:#f7f7f8; }
+    .prf-current{ font-size:13px; color:var(--ink-soft,#667085); font-weight:600; }
+    .report-new-badge{ display:inline-block; font-size:10px; font-weight:800; letter-spacing:.03em;
+      color:#fff; background:#d64545; border-radius:6px; padding:2px 6px; margin-inline-start:6px;
+      vertical-align:middle; }
+    .cst-tabs{ display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+    .cst-pill{ display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:999px;
+      border:1px solid var(--line,#e5e7eb); background:#fff; cursor:pointer; user-select:none;
+      font-family:inherit; transition:transform .12s ease, box-shadow .12s ease, background .12s ease; }
+    .cst-pill:hover{ transform:translateY(-1px); box-shadow:0 3px 10px rgba(0,0,0,.08); }
+    .cst-pill:active{ transform:translateY(0); }
+    .cst-pill.active{ background:linear-gradient(135deg, var(--gold, #b8860b) 0%, #8a6d1f 100%);
+      border-color:transparent; box-shadow:0 3px 10px rgba(0,0,0,.12); }
+    .cst-name{ font-weight:700; font-size:13.5px; color:var(--ink,#1d2939); }
+    .cst-pill.active .cst-name{ color:#fff; }
+    .cst-sub{ font-size:11.5px; color:var(--ink-soft,#667085); }
+    .cst-pill.active .cst-sub{ color:rgba(255,255,255,.85); }
+    .cst-new-dot{ font-size:12px; line-height:1; }
+  `;
+  const style = document.createElement('style');
+  style.textContent = css;
+  if(document.head) document.head.appendChild(style);
+  else document.addEventListener('DOMContentLoaded', ()=> document.head.appendChild(style));
+})();
+
 // ===== GSAP: masthead & nav-icon choreography =====
 // Reorganizes how the header (logos, title, right-side widgets) and the nav bar's
 // icons appear: a staggered entrance on load instead of everything popping in at
@@ -283,9 +363,15 @@ function classKey(){ return `${state.section}|${state.stage}|${state.grade}`; }
 function findSubjectTeacherName(section, subject, classroom){
   if(!classroom || !subject) return null;
   const subj = String(subject).trim().toLowerCase();
+  // Grade Book stores a section as its code (en/fr), while Teachers Database stores
+  // its displayed value (English/French/Both). Normalise that difference here so the
+  // same lookup works in every class-level report.
+  const sectionName = section==='en' ? 'English' : section==='fr' ? 'French' : String(section||'').trim();
   const t = teachers.find(t=>{
-    if((t.section||'')!==section) return false;
-    if((t.subject||'').trim().toLowerCase()!==subj) return false;
+    const teacherSection = String(t.section||'').trim();
+    if(teacherSection!==sectionName && teacherSection!=='Both') return false;
+    const teacherSubjects = String(t.subject||'').split(/[,;]/).map(s=>s.trim().toLowerCase()).filter(Boolean);
+    if(!teacherSubjects.includes(subj)) return false;
     const classList = (t.classes||'').split(',').map(c=>c.trim()).filter(Boolean);
     return classList.includes(classroom);
   });
@@ -341,6 +427,47 @@ function formatMilsId(rawId){
   const last4 = digits.slice(-4).padStart(4,'0');
   return 'MILS-' + last4;
 }
+// Builds a lookup index for matching typed/pasted Student ID(s) against the Students Database,
+// tolerant of the two ID formats this app can produce for the SAME student — the default
+// "STU-####" sequence number (nextDisplayId), or a "MILS-####" format derived from an external
+// ID typed in during bulk import (formatMilsId, above). A person retyping/guessing an ID from
+// memory often gets the digits right but the prefix wrong, so on top of the exact (trimmed,
+// case-insensitive) displayId this also indexes every student by their last 4 digits — the
+// same digits formatMilsId() itself keys off — so "STU-5186" and "MILS-5186" resolve to the
+// same student even though neither string matches the other exactly.
+function buildStudentIdIndex(students){
+  const byExact = new Map();
+  const byDigits = new Map();
+  (students||[]).forEach(s=>{
+    if(!s.displayId) return;
+    const exactKey = s.displayId.toString().trim().toLowerCase();
+    if(!byExact.has(exactKey)) byExact.set(exactKey, []);
+    byExact.get(exactKey).push(s);
+    const digits = s.displayId.toString().replace(/\D/g,'');
+    if(digits){
+      const digitKey = digits.slice(-4).padStart(4,'0');
+      if(!byDigits.has(digitKey)) byDigits.set(digitKey, []);
+      byDigits.get(digitKey).push(s);
+    }
+  });
+  return { byExact, byDigits };
+}
+// Resolves one typed Student ID token against the index above. Tries an exact (trimmed,
+// case-insensitive) match on the full ID first; only if that finds NOTHING does it fall back
+// to matching on the last 4 digits alone — so a guessed/wrong prefix still resolves as long as
+// those last 4 digits belong to exactly one student. `viaFallback` tells the caller whether the
+// match came from the digits-only fallback, so a result message can optionally flag it.
+function resolveStudentIdToken(rawToken, index){
+  const token = (rawToken||'').toString().trim();
+  if(!token) return { matches:[], viaFallback:false };
+  const exact = index.byExact.get(token.toLowerCase());
+  if(exact && exact.length) return { matches:exact, viaFallback:false };
+  const digits = token.replace(/\D/g,'');
+  if(!digits) return { matches:[], viaFallback:false };
+  const digitKey = digits.slice(-4).padStart(4,'0');
+  const fallback = index.byDigits.get(digitKey);
+  return { matches: fallback||[], viaFallback:true };
+}
 // Attendance is tracked per Class within its own Academic Term + Month selection (attState),
 // fully independent of the Grade Book tab. Each Term × Month combination is its own table.
 function attClassKey(){ return `${attState.section}|${attState.stage}|${attState.grade}|${attState.termPeriod}|${attState.term}|${attState.subject}|${attState.academicTerm}`; }
@@ -368,7 +495,7 @@ function classKeyLabels(ck){
 // Students — the block applies to the whole account, not just Reports.
 function showAccountBlockedScreen(){
   currentView = null;
-  ['gradesView','databaseView','markEntryReportView','attendanceView','dashboardView','examsAnalysisView','teachersView','teacherStatisticsView','perfAlertsView'].forEach(id=>{
+  ['gradesView','databaseView','markEntryReportView','attendanceView','dashboardView','examsAnalysisView','teachersView','teacherClassesView','teacherStatisticsView','perfAlertsView'].forEach(id=>{
     const el = document.getElementById(id);
     if(el) el.style.display = 'none';
   });
@@ -399,15 +526,41 @@ function switchView(view){
   document.getElementById('dashboardView').style.display = view==='dashboard' ? '' : 'none';
   document.getElementById('examsAnalysisView').style.display = view==='examsAnalysis' ? '' : 'none';
   document.getElementById('teachersView').style.display = view==='teachers' ? '' : 'none';
+  document.getElementById('teacherClassesView').style.display = view==='teacherClasses' ? '' : 'none';
   document.getElementById('teacherStatisticsView').style.display = view==='teacherStatistics' ? '' : 'none';
   document.getElementById('perfAlertsView').style.display = view==='perfAlerts' ? '' : 'none';
   document.getElementById('classListsView').style.display = view==='classLists' ? '' : 'none';
   document.getElementById('statisticsView').style.display = view==='statistics' ? '' : 'none';
   document.getElementById('certReportsView').style.display = view==='certReports' ? '' : 'none';
   document.querySelectorAll('.nav-tab').forEach(b=> b.classList.toggle('active', b.dataset.view===view));
-  if(view==='database') renderDatabase();
-  if(view==='teachers') renderTeachersDatabase();
+  if(view==='database') renderDatabaseNow();
+  if(view==='teachers'){
+    // ✅ إذا كانت قائمة المدرسين فارغة وكان Firestore متاحاً
+    // حاول جلب البيانات مباشرة (قد تكون الـ sync الحي لم تصل بعد عند البداية)
+    if(teachers.length === 0 && githubReady() && fbDb){
+      FB_DOC_REF.get().then(snap => {
+        if(snap.exists){
+          const data = snap.data();
+          if(data && Array.isArray(data.teachers) && data.teachers.length > 0){
+            // تطبيق البيانات إذا كانت موجودة
+            const deletedIds = new Set((data.deletedTeacherIds || [])
+              .filter(id => !new Set(teachers.map(t=>t.id)).has(id)));
+            teachers = data.teachers.filter(t => !deletedIds.has(t.id));
+            teacherIdCounter = data.teacherIdCounter || 1;
+            // إعادة تصيير الواجهة
+            renderTeachersDatabase();
+          }
+        }
+      }).catch(err => {
+        console.warn('Manual fetch from Firestore failed:', err);
+        renderTeachersDatabase(); // رسم ما هو موجود على أي حال
+      });
+    } else {
+      renderTeachersDatabase();
+    }
+  }
   if(view==='teacherStatistics') renderTeacherStatistics();
+  if(view==='teacherClasses') renderTeachersAndClasses();
   if(view==='markEntryReport'){ renderMarkEntryStepper(); renderMarkEntryWorkspace(); }
   if(view==='attendance'){ renderAttendanceStepper(); renderAttendanceWorkspace(); }
   if(view==='dashboard'){ renderDashboard(); }
@@ -730,24 +883,27 @@ function selectValue(key, id, targetState){
 // hover and a smooth fade-out ~350ms after the cursor actually leaves the button+menu
 // area, so moving diagonally into the menu doesn't accidentally close it. Click-to-toggle
 // (for touch devices) keeps working exactly as before.
-// Positions a nav-dropdown-menu as position:fixed directly under (or, if it would run
-// off-screen, above/left-aligned to stay on-screen) its trigger button. This is required
-// because .nav-row-tabs scrolls horizontally (overflow-x:auto), which per the CSS spec
-// forces overflow-y to also clip — so a plain position:absolute menu gets sliced off by
-// that scroll container. Fixed positioning, computed from the live button rect, escapes
-// that clipping entirely regardless of any ancestor's overflow/scroll state.
+// Positions a nav-dropdown-menu as position:fixed to the right of its trigger icon
+// (or, if it would run off-screen, to the left / clamped vertically), computed from the
+// live button rect. The nav is now a vertical icon rail down the left edge, so menus flow
+// out sideways from each icon rather than dropping down beneath it.
 function positionFixedNavMenu(wrap, menu){
   if(!wrap || !menu) return;
   const rect = wrap.getBoundingClientRect();
   menu.style.position = 'fixed';
-  menu.style.top = (rect.bottom + 8) + 'px';
   menu.style.margin = '0';
   const menuWidth = Math.max(menu.offsetWidth, 230);
-  let left = rect.left;
+  let left = rect.right + 8;
   if(left + menuWidth > window.innerWidth - 8){
-    left = Math.max(8, rect.right - menuWidth);
+    left = Math.max(8, rect.left - menuWidth - 8);
   }
   menu.style.left = left + 'px';
+  const menuHeight = menu.offsetHeight || 200;
+  let top = rect.top;
+  if(top + menuHeight > window.innerHeight - 8){
+    top = Math.max(8, window.innerHeight - 8 - menuHeight);
+  }
+  menu.style.top = top + 'px';
 }
 
 (function(){
@@ -863,7 +1019,15 @@ function toggleBirthdayDropdown(e){
   if(!dd) return;
   const opening = !dd.classList.contains('open');
   dd.classList.toggle('open');
-  if(opening) renderBirthdayWidget();
+  if(opening){
+    // Keep the stylesheet's own position:absolute behavior (switching this to
+    // position:fixed broke the dropdown's width, since its sizing is computed
+    // relative to its absolutely-positioned parent) — only raise its stacking
+    // order so it reliably draws above sibling header widgets (quick-stats,
+    // Notify Parents) instead of underneath them.
+    dd.style.zIndex = '9999';
+    renderBirthdayWidget();
+  }
 }
 
 function toggleConfigMenu(e){
@@ -1227,6 +1391,7 @@ function renderDashboard(){
   if(crumbs) crumbs.innerHTML = `<span class="crumb subj">${label}</span><span class="crumb subj">${modeLabel}</span>`;
   autoSelectDashboardChildForParent();
   renderDashboardChildSwitch();
+  renderParentQuickCertCard();
   renderDashboardFilters();
   renderDashboardCharts();
 }
@@ -1277,18 +1442,33 @@ function getLinkedDashboardChildren(){
     .sort((a,b)=> a.name.localeCompare(b.name));
 }
 
+// Shared markup for the Dashboard and Certificates sibling switchers: each linked child
+// renders as a tappable pill instead of a <select> dropdown, so a parent with two or three
+// kids can see and switch between them in one tap instead of opening a dropdown first. The
+// 🆕 dot (see childHasNewReport) surfaces directly on the pill.
+function buildChildSwitchTabsHtml(children, selectedId, onSelectFnName){
+  const pills = children.map(c=>{
+    const gradeObj = STAGES[c.stage] ? STAGES[c.stage].grades.find(g=>g.id===c.grade) : null;
+    const gradeLabel = gradeObj ? gradeObj.label : (c.grade||'');
+    const sub = [gradeLabel, c.classroom].filter(Boolean).join(' · ');
+    const newFlag = childHasNewReport(c) ? '<span class="cst-new-dot" title="New report">🆕</span>' : '';
+    const active = selectedId===c.id ? ' active' : '';
+    return `
+      <button type="button" class="cst-pill${active}" onclick="${onSelectFnName}('${c.id}')">
+        <span class="cst-name">${escapeHtml(c.name)}</span>
+        ${sub ? `<span class="cst-sub">${escapeHtml(sub)}</span>` : ''}
+        ${newFlag}
+      </button>`;
+  }).join('');
+  return `<div class="db-children-switch"><span class="dcs-label">My children:</span><div class="cst-tabs">${pills}</div></div>`;
+}
+
 function renderDashboardChildSwitch(){
   const wrap = document.getElementById('dashboardChildSwitch');
   if(!wrap) return;
   const children = getLinkedDashboardChildren();
   if(!children.length){ wrap.innerHTML = ''; return; }
-  const options = children.map(c=>{
-    const gradeObj = STAGES[c.stage] ? STAGES[c.stage].grades.find(g=>g.id===c.grade) : null;
-    const gradeLabel = gradeObj ? gradeObj.label : (c.grade||'');
-    const sub = [gradeLabel, c.classroom].filter(Boolean).join(' · ');
-    return `<option value="${c.id}" ${state.dashboardStudent===c.id?'selected':''}>${escapeHtml(c.name)}${sub?` (${sub})`:''}</option>`;
-  }).join('');
-  wrap.innerHTML = `<div class="db-children-switch"><span class="dcs-label">My children:</span><select onchange="selectDashboardChild(this.value)">${options}</select></div>`;
+  wrap.innerHTML = buildChildSwitchTabsHtml(children, state.dashboardStudent, 'selectDashboardChild');
 }
 
 function selectDashboardChild(studentId){
@@ -1301,6 +1481,95 @@ function selectDashboardChild(studentId){
   state.dashboardClassroom = s.classroom || null;
   state.dashboardStudent = s.id;
   renderDashboard();
+}
+
+/* ---------- Dashboard: "My child's certificate" quick-access card ----------
+   A one-tap shortcut for a linked Parent/Student account, sitting above the sibling
+   switcher on the Dashboard (the parent's landing tab). Instead of opening the
+   Certificates tab and walking Term -> Report Type every single time, this card
+   auto-detects the most recently released report card for whichever child is
+   currently active in the Dashboard (state.dashboardStudent) and jumps straight to
+   it in one tap. Shows a locked/disabled state if nothing has been released yet.
+   Re-rendered every time renderDashboard() runs, so switching siblings via the
+   switcher above instantly updates which child's certificate it points to. */
+function renderParentQuickCertCard(){
+  // Anchored immediately above the sibling switcher, which is a stable element in the
+  // Dashboard markup regardless of role — safe to use as an insertion point even
+  // though this card itself isn't part of the static HTML.
+  const anchor = document.getElementById('dashboardChildSwitch');
+  if(!anchor || !anchor.parentNode) return;
+  let card = document.getElementById('parentQuickCertCard');
+  if(!isLinkedParentViewer()){
+    if(card) card.remove();
+    return;
+  }
+  if(!card){
+    card = document.createElement('div');
+    card.id = 'parentQuickCertCard';
+    anchor.parentNode.insertBefore(card, anchor);
+  }
+  const flat = allStudentsFlatRaw();
+  const scope = currentUser.effective.studentScope || [];
+  const student = flat.find(s=> s.id===state.dashboardStudent && scope.includes(s.id)) || flat.find(s=> scope.includes(s.id));
+  if(!student){ card.innerHTML = ''; return; }
+  
+  // Validate that student record is complete (has section/stage/grade)
+  if(!student.section || !student.stage || !student.grade){
+    card.innerHTML = `
+      <div class="parent-quick-cert-card locked">
+        <div class="pqc-icon">⚠️</div>
+        <div class="pqc-body">
+          <div class="pqc-title">${escapeXml(student.name)}'s Certificate</div>
+          <div class="pqc-sub">Student record is incomplete. Please contact the school.</div>
+        </div>
+      </div>`;
+    return;
+  }
+  
+  const latest = getLatestReleasedCertForStudent(student);
+  if(!latest){
+    card.innerHTML = `
+      <div class="parent-quick-cert-card locked">
+        <div class="pqc-icon">🔒</div>
+        <div class="pqc-body">
+          <div class="pqc-title">${escapeXml(student.name)}'s Certificate</div>
+          <div class="pqc-sub">No report card has been released yet — check back later.</div>
+        </div>
+      </div>`;
+    return;
+  }
+  const newBadge = isRecentlyReleased(latest.releaseTs) ? '<span class="report-new-badge">NEW</span>' : '';
+  card.innerHTML = `
+    <div class="parent-quick-cert-card" onclick="openLatestCertForCurrentChild()">
+      <div class="pqc-icon">🎓</div>
+      <div class="pqc-body">
+        <div class="pqc-title">${escapeXml(student.name)}'s Certificate${newBadge}</div>
+        <div class="pqc-sub">${TERM_LABELS[latest.termPeriod]} • ${CERT_REPORT_TITLES[latest.reportType]} — tap to view</div>
+      </div>
+      <div class="pqc-arrow">›</div>
+    </div>`;
+}
+
+// Click handler for the quick-access card above: scopes certState straight to the
+// current child + their latest released report, then opens the Certificates tab —
+// skipping the Term/Report Type stepper entirely for this one tap.
+function openLatestCertForCurrentChild(){
+  if(!isLinkedParentViewer()) return;
+  const flat = allStudentsFlatRaw();
+  const scope = currentUser.effective.studentScope || [];
+  const student = flat.find(s=> s.id===state.dashboardStudent && scope.includes(s.id)) || flat.find(s=> scope.includes(s.id));
+  if(!student) return;
+  const latest = getLatestReleasedCertForStudent(student);
+  if(!latest) return;
+  certParentSelectedStudentId = student.id;
+  certState.section = student.section || null;
+  certState.stage = student.stage || null;
+  certState.grade = student.grade || null;
+  certState.term = student.classroom || null;
+  certState.studentId = student.id;
+  certState.termPeriod = latest.termPeriod;
+  certState.reportType = latest.reportType;
+  switchView('certReports');
 }
 
 /* ---------- Certificates: linked-children quick switch (parents w/ multiple kids) ----------
@@ -1324,13 +1593,7 @@ function renderCertChildSwitch(){
   if(!wrap) return;
   const children = getLinkedCertChildren();
   if(!children.length){ wrap.innerHTML = ''; return; }
-  const options = children.map(c=>{
-    const gradeObj = STAGES[c.stage] ? STAGES[c.stage].grades.find(g=>g.id===c.grade) : null;
-    const gradeLabel = gradeObj ? gradeObj.label : (c.grade||'');
-    const sub = [gradeLabel, c.classroom].filter(Boolean).join(' · ');
-    return `<option value="${c.id}" ${certState.studentId===c.id?'selected':''}>${escapeHtml(c.name)}${sub?` (${sub})`:''}</option>`;
-  }).join('');
-  wrap.innerHTML = `<div class="db-children-switch"><span class="dcs-label">My children:</span><select onchange="selectCertChild(this.value)">${options}</select></div>`;
+  wrap.innerHTML = buildChildSwitchTabsHtml(children, certState.studentId, 'selectCertChild');
 }
 
 function selectCertChild(studentId){
@@ -1422,6 +1685,17 @@ function setDashboardFilter(kind, value){
   renderDashboardChildSwitch();
   renderDashboardFilters();
   renderDashboardCharts();
+}
+
+// Returns the Dashboard to its starting point. Linked parent/student accounts keep
+// their protected child scope and are immediately re-pointed to their default child.
+function resetDashboardFilters(){
+  state.dashboardSection = null;
+  state.dashboardStage = null;
+  state.dashboardGrade = null;
+  state.dashboardClassroom = null;
+  state.dashboardStudent = null;
+  renderDashboard();
 }
 
 /* ---------- Cycle Dashboard: data ---------- */
@@ -2583,8 +2857,81 @@ function renderCertReportsStepper(){
   const holder = document.getElementById('certReportsStepper');
   if(!holder) return;
   autoSelectCertChildForParent();
-  buildStepperHTML('certReportsStepper', certStepConfig(), 'c-');
   renderCertChildSwitch();
+  if(isLinkedParentViewer()){
+    renderParentReportsFeed();
+    return;
+  }
+  buildStepperHTML('certReportsStepper', certStepConfig(), 'c-');
+}
+
+/* ---------- Certificates: "My Reports" feed (linked Parent/Student accounts) ----------
+   Replaces the Academic Term -> Report Type stepper for linked parents with a single list of
+   every report card released so far for the current child, most recent first — one tap opens
+   it, no stepper to walk. A "NEW" badge (see isRecentlyReleased) flags anything released in
+   the last few days. Once a report is open, this collapses into a compact "‹ My Reports" link
+   so the parent can jump back to the list without losing the certificate view. */
+function renderParentReportsFeed(){
+  const holder = document.getElementById('certReportsStepper');
+  if(!holder) return;
+  const flat = allStudentsFlatRaw();
+  const scope = (currentUser.effective && currentUser.effective.studentScope) || [];
+  const student = flat.find(s=> s.id===certState.studentId && scope.includes(s.id)) || flat.find(s=> scope.includes(s.id));
+  if(!student){ holder.innerHTML = ''; return; }
+
+  const open = !!(certState.termPeriod && certState.reportType);
+  if(open){
+    holder.innerHTML = `
+      <div class="prf-back-row">
+        <button type="button" class="prf-back-btn" onclick="backToParentReportsFeed()">‹ My Reports</button>
+        <span class="prf-current">${TERM_LABELS[certState.termPeriod]} • ${CERT_REPORT_TITLES[certState.reportType]}</span>
+      </div>`;
+    return;
+  }
+
+  const reports = getAllReleasedCertsForStudent(student);
+  if(!reports.length){
+    holder.innerHTML = `
+      <div class="parent-reports-feed">
+        <div class="prf-empty">
+          <div class="prf-empty-icon">🔒</div>
+          <p>No report cards have been released yet for ${escapeHtml(student.name)} — check back later.</p>
+        </div>
+      </div>`;
+    return;
+  }
+  const rows = reports.map(r=>{
+    const badge = isRecentlyReleased(r.releaseTs) ? '<span class="report-new-badge">NEW</span>' : '';
+    const dateStr = new Date(r.releaseTs).toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'});
+    return `
+      <div class="prf-card" onclick="openParentReportsFeedItem('${r.termPeriod}','${r.reportType}')">
+        <div class="prf-icon">🎓</div>
+        <div class="prf-body">
+          <div class="prf-title">${TERM_LABELS[r.termPeriod]} • ${CERT_REPORT_TITLES[r.reportType]}${badge}</div>
+          <div class="prf-sub">Released ${dateStr}</div>
+        </div>
+        <div class="prf-arrow">›</div>
+      </div>`;
+  }).join('');
+  holder.innerHTML = `
+    <div class="parent-reports-feed">
+      <div class="prf-heading">My Reports${reports.length>1?` (${reports.length})`:''}</div>
+      ${rows}
+    </div>`;
+}
+
+function openParentReportsFeedItem(termPeriod, reportType){
+  certState.termPeriod = termPeriod;
+  certState.reportType = reportType;
+  renderCertReportsStepper();
+  renderCertReportsWorkspace();
+}
+
+function backToParentReportsFeed(){
+  certState.termPeriod = null;
+  certState.reportType = null;
+  renderCertReportsStepper();
+  renderCertReportsWorkspace();
 }
 
 // Runs fn() with the shared grade-book `state` temporarily pointed at certState's
@@ -2671,11 +3018,18 @@ function renderCertReportsWorkspace(){
   const ws = document.getElementById('certReportsWorkspace');
   const intro = document.getElementById('certReportsIntroState');
   if(!ws || !intro) return;
-  const cfgs = isLinkedParentViewer() ? certStepConfig() : certStepConfig().slice(0,5); // Term, Section, Stage, Grade, Report Type are required for the intro state (linked parents only ever see Term + Report Type)
+  const linkedParent = isLinkedParentViewer();
+  const cfgs = linkedParent ? certStepConfig() : certStepConfig().slice(0,5); // Term, Section, Stage, Grade, Report Type are required for the intro state (linked parents only ever see Term + Report Type)
   const ready = !!(certState.termPeriod && certState.section && certState.stage && certState.grade && certState.reportType);
   ws.style.display = ready ? '' : 'none';
   intro.style.display = ready ? 'none' : '';
-  if(!ready){ updateIntroState('certReportsIntroState', cfgs); return; }
+  if(!ready){
+    // The My Reports feed (renderParentReportsFeed) already lists every released report and
+    // invites a tap — a separate "Next: select the Academic Term" prompt would just duplicate it.
+    if(linkedParent){ intro.style.display = 'none'; return; }
+    updateIntroState('certReportsIntroState', cfgs);
+    return;
+  }
 
   const gradeLabel = STAGES[certState.stage].grades.find(g=>g.id===certState.grade).label;
   document.getElementById('certReportsCrumbs').innerHTML = `
@@ -3519,6 +3873,14 @@ function renderCertReportsCards(){
       tableBodyHtml = rowsHtml + totalRow;
     }
 
+    // Build the Teacher column before mounting the certificate, so it is included in
+    // on-screen preview, printing and PDF output for every report layout.
+    if(['month1','month2','coursework'].includes(type)){
+      const teacherColumn = appendTeacherSignatureColumnToReportMarkup(tableHeadHtml, tableBodyHtml, student, subjects, type);
+      tableHeadHtml = teacherColumn.headHtml;
+      tableBodyHtml = teacherColumn.bodyHtml;
+    }
+
     // Long names get a smaller script font-size so they never overflow the card width
     // (Brush Script's swashes/descenders are wide, so this stays conservative).
     const nameLen = (student.name||'').length;
@@ -3606,6 +3968,83 @@ function renderCertReportsCards(){
       </div>
     </div>`;
   }).join('');
+}
+
+// Adds the Teacher signature column to the HTML fragments before a report card is
+// inserted into the document. All grade-specific table designs therefore stay in sync.
+function appendTeacherSignatureColumnToReportMarkup(headHtml, bodyHtml, student, subjects, reportType){
+  if(!['month1','month2','coursework'].includes(reportType)) return { headHtml, bodyHtml };
+  const template = document.createElement('template');
+  template.innerHTML = `<table><thead>${headHtml}</thead><tbody>${bodyHtml}</tbody></table>`;
+  const table = template.content.querySelector('table');
+  const headerRow = table && table.tHead && table.tHead.rows[0];
+  if(!table || !headerRow) return { headHtml, bodyHtml };
+
+  const header = document.createElement('th');
+  header.className = 'teacher-signature-th';
+  header.textContent = 'Teacher';
+  headerRow.appendChild(header);
+
+  Array.from(table.tBodies[0].rows).forEach(row=>{
+    const cell = document.createElement('td');
+    cell.className = 'teacher-signature-cell';
+    const isTotal = row.classList.contains('cert-subtotal-row') || row.classList.contains('cert2-total-row');
+    const firstCellText = row.cells[0] ? row.cells[0].textContent : '';
+    const subject = !isTotal ? subjects.find(s=> firstCellText.includes(s)) : null;
+    const teacherName = subject ? findSubjectTeacherName(certState.section, subject, student.classroom) : null;
+    if(teacherName){
+      const signature = document.createElement('span');
+      signature.className = 'teacher-signature-name';
+      signature.textContent = teacherName;
+      cell.appendChild(signature);
+    } else if(!isTotal){
+      cell.innerHTML = '<span class="teacher-signature-empty">—</span>';
+    }
+    row.appendChild(cell);
+  });
+  return { headHtml: table.tHead.innerHTML, bodyHtml: table.tBodies[0].innerHTML };
+}
+
+// Legacy post-render helper retained for compatibility with any existing callers.
+// Adds a subject teacher signature column to the three progress report formats.
+// Keeping this as a post-render enhancement lets every grade's specialised report-table
+// layout (Primary, Prep and Secondary) share the same accurate Teachers Database lookup.
+function addTeacherSignatureColumnToReportCards(holder, roster, reportType){
+  if(!holder || !['month1','month2','coursework'].includes(reportType)) return;
+  const cards = holder.querySelectorAll('.cert2-print-page');
+  cards.forEach((card, index)=>{
+    const student = roster[index];
+    if(!student) return;
+    const applicableSubjects = certApplicableSubjects(certState.stage, student, certState.section);
+    const table = card.querySelector('.cert-subjects, .cert2-table');
+    if(!table || table.dataset.teacherColumnAdded==='1') return;
+
+    const headerRow = table.tHead && table.tHead.rows[0];
+    if(!headerRow) return;
+    const header = document.createElement('th');
+    header.className = 'teacher-signature-th';
+    header.textContent = 'Teacher';
+    headerRow.appendChild(header);
+
+    Array.from(table.tBodies[0] ? table.tBodies[0].rows : []).forEach(row=>{
+      const cell = document.createElement('td');
+      cell.className = 'teacher-signature-cell';
+      const isTotal = row.classList.contains('cert-subtotal-row') || row.classList.contains('cert2-total-row');
+      const firstCellText = row.cells[0] ? row.cells[0].textContent : '';
+      const subject = !isTotal ? applicableSubjects.find(s=> firstCellText.includes(s)) : null;
+      const teacherName = subject ? findSubjectTeacherName(certState.section, subject, student.classroom) : null;
+      if(teacherName){
+        const signature = document.createElement('span');
+        signature.className = 'teacher-signature-name';
+        signature.textContent = teacherName;
+        cell.appendChild(signature);
+      } else if(!isTotal){
+        cell.innerHTML = '<span class="teacher-signature-empty">—</span>';
+      }
+      row.appendChild(cell);
+    });
+    table.dataset.teacherColumnAdded = '1';
+  });
 }
 
 // Handles edits to the Initial Exam / Final Exam fields on the Grade 1 & 2 First Term Report
@@ -3741,7 +4180,7 @@ function renderMarkEntryReport(){
       const c = markEntryColor(fr.pct);
       bodyRows += `<tr>`;
       if(idx===0){
-        const teacherLine = block.teacherName ? `<small>${escapeHtml(block.teacherName)}</small>` : '';
+        const teacherLine = block.teacherName ? `<small class="me-teacher-name">👨‍🏫 ${escapeHtml(block.teacherName)}</small>` : '';
         bodyRows += `<td class="me-subject-cell" rowspan="${rowspan}">${escapeHtml(block.subject)}${teacherLine}<small>${block.subjPct}% complete</small></td>`;
       }
       bodyRows += `
@@ -4452,7 +4891,7 @@ function scoreInputHtml(studentId, field, value, max, lockedReason){
   // Grade 3 flexible Q.1–Q.4 cells: locked/inactive until the teacher has set that
   // question's maximum score in the "Set Question Max Scores" box above the table.
   if(!isMaxSet(max)){
-    return `<input class="score-input ${groupClass} score-input-locked" type="text" value="" placeholder="🔒"
+    return `<input class="score-input ${groupClass} score-input-locked" type="text" value=""
                readonly onclick="flashMaxRequiredError(this)" onfocus="this.blur(); flashMaxRequiredError(this);"
                title="Set the maximum score for this question first">`;
   }
@@ -4669,6 +5108,20 @@ function subjectFilteredGradeRoster(){
 
 /* ================== ATTENDANCE ================== */
 const ATT_DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+// Draws the "week-end" divider line after the LAST school day of a calendar week — i.e.
+// right before the next Sunday — rather than after every 7th array entry. Since Friday/
+// Saturday (and any holiday) are already excluded from the dates list, counting a fixed
+// number of entries doesn't reliably land on a real week boundary once the range's start
+// date isn't itself a Sunday, or a Thursday gets excluded as a holiday. Looking at the
+// actual day-of-week of the NEXT date instead guarantees every visual week always begins
+// on Sunday, however the dates happen to fall.
+function attColWeekEndCls(dates, idx){
+  const next = dates[idx+1];
+  if(!next) return '';
+  const nextDay = new Date(next+'T00:00:00').getDay();
+  return nextDay===0 ? ' week-end' : '';
+}
 
 // Builds the list of school-day dates (YYYY-MM-DD) between start and end inclusive,
 // skipping Friday (5), Saturday (6), and any date present in excludedSet (holidays manually
@@ -4942,7 +5395,7 @@ function renderAbsenceTable(){
     const d = new Date(ds+'T00:00:00');
     const dd = String(d.getDate()).padStart(2,'0');
     const mm = String(d.getMonth()+1).padStart(2,'0');
-    const weekEndCls = (idx+1)%7===0 ? ' week-end' : '';
+    const weekEndCls = attColWeekEndCls(month.dates, idx);
     return `<th class="att-day-col${weekEndCls}">${ATT_DAY_NAMES[d.getDay()]}<br><small>${dd}/${mm}</small></th>`;
   }).join('');
 
@@ -4951,7 +5404,7 @@ function renderAbsenceTable(){
     const leaveRec = leaveRecords[s.id] || {};
     let total = 0;
     const cells = month.dates.map((ds,idx)=>{
-      const weekEndCls = (idx+1)%7===0 ? ' week-end' : '';
+      const weekEndCls = attColWeekEndCls(month.dates, idx);
       // A date recorded on the Approved Leave sub-tab is CLOSED here: shown as a locked "L"
       // cell instead of a checkbox, and not counted in the Total column below.
       if(leaveRec[ds]){
@@ -5035,7 +5488,7 @@ function renderApprovedLeaveTable(){
     const d = new Date(ds+'T00:00:00');
     const dd = String(d.getDate()).padStart(2,'0');
     const mm = String(d.getMonth()+1).padStart(2,'0');
-    const weekEndCls = (idx+1)%7===0 ? ' week-end' : '';
+    const weekEndCls = attColWeekEndCls(month.dates, idx);
     return `<th class="att-day-col${weekEndCls}">${ATT_DAY_NAMES[d.getDay()]}<br><small>${dd}/${mm}</small></th>`;
   }).join('');
 
@@ -5045,7 +5498,7 @@ function renderApprovedLeaveTable(){
     const cells = month.dates.map((ds,idx)=>{
       const checked = !!rec[ds];
       if(checked) total++;
-      const weekEndCls = (idx+1)%7===0 ? ' week-end' : '';
+      const weekEndCls = attColWeekEndCls(month.dates, idx);
       return `<td class="att-day-col${weekEndCls}"><input type="checkbox" class="att-check" ${checked?'checked':''} ${canEdit?'':'disabled'}
                 onchange="flashInlineSaved(this);toggleApprovedLeave('${s.id}','${ds}',this.checked)"></td>`;
     }).join('');
@@ -5214,7 +5667,19 @@ function deleteAttendanceForStudent(id){
   });
 }
 
+// preserveFocus used to be a no-op (passed as `true` everywhere but never read inside
+// the function) — the real annoyance it was meant to fix is that rebuilding the whole
+// table's innerHTML resets the scroll position of its scrolling container, so editing a
+// score far down a long class list would jump the view back to the top. This wrapper
+// saves/restores that scroll position around the (unchanged) real render logic below.
 function renderTable(preserveFocus){
+  const holder0 = document.getElementById('tableHolder');
+  const scrollParent = holder0 ? holder0.closest('.grade-table-scroll, .table-container') : null;
+  const savedScrollTop = scrollParent ? scrollParent.scrollTop : null;
+  renderTableInner(preserveFocus);
+  if(scrollParent && savedScrollTop!=null) scrollParent.scrollTop = savedScrollTop;
+}
+function renderTableInner(preserveFocus){
   const scoreMap = getScoreMap();
   const holder = document.getElementById('tableHolder');
   const footNote = document.getElementById('footNote');
@@ -5332,7 +5797,7 @@ function renderExamPaperScreen(roster, scoreMap, holder, footNote){
           <td><span class="badge ${col.c}">${col.t}</span></td>
           <td>${examFieldInputHtml(s.id,'examInitial',sc.examInitial)}</td>
           <td>${examFieldInputHtml(s.id,'examFinal',sc.examFinal)}</td>
-          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
         </tr>`;
     }).join('');
 
@@ -5365,7 +5830,7 @@ function renderExamPaperScreen(roster, scoreMap, holder, footNote){
         <td>${scoreInputHtml(s.id,'examPaper',val,max)}</td>
         <td class="pct-cell">${hasVal ? pct+'%' : '—'}</td>
         <td>${g ? `<span class="badge ${g.c}">${g.t}</span>` : '—'}</td>
-        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
   }).join('');
 
@@ -5430,7 +5895,7 @@ function renderStandardTable(roster, scoreMap, holder){
         <td class="total-cell">${total}</td>
         <td class="pct-cell">${pct}%</td>
         <td><span class="badge ${g.c}">${g.t}</span></td>
-        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
   }).join('');
 
@@ -5481,7 +5946,7 @@ function renderG9CycleTable(roster, scoreMap, holder){
         <td>${scoreInputHtml(s.id,field,val,max)}</td>
         <td class="pct-cell">${hasVal ? pct+'%' : '—'}</td>
         <td>${g ? `<span class="badge ${g.c}">${g.t}</span>` : '—'}</td>
-        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
   }).join('');
 
@@ -5578,7 +6043,7 @@ function renderPrimaryMonth1Table(roster, scoreMap, holder){
           <td>${scoreInputHtml(s.id,'m1Beh',sc.m1Beh,5)}</td>
           <td class="total-cell">${Math.round(t.month1Total*10)/10}</td>
           <td class="cycle-cell">${scoreInputHtml(s.id,'m1Cycle',sc.m1Cycle,5, sc.m1CycleAtt==='A' ? 'Student marked Absent for Cycle 1' : null)}${cycleAttButtonHtml(s.id,'m1CycleAtt',sc.m1CycleAtt)}</td>
-          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
         </tr>`;
     }).join('');
 
@@ -5637,7 +6102,7 @@ function renderPrimaryMonth1Table(roster, scoreMap, holder){
         <td>${scoreInputHtml(s.id,'m1Beh',sc.m1Beh,10)}</td>
         <td class="total-cell">${Math.round((qAv + (parseFloat(sc.m1CW)||0) + (parseFloat(sc.m1Beh)||0))*10)/10}</td>
         <td class="cycle-cell">${scoreInputHtml(s.id,'m1Cycle',sc.m1Cycle, cycleMax, sc.m1CycleAtt==='A' ? 'Student marked Absent for Cycle 1' : null)}${cycleAttButtonHtml(s.id,'m1CycleAtt',sc.m1CycleAtt)}</td>
-        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
   }).join('');
 
@@ -5695,7 +6160,7 @@ function renderPrimaryMonth2Table(roster, scoreMap, holder){
           <td>${scoreInputHtml(s.id,'m2Beh',sc.m2Beh,5)}</td>
           <td class="total-cell">${Math.round(t.month2Total*10)/10}</td>
           <td class="cycle-cell">${scoreInputHtml(s.id,'m2Cycle',sc.m2Cycle,5, sc.m2CycleAtt==='A' ? 'Student marked Absent for Cycle 2' : null)}${cycleAttButtonHtml(s.id,'m2CycleAtt',sc.m2CycleAtt)}</td>
-          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
         </tr>`;
     }).join('');
 
@@ -5754,7 +6219,7 @@ function renderPrimaryMonth2Table(roster, scoreMap, holder){
         <td>${scoreInputHtml(s.id,'m2Beh',sc.m2Beh,10)}</td>
         <td class="total-cell">${Math.round((qAv + (parseFloat(sc.m2CW)||0) + (parseFloat(sc.m2Beh)||0))*10)/10}</td>
         <td class="cycle-cell">${scoreInputHtml(s.id,'m2Cycle',sc.m2Cycle, cycleMax, sc.m2CycleAtt==='A' ? 'Student marked Absent for Cycle 2' : null)}${cycleAttButtonHtml(s.id,'m2CycleAtt',sc.m2CycleAtt)}</td>
-        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
   }).join('');
 
@@ -5806,7 +6271,7 @@ function renderPrimaryCourseworkTable(roster, scoreMap, holder){
           <td class="total-cell">${Math.round(t.totalCoursework*10)/10}</td>
           <td><span class="badge ${g.c}">${g.t}</span></td>
           <td><span class="badge ${col.c}">${col.t}</span></td>
-          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
         </tr>`;
     }).join('');
 
@@ -5846,7 +6311,7 @@ function renderPrimaryCourseworkTable(roster, scoreMap, holder){
           <td class="pct-cell">${Math.round(t.twoMonthsAvg*10)/10}</td>
           <td class="pct-cell">${Math.round(t.totalCycles*10)/10}</td>
           <td class="total-cell">${Math.round(t.totalCoursework*10)/10}</td>
-          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
         </tr>`;
     }).join('');
 
@@ -5882,7 +6347,7 @@ function renderPrimaryCourseworkTable(roster, scoreMap, holder){
         <td class="total-cell">${Math.round(t.totalCoursework*10)/10}</td>
         <td class="pct-cell">${pct}%</td>
         <td><span class="badge ${g.c}">${g.t}</span></td>
-        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete">✕</button></td>
+        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
   }).join('');
 
@@ -6297,15 +6762,32 @@ function loadLastGradebookSelection(){
   }catch(err){}
 }
 
+let localSaveDebounceTimer = null;
+let localSavePending = false;
+
 function saveState(){
   saveStateLocalOnly();
   markGradeBookUnsaved();
 }
+// Splits the "instant" part (visual save feedback, so the user isn't left wondering
+// whether their edit registered) from the "expensive" part (serializing the ENTIRE app
+// state — every student, every subject's scores, attendance, etc. — to JSON and writing
+// it to localStorage). Previously both happened synchronously on every single score edit;
+// now the actual write is debounced ~500ms so a burst of edits (e.g. tabbing through a
+// row of students) only pays that cost once instead of once per field.
 function saveStateLocalOnly(){
+  localSavePending = true;
+  flashSaveIndicator();
+  updateQuickStatsWidget();
+  clearTimeout(localSaveDebounceTimer);
+  localSaveDebounceTimer = setTimeout(flushLocalSave, 500);
+}
+function flushLocalSave(){
+  clearTimeout(localSaveDebounceTimer);
+  if(!localSavePending) return;
   try{
     localStorage.setItem(LS_KEY, JSON.stringify({ students, scores, studentIdCounter, attendance, approvedLeave, teachers, teacherIdCounter, deletedTeacherIds, savedAt: new Date().toISOString() }));
-    flashSaveIndicator();
-    updateQuickStatsWidget();
+    localSavePending = false;
   }catch(err){ console.warn('Auto-save failed', err); }
 }
 
@@ -6636,8 +7118,13 @@ function showGbToast(type, text){
 }
 
 // Warn before closing/reloading the tab if there's anything not yet synced to Firestore.
+// Covers Grade Book scores (gbUnsavedChanges) AND every other save path in the app — users,
+// teachers, bell times, admin structure, exam schedules, blocked students, releases, etc. —
+// which all go through the debounced scheduleGithubPush()/pendingFirestorePush (~2.5s delay).
+// Closing/hard-refreshing during that window used to silently lose the edit.
 window.addEventListener('beforeunload', function(e){
-  if(gbUnsavedChanges){ e.preventDefault(); e.returnValue = ''; }
+  flushLocalSave(); // force through any edit still sitting in the 500ms debounce window
+  if(gbUnsavedChanges || pendingFirestorePush){ e.preventDefault(); e.returnValue = ''; }
 });
 
 function downloadBackup(){
@@ -6697,7 +7184,7 @@ function restoreBackup(file){
         saveExamScheduleReleasesLocalOnly();
       }
       renderTable();
-      renderDatabase();
+      renderDatabaseNow();
       renderTeachersDatabase();
       renderAttendanceWorkspace();
       saveState();
@@ -6712,6 +7199,57 @@ function restoreBackup(file){
 }
 
 /* ================== STUDENT DATABASE VIEW ================== */
+// Pagination for the Student Database table — with hundreds of students in one
+// grade, rendering every row (16 columns, several sticky) at once was heavy on
+// the browser. 50 rows per page keeps each render fast regardless of school size.
+const DB_PAGE_SIZE = 50;
+let dbCurrentPage = 1;
+let dbLastFilterSig = null; // detects a filter/search change so we can snap back to page 1
+
+// Optional/hideable Student Database columns. Deliberately limited to the columns
+// AFTER "Class" — those 8 earlier columns (checkbox, ID, Name, Arabic Name, Section,
+// Stage, Grade, Class) are the ones pinned via sticky-positioning CSS keyed to their
+// nth-child position, so leaving them always-rendered means hiding a column here never
+// touches that CSS. Persisted in localStorage so the choice survives a reload.
+const DB_COLUMN_VISIBILITY_LS_KEY = 'dbColumnVisibility_v1';
+const TOGGLABLE_DB_COLUMNS = [
+  {key:'religion',    label:'Religion'},
+  {key:'lang2',       label:'2nd Language'},
+  {key:'nationalId',  label:'National ID'},
+  {key:'gender',       label:'Gender'},
+  {key:'nationality',  label:'Nationality'},
+  {key:'dob',           label:'Date of Birth'},
+  {key:'notes',         label:'Notes'},
+];
+let dbColumnVisibility = null;
+function loadDbColumnVisibility(){
+  if(dbColumnVisibility) return dbColumnVisibility;
+  let saved = {};
+  try{ saved = JSON.parse(localStorage.getItem(DB_COLUMN_VISIBILITY_LS_KEY) || '{}'); }catch(err){}
+  dbColumnVisibility = {};
+  TOGGLABLE_DB_COLUMNS.forEach(c=>{ dbColumnVisibility[c.key] = saved[c.key] !== false; }); // default: all visible
+  return dbColumnVisibility;
+}
+function isDbColumnVisible(key){ return loadDbColumnVisibility()[key] !== false; }
+function toggleDbColumnVisibility(key, visible){
+  loadDbColumnVisibility();
+  dbColumnVisibility[key] = visible;
+  try{ localStorage.setItem(DB_COLUMN_VISIBILITY_LS_KEY, JSON.stringify(dbColumnVisibility)); }catch(err){}
+  renderDatabaseNow();
+}
+function toggleDbColumnsPanel(e){
+  if(e) e.stopPropagation();
+  const panel = document.getElementById('dbColumnsPanel');
+  if(panel) panel.classList.toggle('open');
+}
+// Close the panel on an outside click, same pattern as the notif bell dropdown.
+document.addEventListener('click', (e)=>{
+  const panel = document.getElementById('dbColumnsPanel');
+  if(panel && panel.classList.contains('open') && !e.target.closest('.db-columns-bar')){
+    panel.classList.remove('open');
+  }
+});
+
 function allStudentsFlat(){
   const list = [];
   Object.keys(students).forEach(ck=>{
@@ -6726,18 +7264,18 @@ function allStudentsFlat(){
 /* ================== BIRTHDAY WIDGET ==================
    Scans every student's Date of Birth (DD/MM/YY, entered manually or auto-calculated
    from the National ID) and lists anyone whose day+month matches today. */
-function getTodaysBirthdays(){
+function getTodaysBirthdays(flat){
   const today = new Date();
   const td = today.getDate(), tm = today.getMonth()+1;
   const list = [];
-  allStudentsFlat().forEach(s=>{
+  (flat || allStudentsFlat()).forEach(s=>{
     if(!s.dob) return;
     const parts = s.dob.split('/');
     if(parts.length!==3) return;
     const dd = parseInt(parts[0],10), mm = parseInt(parts[1],10);
     if(!dd || !mm || dd!==td || mm!==tm) return;
     const classLabel = [s.grade, s.classroom].filter(Boolean).join(' - ');
-    list.push({ id: s.id, name: s.name || s.displayId || 'Student', classLabel });
+    list.push({ id: s.id, name: s.name || s.displayId || 'Student', classLabel, grade: s.grade || '' });
   });
   list.sort((a,b)=> a.name.localeCompare(b.name));
   return list;
@@ -6748,9 +7286,9 @@ function getTodaysBirthdays(){
    - Parent/Student: only their own linked child(ren) — never a classmate's,
      even though getTodaysBirthdays() itself scans every student. This is what
      powers the notification bell's birthday reminder for a parent account. */
-function getTodaysBirthdaysForCurrentUser(){
+function getTodaysBirthdaysForCurrentUser(flat){
   if(!currentUser) return [];
-  const list = getTodaysBirthdays();
+  const list = getTodaysBirthdays(flat);
   if(currentUser.role==='admin') return list;
   if(currentUser.role==='parent') return list.filter(b=> scopeStudentAllowed(b.id));
   return [];
@@ -6761,6 +7299,7 @@ function renderBirthdayWidget(){
   const countEl = document.getElementById('birthdayCount');
   const listEl = document.getElementById('birthdayList');
   if(!widget || !countEl || !listEl) return;
+  ensureBirthdayListStyles();
   const list = getTodaysBirthdays();
   countEl.textContent = list.length;
   widget.classList.toggle('has-birthdays', list.length>0);
@@ -6768,12 +7307,61 @@ function renderBirthdayWidget(){
     listEl.innerHTML = '<span class="birthday-chip-empty">No birthdays today</span>';
     return;
   }
-  listEl.innerHTML = list.map(b=>`
-    <div class="birthday-chip">
-      <span>🎂 ${(b.name||'').replace(/</g,'&lt;')}</span>
-      ${b.classLabel ? `<small>${b.classLabel.replace(/</g,'&lt;')}</small>` : ''}
-    </div>
-  `).join('');
+  // Group by grade so a long list reads as clearly separated sections (one small
+  // header per grade) instead of one undifferentiated column of names.
+  const groups = new Map();
+  list.forEach(b=>{
+    const key = b.grade || 'Other';
+    if(!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(b);
+  });
+  // Order groups by the grade's natural numeric order where possible, so "Grade 2"
+  // comes before "Grade 10" instead of sorting alphabetically.
+  const orderedKeys = Array.from(groups.keys()).sort((a,b)=>{
+    const na = parseInt((a.match(/\d+/)||[])[0], 10);
+    const nb = parseInt((b.match(/\d+/)||[])[0], 10);
+    if(!isNaN(na) && !isNaN(nb) && na!==nb) return na-nb;
+    return a.localeCompare(b);
+  });
+  listEl.innerHTML = orderedKeys.map(key=>{
+    const items = groups.get(key);
+    const rows = items.map(b=>{
+      const esc = (b.name||'').replace(/</g,'&lt;');
+      const clsEsc = (b.classLabel||'').replace(/</g,'&lt;');
+      return `
+      <div class="birthday-chip" title="${esc}${clsEsc ? ' — '+clsEsc : ''}">
+        <span class="birthday-chip-name">🎂 ${esc}</span>
+        ${clsEsc ? `<small>${clsEsc}</small>` : ''}
+      </div>`;
+    }).join('');
+    return `<div class="birthday-group">
+      <div class="birthday-group-title">${key.replace(/</g,'&lt;')} (${items.length})</div>
+      ${rows}
+    </div>`;
+  }).join('');
+}
+// Injects (once) a small stylesheet that makes the birthday list more compact:
+// long names collapse to a single line with an ellipsis (full name still available
+// via the row's title tooltip) instead of wrapping to two lines, spacing is tightened,
+// and each grade-group gets a small muted header. Left as an additive override rather
+// than touching the original .birthday-chip rule, whose definition lives in the HTML
+// file rather than here.
+function ensureBirthdayListStyles(){
+  if(document.getElementById('birthdayListStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'birthdayListStyles';
+  style.textContent = `
+    #birthdayList .birthday-group{ margin-bottom:2px; }
+    #birthdayList .birthday-group-title{
+      font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.03em;
+      opacity:.55; margin:10px 6px 3px; }
+    #birthdayList .birthday-group:first-child .birthday-group-title{ margin-top:2px; }
+    #birthdayList .birthday-chip{ padding:5px 8px !important; min-height:0 !important; line-height:1.25 !important; }
+    #birthdayList .birthday-chip-name{
+      display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; font-size:13px; }
+    #birthdayList .birthday-chip small{ display:block; opacity:.6; font-size:11px; margin-top:1px; }
+  `;
+  document.head.appendChild(style);
 }
 
 /* ---------- Shared "today" key used to remember dismiss/seen state per day ---------- */
@@ -6893,7 +7481,15 @@ function refreshBirthdayWidgets(){
   renderBirthdayTopBar();
 }
 
+// Debounced so typing quickly in the search box (bound to this same function from
+// index.html) coalesces into one table rebuild ~200ms after the user pauses, instead of
+// rebuilding the whole Student Database table on every keystroke.
+let dbRenderDebounceTimer = null;
 function renderDatabase(){
+  clearTimeout(dbRenderDebounceTimer);
+  dbRenderDebounceTimer = setTimeout(renderDatabaseNow, 200);
+}
+function renderDatabaseNow(){
   const search = (document.getElementById('dbSearch').value||'').trim().toLowerCase();
   const sectionSelect = document.getElementById('dbFilterSection');
   const lockedSection = (currentUser && currentUser.effective) ? currentUser.effective.sectionScope : null;
@@ -6969,16 +7565,40 @@ function renderDatabase(){
     return;
   }
 
+  // Any change to the search box or a filter dropdown produces a different result
+  // set, so jump back to page 1 rather than stranding the user on, say, page 4 of
+  // a now much-shorter list. Simply paging forward/back (renderDatabaseNow() called
+  // again with the same filters) leaves dbCurrentPage untouched.
+  const filterSig = JSON.stringify([search, fSection, fStage, fGrade, fClassroom, fReligion, fLang]);
+  if(filterSig !== dbLastFilterSig){
+    dbCurrentPage = 1;
+    dbLastFilterSig = filterSig;
+  }
+  const totalPages = Math.max(1, Math.ceil(list.length / DB_PAGE_SIZE));
+  if(dbCurrentPage > totalPages) dbCurrentPage = totalPages;
+  if(dbCurrentPage < 1) dbCurrentPage = 1;
+  const pageStart = (dbCurrentPage-1) * DB_PAGE_SIZE;
+  const pageList = list.slice(pageStart, pageStart + DB_PAGE_SIZE);
+  document.getElementById('dbCount').textContent = totalPages > 1
+    ? `${list.length} students — showing ${pageStart+1}-${Math.min(pageStart+DB_PAGE_SIZE, list.length)}`
+    : `${list.length} students`;
+
+  // DOB auto-fill runs across every filtered student (not just the current page) so a
+  // student's Date of Birth still gets corrected and saved even before their page is
+  // ever viewed — pagination only limits how many rows get turned into HTML below.
   let dobAutoUpdated = false;
-  const rows = list.map(s=>{
+  list.forEach(s=>{
+    const autoDob = calcDobFromNationalId(s.nationalId);
+    if(autoDob && s.dob!==autoDob){ s.dob = autoDob; dobAutoUpdated = true; }
+  });
+
+  const rows = pageList.map(s=>{
     const availableClasses = classesForKey(s.classKey);
     const classOptions = [`<option value="" ${!s.classroom?'selected':''}>— None —</option>`]
       .concat(availableClasses.map(c=> `<option value="${c.replace(/"/g,'&quot;')}" ${s.classroom===c?'selected':''}>${c}</option>`))
       .concat([`<option value="__new__">+ Add new class…</option>`])
       .join('');
-    // Date of Birth is derived automatically from the 14-digit Egyptian National ID whenever possible
-    const autoDob = calcDobFromNationalId(s.nationalId);
-    if(autoDob && s.dob!==autoDob){ s.dob = autoDob; dobAutoUpdated = true; }
+    const autoDob = !!s.dob && s.dob === calcDobFromNationalId(s.nationalId);
     return `
     <tr>
       <td><input type="checkbox" class="dbStudentCheckbox" value="${s.classKey}::${s.id}"></td>
@@ -6995,51 +7615,71 @@ function renderDatabase(){
           ${classOptions}
         </select>
       </td>
-      <td>
+      ${isDbColumnVisible('religion') ? `<td>
         <select class="db-edit-select" onchange="flashInlineSaved(this);updateStudentField('${s.classKey}','${s.id}','religion',this.value)">
           <option value="-" ${(!s.religion||s.religion==='-')?'selected':''}>None</option>
           <option value="Muslim" ${s.religion==='Muslim'?'selected':''}>Muslim</option>
           <option value="Christian" ${s.religion==='Christian'?'selected':''}>Christian</option>
         </select>
-      </td>
-      <td>
+      </td>` : ''}
+      ${isDbColumnVisible('lang2') ? `<td>
         <select class="db-edit-select" onchange="flashInlineSaved(this);updateStudentField('${s.classKey}','${s.id}','lang2',this.value)">
           <option value="-" ${(!s.lang2||s.lang2==='-')?'selected':''}>None</option>
           <option value="French" ${s.lang2==='French'?'selected':''}>🇫🇷 French</option>
           <option value="German" ${s.lang2==='German'?'selected':''}>🇩🇪 German</option>
           <option value="English" ${s.lang2==='English'?'selected':''}>English</option>
         </select>
-      </td>
-      <td>
+      </td>` : ''}
+      ${isDbColumnVisible('nationalId') ? `<td>
         <input type="text" class="db-edit-select" value="${(s.nationalId||'').replace(/"/g,'&quot;')}" placeholder="National ID" onchange="flashInlineSaved(this);updateStudentField('${s.classKey}','${s.id}','nationalId',this.value)">
-      </td>
-      <td>
+      </td>` : ''}
+      ${isDbColumnVisible('gender') ? `<td>
         <select class="db-edit-select" onchange="flashInlineSaved(this);updateStudentField('${s.classKey}','${s.id}','gender',this.value)">
           <option value="-" ${(!s.gender||s.gender==='-')?'selected':''}>None</option>
           <option value="Male" ${s.gender==='Male'?'selected':''}>Male</option>
           <option value="Female" ${s.gender==='Female'?'selected':''}>Female</option>
         </select>
-      </td>
-      <td>
+      </td>` : ''}
+      ${isDbColumnVisible('nationality') ? `<td>
         <span class="nat-flag" style="margin-right:4px;">${nationalityFlag(s.nationality)}</span><input type="text" class="db-edit-select" style="width:calc(100% - 26px);" value="${(s.nationality||'').replace(/"/g,'&quot;')}" placeholder="Nationality" oninput="this.previousElementSibling.textContent=nationalityFlag(this.value)" onchange="flashInlineSaved(this);updateStudentField('${s.classKey}','${s.id}','nationality',this.value)">
-      </td>
-      <td${autoDob?' data-dob-auto="1"':''}>
+      </td>` : ''}
+      ${isDbColumnVisible('dob') ? `<td${autoDob?' data-dob-auto="1"':''}>
         <input type="text" class="db-edit-select" value="${(s.dob||'').replace(/"/g,'&quot;')}" placeholder="DD/MM/YY" maxlength="8" ${autoDob?'readonly title="Calculated automatically from the National ID"':''} onchange="flashInlineSaved(this);updateStudentField('${s.classKey}','${s.id}','dob',this.value)">
-      </td>
-      <td>
+      </td>` : ''}
+      ${isDbColumnVisible('notes') ? `<td>
         <input type="text" class="db-edit-select" value="${(s.notes||'').replace(/"/g,'&quot;')}" placeholder="Notes" title="${(s.notes||'').replace(/"/g,'&quot;')}" onchange="flashInlineSaved(this);updateStudentField('${s.classKey}','${s.id}','notes',this.value)">
-      </td>
-      <td><button class="del-btn" onclick="deleteStudentFromDb('${s.classKey}','${s.id}')" title="Delete">✕</button></td>
+      </td>` : ''}
+      <td><button class="del-btn" onclick="deleteStudentFromDb('${s.classKey}','${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
     </tr>`;
   }).join('');
 
   if(dobAutoUpdated) saveState();
 
+  const paginationHtml = totalPages > 1 ? `
+    <div class="db-pagination">
+      <button type="button" class="btn btn-outline" ${dbCurrentPage<=1?'disabled':''} onclick="goToDbPage(dbCurrentPage-1)">‹ Previous</button>
+      <span class="db-pagination-status">Page ${dbCurrentPage} of ${totalPages}</span>
+      <button type="button" class="btn btn-outline" ${dbCurrentPage>=totalPages?'disabled':''} onclick="goToDbPage(dbCurrentPage+1)">Next ›</button>
+    </div>` : '';
+
+  const columnsBarHtml = `
+    <div class="db-columns-bar">
+      <button type="button" class="btn btn-outline" onclick="toggleDbColumnsPanel(event)">⚙ Columns</button>
+      <div class="db-columns-panel" id="dbColumnsPanel">
+        ${TOGGLABLE_DB_COLUMNS.map(c=>`
+          <label>
+            <input type="checkbox" ${isDbColumnVisible(c.key)?'checked':''} onchange="toggleDbColumnVisibility('${c.key}', this.checked)">
+            ${c.label}
+          </label>`).join('')}
+      </div>
+    </div>`;
+
   holder.innerHTML = `
+    ${columnsBarHtml}
     <table>
       <thead>
         <tr>
-          <th style="width:30px;"><input type="checkbox" id="dbSelectAllCheckbox" onclick="toggleSelectAllDb()"></th>
+          <th style="width:30px;"><input type="checkbox" id="dbSelectAllCheckbox" aria-label="Select all students on this page" onclick="toggleSelectAllDb()"></th>
           <th>ID</th>
           <th class="name-col">Student Name</th>
           <th dir="rtl">اسم الطالب</th>
@@ -7047,18 +7687,28 @@ function renderDatabase(){
           <th>Stage</th>
           <th>Grade</th>
           <th>Class</th>
-          <th>Religion</th>
-          <th>2nd Language</th>
-          <th>National ID</th>
-          <th>Gender</th>
-          <th>Nationality</th>
-          <th>Date of Birth (DD/MM/YY)</th>
-          <th>Notes</th>
+          ${isDbColumnVisible('religion') ? '<th>Religion</th>' : ''}
+          ${isDbColumnVisible('lang2') ? '<th>2nd Language</th>' : ''}
+          ${isDbColumnVisible('nationalId') ? '<th>National ID</th>' : ''}
+          ${isDbColumnVisible('gender') ? '<th>Gender</th>' : ''}
+          ${isDbColumnVisible('nationality') ? '<th>Nationality</th>' : ''}
+          ${isDbColumnVisible('dob') ? '<th>Date of Birth (DD/MM/YY)</th>' : ''}
+          ${isDbColumnVisible('notes') ? '<th>Notes</th>' : ''}
           <th></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
-    </table>`;
+    </table>${paginationHtml}`;
+}
+
+// Bound to the Previous/Next buttons in the Student Database pagination bar.
+// Re-renders with the new page number; renderDatabaseNow() itself clamps it to
+// a valid range and only resets to page 1 when the search/filters have changed.
+function goToDbPage(page){
+  dbCurrentPage = page;
+  renderDatabaseNow();
+  const holder = document.getElementById('dbTableHolder');
+  if(holder) holder.scrollTop = 0;
 }
 
 // Maps a free-typed Nationality value to a country flag emoji, using
@@ -7136,7 +7786,7 @@ function updateStudentField(ck, studentId, field, value){
     if(autoDob) s.dob = autoDob;
   }
   saveState();
-  renderDatabase();
+  renderDatabaseNow();
 }
 
 function deleteStudentFromDb(ck, studentId){
@@ -7151,7 +7801,7 @@ function deleteStudentFromDb(ck, studentId){
       delete scores[sk][studentId];
     }
   });
-  renderDatabase();
+  renderDatabaseNow();
   if(currentView==='grades') renderTable();
   saveState();
   logActivity('delete', `Permanently deleted student "${removedName}" from the Student Database`);
@@ -7180,9 +7830,9 @@ function handleClassroomSelect(selectEl, ck, studentId){
   let value = selectEl.value;
   if(value === '__new__'){
     const newClass = prompt('Enter the new class name (e.g. 3/A):', '');
-    if(newClass === null){ renderDatabase(); return; }
+    if(newClass === null){ renderDatabaseNow(); return; }
     value = newClass.trim();
-    if(!value){ renderDatabase(); return; }
+    if(!value){ renderDatabaseNow(); return; }
   }
   updateStudentField(ck, studentId, 'classroom', value);
 }
@@ -7210,28 +7860,73 @@ function deleteSelectedDbStudents(){
     deleteAttendanceForStudent(id);
   });
 
-  renderDatabase();
+  renderDatabaseNow();
   if(currentView==='grades') renderTable();
   if(currentView==='attendance') renderAttendanceWorkspace();
   saveState();
 }
 
+// Reusable typed-confirmation dialog for the app's most destructive actions — built
+// entirely from JS (no dependency on a static overlay div in index.html), reusing the
+// existing .config-modal-overlay/.modal CSS classes for visual consistency. Unlike a
+// plain confirm(), requiring the admin to actually type a phrase makes it much harder
+// to click through by accident on something irreversible.
+function showTypedConfirmModal({title, message, requirePhrase, confirmLabel, onConfirm}){
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay show';
+  overlay.innerHTML = `
+    <div class="modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+      <h3>${escapeHtml(title)}</h3>
+      <p style="white-space:pre-line;">${escapeHtml(message)}</p>
+      ${requirePhrase ? `
+        <p style="font-size:12.5px;color:var(--ink-soft);margin:-6px 0 8px;">Type <b>${escapeHtml(requirePhrase)}</b> below to confirm:</p>
+        <input type="text" id="typedConfirmInput" autocomplete="off"
+               style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:16px;font-family:inherit;font-size:14px;">
+      ` : ''}
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" id="typedConfirmCancel">Cancel</button>
+        <button type="button" class="btn" id="typedConfirmOk" ${requirePhrase ? 'disabled' : ''}
+                style="background:var(--red);color:#fff;opacity:${requirePhrase?'.5':'1'};">${escapeHtml(confirmLabel||'Confirm')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const okBtn = overlay.querySelector('#typedConfirmOk');
+  const input = overlay.querySelector('#typedConfirmInput');
+  function close(){ overlay.remove(); }
+  if(input){
+    input.addEventListener('input', ()=>{
+      const match = input.value.trim() === requirePhrase;
+      okBtn.disabled = !match;
+      okBtn.style.opacity = match ? '1' : '.5';
+    });
+    setTimeout(()=> input.focus(), 30);
+  }
+  overlay.querySelector('#typedConfirmCancel').addEventListener('click', close);
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) close(); });
+  okBtn.addEventListener('click', ()=>{ close(); onConfirm(); });
+}
+
 function confirmDeleteAllDb(){
   const total = allStudentsFlat().length;
   if(total===0){ alert('There is no data to delete.'); return; }
-  if(!confirm(`⚠ WARNING: This will permanently delete ALL ${total} student(s) and ALL grades across every Section, Stage, Grade and Class in the entire system. This cannot be undone.\n\nAre you sure you want to continue?`)) return;
-  if(!confirm('Please confirm one more time: delete absolutely everything?')) return;
-
-  students = {};
-  scores = {};
-  attendance = {};
-  approvedLeave = {};
-  studentIdCounter = 1;
-  renderDatabase();
-  if(currentView==='grades'){ state.term=null; state.subject=null; renderStepper(); renderWorkspace(); }
-  if(currentView==='attendance'){ attState.term=null; attState.subject=null; attState.academicTerm=null; renderAttendanceStepper(); renderAttendanceWorkspace(); }
-  saveState();
-  alert('All data has been deleted.');
+  showTypedConfirmModal({
+    title: '⚠ Delete ALL data',
+    message: `This will permanently delete ALL ${total} student(s) and ALL grades across every Section, Stage, Grade and Class in the entire system. This cannot be undone.`,
+    requirePhrase: 'DELETE',
+    confirmLabel: 'Delete everything',
+    onConfirm: function(){
+      students = {};
+      scores = {};
+      attendance = {};
+      approvedLeave = {};
+      studentIdCounter = 1;
+      renderDatabaseNow();
+      if(currentView==='grades'){ state.term=null; state.subject=null; renderStepper(); renderWorkspace(); }
+      if(currentView==='attendance'){ attState.term=null; attState.subject=null; attState.academicTerm=null; renderAttendanceStepper(); renderAttendanceWorkspace(); }
+      saveState();
+      alert('All data has been deleted.');
+    }
+  });
 }
 
 function exportDatabase(){
@@ -7406,7 +8101,7 @@ function importDatabaseExcel(file){
         added++;
       });
 
-      renderDatabase();
+      renderDatabaseNow();
       saveState();
       document.getElementById('importTitle').textContent = 'Bulk Import Result';
       let msg = `${added} student(s) added successfully.`;
@@ -7647,6 +8342,7 @@ function deleteSelectedTeachers(){
   if(checked.length===0){ alert('Please select one or more teachers to delete.'); return; }
   if(!confirm(`Permanently delete ${checked.length} selected teacher(s)? This cannot be undone.`)) return;
   const ids = checked.map(cb=>cb.value);
+  console.log('[Sync] deleteSelectedTeachers running — removing', ids.length, 'of', teachers.length, 'teachers. IDs:', ids);
   teachers = teachers.filter(t=> !ids.includes(t.id));
   ids.forEach(id=>{ if(!deletedTeacherIds.includes(id)) deletedTeacherIds.push(id); });
   renderTeachersDatabase();
@@ -7697,6 +8393,67 @@ function syncTeachersFromUserAccounts(){
   alert(`Sync complete: ${added} new row(s) added, ${updated} existing row(s) refreshed from Manage Users.`);
 }
 
+// Merges duplicate Teachers Database rows that describe the same person into a single
+// row. These duplicates are leftover fallout from the teachers-merge bug (fixed above in
+// applyRemotePayload): before that fix, a browser holding a stale/incomplete local copy of
+// `teachers` could fail to recognize a teacher that already existed on the server, and
+// "Sync from Manage Users" (or the auto-link in saveUserFromForm) would then create a
+// brand-new row for them instead of reusing the existing one — two different ids for the
+// same teacher, both surviving the old always-local-wins merge forever.
+// Grouping key: ONLY rows sharing the same non-empty username are merged — username is a
+// unique Manage Users identity, so this can never falsely combine two different people.
+// IMPORTANT: this deliberately does NOT also group by name+section+subject. An earlier
+// version of this function did, and that turned out to delete real, distinct teachers who
+// simply shared a name/section/subject with someone else and had no linked account —
+// exactly the "teacher names got deleted while I was working on them" report. Rows with no
+// username are therefore left untouched, even if they look like visual duplicates; those
+// need a human to confirm before merging, not an automatic heuristic.
+// Returns the number of duplicate rows removed (0 if nothing needed merging).
+function dedupeTeachersDatabase(){
+  const groups = {};
+  const order = [];
+  teachers.forEach(t=>{
+    // Rows with no username each get their own unique key (their own id) so they're never
+    // considered part of a group and can never be auto-merged.
+    const key = t.username ? `u:${t.username}` : `id:${t.id}`;
+    if(!groups[key]){ groups[key] = []; order.push(key); }
+    groups[key].push(t);
+  });
+
+  let removedCount = 0;
+  const survivors = [];
+  order.forEach(key=>{
+    const group = groups[key];
+    if(group.length===1){ survivors.push(group[0]); return; }
+    // Keep the row with the lowest displayId number as the "primary" (oldest/original
+    // record), and fold every other duplicate's assigned classes into it before discarding
+    // them — so a duplicate that happened to be the one holding real class assignments
+    // (like TCH-1861 in the screenshot) never loses that data in the merge.
+    const primary = group.slice().sort((a,b)=>{
+      const na = parseInt(String(a.displayId||'').replace(/\D/g,''), 10);
+      const nb = parseInt(String(b.displayId||'').replace(/\D/g,''), 10);
+      return (isNaN(na)?Infinity:na) - (isNaN(nb)?Infinity:nb);
+    })[0];
+    const mergedClasses = new Set();
+    group.forEach(t=> (t.classes||'').split(',').map(c=>c.trim()).filter(Boolean).forEach(c=>mergedClasses.add(c)));
+    primary.classes = Array.from(mergedClasses).join(', ');
+    group.forEach(t=>{
+      if(t===primary) return;
+      if(!deletedTeacherIds.includes(t.id)) deletedTeacherIds.push(t.id);
+      removedCount++;
+    });
+    survivors.push(primary);
+  });
+
+  if(removedCount>0){
+    teachers = survivors;
+    saveState();
+    scheduleGithubPush();
+    logActivity('edit', `Auto-merged ${removedCount} duplicate Teachers Database row(s) left over from a sync conflict`);
+  }
+  return removedCount;
+}
+
 function renderTeachersDatabase(){
   // Teachers Database access restricted to Admin users only
   if(!currentUser || currentUser.role !== 'admin'){
@@ -7704,6 +8461,9 @@ function renderTeachersDatabase(){
     if(holder) holder.innerHTML = '<p style="color: var(--red); padding: 20px; text-align: center;">⛔ Access Denied - Teachers Database is only available to Administrators.</p>';
     return;
   }
+  // Self-heals any duplicate rows before rendering (see function doc above) — cheap and a
+  // no-op once nothing needs merging, so it's safe to run on every render.
+  dedupeTeachersDatabase();
   
   const search = (document.getElementById('teacherSearch').value||'').trim().toLowerCase();
   const fSection = document.getElementById('teacherFilterSection').value;
@@ -7814,7 +8574,7 @@ function renderTeachersDatabase(){
           <div class="teacher-classes-panel" id="tcPanel_${t.id}">${classesOptionsHtml}</div>
         </div>
       </td>
-      <td><button class="del-btn" onclick="deleteTeacherFromDb('${t.id}')" title="Delete">✕</button></td>
+      <td><button class="del-btn" onclick="deleteTeacherFromDb('${t.id}')" title="Delete" aria-label="Delete teacher">✕</button></td>
     </tr>`;
   }).join('');
 
@@ -7834,6 +8594,70 @@ function renderTeachersDatabase(){
       </thead>
       <tbody>${rows}</tbody>
     </table>`;
+}
+
+/* ================== TEACHERS AND CLASSES MATRIX ================== */
+function handleTeacherClassesFilterChange(changed){
+  const stageSelect = document.getElementById('teacherClassesStage');
+  const gradeSelect = document.getElementById('teacherClassesGrade');
+  if(!stageSelect || !gradeSelect) return;
+  if(changed==='stage' || !gradeSelect.options.length){
+    const stage = STAGES[stageSelect.value];
+    gradeSelect.innerHTML = (stage ? stage.grades : []).map(g=>
+      `<option value="${g.id}">${escapeHtml(g.label)}</option>`).join('');
+  }
+  renderTeachersAndClasses();
+}
+
+function renderTeachersAndClasses(){
+  const holder = document.getElementById('teacherClassesTableHolder');
+  const count = document.getElementById('teacherClassesCount');
+  if(!holder || !count) return;
+  if(!currentUser || currentUser.role !== 'admin'){
+    holder.innerHTML = '<p style="color: var(--red); padding: 20px; text-align: center;">⛔ Access Denied - Teachers and Classes is only available to Administrators.</p>';
+    return;
+  }
+
+  const section = document.getElementById('teacherClassesSection').value;
+  const stage = document.getElementById('teacherClassesStage').value;
+  const gradeSelect = document.getElementById('teacherClassesGrade');
+  if(!gradeSelect.options.length) handleTeacherClassesFilterChange('stage');
+  const grade = gradeSelect.value;
+  const stageData = STAGES[stage];
+  const gradeData = stageData && stageData.grades.find(g=>g.id===grade);
+  if(!stageData || !gradeData){
+    holder.innerHTML = '<div class="empty-state"><h3>Select a stage and grade</h3></div>';
+    return;
+  }
+
+  const classKey = `${section}|${stage}|${grade}`;
+  const classrooms = classesForKey(classKey);
+  const subjects = getSubjectsForStageAndSection(stage, section);
+  const sectionLabel = section==='en' ? 'English' : 'French';
+  count.textContent = `${subjects.length} subjects · ${classrooms.length} classes`;
+
+  if(!classrooms.length){
+    holder.innerHTML = `<div class="empty-state"><div class="seal-lg">📚</div><h3>No classes found</h3><p>Add students for ${escapeHtml(gradeData.label)} in the ${escapeHtml(SECTIONS[section].label)} to display this matrix.</p></div>`;
+    return;
+  }
+
+  const teacherFor = (subject, classroom) => teachers.filter(t=>{
+    const teacherSection = (t.section||'').trim();
+    if(teacherSection !== sectionLabel && teacherSection !== 'Both') return false;
+    const teacherSubjects = (t.subject||'').split(/[,;]/).map(s=>s.trim()).filter(Boolean);
+    const teacherClasses = (t.classes||'').split(',').map(c=>c.trim()).filter(Boolean);
+    return teacherSubjects.includes(subject) && teacherClasses.includes(classroom);
+  }).map(t=>t.name||t.displayId||'—');
+
+  const rows = subjects.map(subject=>{
+    const cells = classrooms.map(classroom=>{
+      const assigned = teacherFor(subject, classroom);
+      return `<td class="teacher-class-cell ${assigned.length ? 'assigned' : 'unassigned'}">${assigned.length ? assigned.map(escapeHtml).join('<br>') : '<span>—</span>'}</td>`;
+    }).join('');
+    return `<tr><th scope="row" class="teacher-class-subject">${escapeHtml(subject)}</th>${cells}</tr>`;
+  }).join('');
+
+  holder.innerHTML = `<table class="teacher-classes-table"><thead><tr><th class="teacher-class-subject">Subject</th>${classrooms.map(c=>`<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function exportTeachersDatabase(){
@@ -8207,6 +9031,17 @@ let currentUser = null;
 // next time this device (or another) syncs, because the server's copy from before the
 // deletion still has that row.
 let deletedUsernames = [];
+// True from the moment a local edit to `users` is made (saveUsers()) until that edit has
+// actually round-tripped to Firestore (cleared in pushToGithub() on a successful push). The
+// incoming-snapshot handler uses this to decide how to reconcile `users` with the server copy
+// — see the merge-vs-replace branch around mergeArrayById(payload.users, ...) below. Without
+// it, a device's own stale local cache of `users` would permanently block any future update to
+// a record it "already knows" (e.g. a Parent/Student account gaining a second linked child from
+// another device never appearing here, even after logging out and back in on this device) —
+// mergeArrayById always prefers the local copy for a username present on both sides, which is
+// exactly right while THIS device has a real unpushed edit in flight, but wrong once that edit
+// is old news and the remote copy has since moved on.
+let usersUnsavedChanges = false;
 
 /* ================== ACTIVITY & LOGIN LOG ==================
    Records who signed in/out and who changed what, with a timestamp.
@@ -8433,7 +9268,7 @@ function renderTmdHolidayChips(term, monthKey){
     const dd = String(d.getDate()).padStart(2,'0');
     const mm = String(d.getMonth()+1).padStart(2,'0');
     const label = `${dd}/${mm}/${d.getFullYear()}`;
-    return `<span class="att-excl-chip">🚫 ${label}${isAdmin ? `<button type="button" class="att-excl-chip-x" title="Remove this holiday" onclick="removeTmdHoliday('${term}','${monthKey}','${ds}')">×</button>` : ''}</span>`;
+    return `<span class="att-excl-chip">🚫 ${label}${isAdmin ? `<button type="button" class="att-excl-chip-x" title="Remove this holiday" aria-label="Remove this holiday" onclick="removeTmdHoliday('${term}','${monthKey}','${ds}')">×</button>` : ''}</span>`;
   }).join('');
 }
 
@@ -8601,7 +9436,7 @@ function renderBellTimesRows(){
           style="border:1.5px solid var(--border);border-radius:8px;padding:7px 9px;font-family:'Tajawal';font-size:13.5px;width:100%;">
       </div>
       <div style="width:24px;text-align:center;">
-        ${isAdmin ? `<span title="Remove this period" style="cursor:pointer;color:var(--red);font-weight:800;" onclick="removeBellTimesRow(${idx})">×</span>` : ''}
+        ${isAdmin ? `<span title="Remove this period" aria-label="Remove this period" role="button" tabindex="0" style="cursor:pointer;color:var(--red);font-weight:800;" onclick="removeBellTimesRow(${idx})">×</span>` : ''}
       </div>
     </div>
   `).join('');
@@ -8730,7 +9565,7 @@ function startClassAlertWatcher(){
   loadBellTimes();
   checkUpcomingClassAlert();
   clearInterval(classAlertTimer);
-  classAlertTimer = setInterval(checkUpcomingClassAlert, 20*1000);
+  classAlertTimer = setInterval(()=>{ if(!document.hidden) checkUpcomingClassAlert(); }, 20*1000);
 }
 function stopClassAlertWatcher(){
   clearInterval(classAlertTimer);
@@ -8812,7 +9647,7 @@ function renderAdminStructureRows(){
         ${isAdmin ? `
           <span title="Move up" style="cursor:${idx===0?'default':'pointer'};opacity:${idx===0?0.3:1};font-weight:800;" onclick="moveAdminStructureRow(${idx},-1)">↑</span>
           <span title="Move down" style="cursor:${idx===adminStructureStaged.length-1?'default':'pointer'};opacity:${idx===adminStructureStaged.length-1?0.3:1};font-weight:800;" onclick="moveAdminStructureRow(${idx},1)">↓</span>
-          <span title="Remove this member" style="cursor:pointer;color:var(--red);font-weight:800;" onclick="removeAdminStructureRow(${idx})">×</span>
+          <span title="Remove this member" aria-label="Remove this member" role="button" tabindex="0" style="cursor:pointer;color:var(--red);font-weight:800;" onclick="removeAdminStructureRow(${idx})">×</span>
         ` : ''}
       </div>
     </div>
@@ -8991,6 +9826,30 @@ function examScheduleKey(section, grade){
   return (section && grade) ? `${section}_${grade}` : null;
 }
 
+// Single source of truth for the Exam Schedule modal's action-button visibility.
+// Previously this same "Admin gets the full edit toolbar, everyone else is view-only"
+// rule was duplicated in four separate places (initial modal open, row re-render, after
+// Save, after Delete) with slightly different logic each time — which is exactly how a
+// Parent/Student account could end up seeing "+ Add Row" / "Save Schedule" / "Delete
+// Schedule" if any one of those spots drifted out of sync. Every one of those call sites
+// now just calls this instead, so there is only ever one rule to get right: Add Row and
+// Save are Admin-only, full stop; Delete is Admin-only AND requires existing data; View is
+// shown to anyone (Admin included) once there's data to view. Safe to call at any time —
+// every element lookup is null-checked, so a missing button in the DOM never throws and
+// silently skips the rest of a caller's cleanup.
+function syncExamScheduleActionButtons(){
+  const isAdmin = !!(currentUser && currentUser.role==='admin');
+  const hasData = !!(examScheduleStaged && examScheduleStaged.length > 0);
+  const addRowBtn = document.getElementById('examScheduleAddRowBtn');
+  const saveBtn = document.getElementById('examScheduleSaveBtn');
+  const viewBtn = document.getElementById('examScheduleViewBtn');
+  const deleteBtn = document.getElementById('examScheduleDeleteBtn');
+  if(addRowBtn) addRowBtn.style.display = isAdmin ? '' : 'none';
+  if(saveBtn) saveBtn.style.display = isAdmin ? '' : 'none';
+  if(viewBtn) viewBtn.style.display = hasData ? '' : 'none';
+  if(deleteBtn) deleteBtn.style.display = (hasData && isAdmin) ? '' : 'none';
+}
+
 // Returns the staged rows for one Section+Grade's schedule, falling back to the MILS default
 // First Term/End-of-Year schedule when that Section+Grade hasn't had its own rows set yet.
 function getExamScheduleRows(term, type, section, grade){
@@ -9148,32 +10007,56 @@ function renderExamScheduleRows(){
   const holder = document.getElementById('examScheduleRowsContainer');
   if(!holder) return;
   const isAdmin = !!(currentUser && currentUser.role==='admin');
-  
-  // Update View Schedule and Delete buttons visibility
-  const viewBtn = document.getElementById('examScheduleViewBtn');
-  const deleteBtn = document.getElementById('examScheduleDeleteBtn');
-  if(viewBtn || deleteBtn){
-    const hasData = examScheduleStaged && examScheduleStaged.length > 0;
-    if(viewBtn) viewBtn.style.display = hasData ? '' : 'none';
-    if(deleteBtn) deleteBtn.style.display = hasData && isAdmin ? '' : 'none';
-  }
-  
+  syncExamScheduleActionButtons();
+
   if(!examScheduleStaged.length){
     holder.innerHTML = `<p class="foot-note" style="padding:6px 2px;">${isAdmin ? 'No rows yet — click "＋ Add Row" to start.' : 'No exam schedule has been set yet.'}</p>`;
     return;
   }
-  const fieldStyle = "border:1.5px solid var(--border);border-radius:8px;padding:7px 8px;font-family:'Tajawal';font-size:12.5px;min-width:0;";
-  holder.innerHTML = examScheduleStaged.map(row => `
-    <div class="att-excl-add-row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;" data-row-id="${row.id}">
-      <input type="date" value="${row.date||''}" style="flex:1;${fieldStyle}" ${isAdmin?'':'disabled'} oninput="updateExamScheduleRow('${row.id}','date',this.value)">
-      <input type="text" value="${(row.day||'').replace(/"/g,'&quot;')}" placeholder="Day" style="flex:0.9;${fieldStyle}" ${isAdmin?'':'disabled'} oninput="updateExamScheduleRow('${row.id}','day',this.value)">
-      <input type="text" value="${(row.subject||'').replace(/"/g,'&quot;')}" placeholder="Subject" style="flex:1.3;${fieldStyle}" ${isAdmin?'':'disabled'} oninput="updateExamScheduleRow('${row.id}','subject',this.value)">
-      <input type="time" value="${row.timeFrom||''}" style="flex:0.7;${fieldStyle}" ${isAdmin?'':'disabled'} oninput="updateExamScheduleRow('${row.id}','timeFrom',this.value)">
-      <input type="time" value="${row.timeTo||''}" style="flex:0.7;${fieldStyle}" ${isAdmin?'':'disabled'} oninput="updateExamScheduleRow('${row.id}','timeTo',this.value)">
-      <input type="text" value="${(row.duration||'').replace(/"/g,'&quot;')}" placeholder="Duration" style="flex:0.9;${fieldStyle}" ${isAdmin?'':'disabled'} oninput="updateExamScheduleRow('${row.id}','duration',this.value)">
-      ${isAdmin ? `<button type="button" class="att-excl-chip-x" title="Remove this row" style="width:24px;height:24px;" onclick="removeExamScheduleRow('${row.id}')">×</button>` : `<span style="width:24px;"></span>`}
-    </div>
-  `).join('');
+  
+  // ADMIN: Full editable form with flex layout
+  if(isAdmin){
+    const fieldStyle = "border:1.5px solid var(--border);border-radius:8px;padding:7px 8px;font-family:'Tajawal';font-size:12.5px;min-width:0;";
+    holder.innerHTML = examScheduleStaged.map(row => `
+      <div class="att-excl-add-row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;" data-row-id="${row.id}">
+        <input type="date" value="${row.date||''}" style="flex:1;${fieldStyle}" oninput="updateExamScheduleRow('${row.id}','date',this.value)">
+        <input type="text" value="${(row.day||'').replace(/"/g,'&quot;')}" placeholder="Day" style="flex:0.9;${fieldStyle}" oninput="updateExamScheduleRow('${row.id}','day',this.value)">
+        <input type="text" value="${(row.subject||'').replace(/"/g,'&quot;')}" placeholder="Subject" style="flex:1.3;${fieldStyle}" oninput="updateExamScheduleRow('${row.id}','subject',this.value)">
+        <input type="time" value="${row.timeFrom||''}" style="flex:0.7;${fieldStyle}" oninput="updateExamScheduleRow('${row.id}','timeFrom',this.value)">
+        <input type="time" value="${row.timeTo||''}" style="flex:0.7;${fieldStyle}" oninput="updateExamScheduleRow('${row.id}','timeTo',this.value)">
+        <input type="text" value="${(row.duration||'').replace(/"/g,'&quot;')}" placeholder="Duration" style="flex:0.9;${fieldStyle}" oninput="updateExamScheduleRow('${row.id}','duration',this.value)">
+        <button type="button" class="att-excl-chip-x" title="Remove this row" aria-label="Remove this row" style="width:24px;height:24px;" onclick="removeExamScheduleRow('${row.id}')">×</button>
+      </div>
+    `).join('');
+  }
+  // PARENT/STUDENT: Read-only table view (no input fields, no buttons)
+  else {
+    holder.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
+        <thead>
+          <tr style="background:var(--paper-2);">
+            <th style="text-align:left;padding:10px;border-bottom:2px solid var(--border);font-weight:600;">📅 Date</th>
+            <th style="text-align:left;padding:10px;border-bottom:2px solid var(--border);font-weight:600;">📆 Day</th>
+            <th style="text-align:left;padding:10px;border-bottom:2px solid var(--border);font-weight:600;">📚 Subject</th>
+            <th style="text-align:center;padding:10px;border-bottom:2px solid var(--border);font-weight:600;">⏰ From</th>
+            <th style="text-align:center;padding:10px;border-bottom:2px solid var(--border);font-weight:600;">⏰ To</th>
+            <th style="text-align:center;padding:10px;border-bottom:2px solid var(--border);font-weight:600;">⏳ Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${examScheduleStaged.map(row => `
+            <tr>
+              <td style="padding:10px;border-bottom:1px solid var(--border);">${escapeHtml(row.date||'—')}</td>
+              <td style="padding:10px;border-bottom:1px solid var(--border);">${escapeHtml(row.day||'—')}</td>
+              <td style="padding:10px;border-bottom:1px solid var(--border);"><strong>${escapeHtml(row.subject||'—')}</strong></td>
+              <td style="padding:10px;border-bottom:1px solid var(--border);text-align:center;">${escapeHtml(row.timeFrom||'—')}</td>
+              <td style="padding:10px;border-bottom:1px solid var(--border);text-align:center;">${escapeHtml(row.timeTo||'—')}</td>
+              <td style="padding:10px;border-bottom:1px solid var(--border);text-align:center;">${escapeHtml(row.duration||'—')}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  }
 }
 
 function updateExamScheduleRow(id, field, value){
@@ -9225,10 +10108,21 @@ function openExamScheduleModal(term, type){
     const eff = currentUser.effective;
     const ids = (eff && Array.isArray(eff.studentScope)) ? eff.studentScope : [];
     const flat = allStudentsFlatRaw();
+    
+    console.log('[Exam Schedule] Parent opened modal - Linked student IDs:', ids);
+    
     const comboMap = new Map();
     ids.forEach(id=>{
       const s = flat.find(x=> x.id===id);
-      if(!s || !s.section || !s.grade) return;
+      if(!s){
+        console.warn(`[Exam Schedule] Student ID ${id} not found in roster`);
+        return;
+      }
+      if(!s.section || !s.grade){
+        console.warn(`[Exam Schedule] Student ${s.name} (ID: ${id}) missing section/grade`, { section: s.section, grade: s.grade });
+        return;
+      }
+      console.log(`[Exam Schedule] Student: ${s.name}, Section: ${s.section}, Grade: ${s.grade}`);
       const key = `${s.section}|${s.grade}`;
       if(!comboMap.has(key)){
         const secLabel = SECTIONS[s.section] ? SECTIONS[s.section].label : s.section;
@@ -9237,6 +10131,7 @@ function openExamScheduleModal(term, type){
       }
     });
     const combos = [...comboMap.values()].sort((a,b)=> (GRADE_ORDER[a.grade]??0)-(GRADE_ORDER[b.grade]??0));
+    console.log('[Exam Schedule] Available combos for parent:', combos.length);
     examScheduleParentComboMode = true;
     if(sectionWrap) sectionWrap.style.display = 'none';
     if(gradeLabelEl) gradeLabelEl.textContent = 'Section & Grade';
@@ -9272,16 +10167,7 @@ function openExamScheduleModal(term, type){
   }
   applyExamScheduleReleaseGateForParent(term, defaultSection, defaultGrade);
   renderExamScheduleRows();
-  document.getElementById('examScheduleAddRowBtn').style.display = isAdmin ? '' : 'none';
-  document.getElementById('examScheduleSaveBtn').style.display = isAdmin ? '' : 'none';
-  // Show View Schedule and Delete buttons if there's data
-  const viewBtn = document.getElementById('examScheduleViewBtn');
-  const deleteBtn = document.getElementById('examScheduleDeleteBtn');
-  if(viewBtn || deleteBtn){
-    const hasData = examScheduleStaged && examScheduleStaged.length > 0;
-    if(viewBtn) viewBtn.style.display = hasData ? '' : 'none';
-    if(deleteBtn) deleteBtn.style.display = hasData && isAdmin ? '' : 'none';
-  }
+  syncExamScheduleActionButtons();
   const subtitleEl = document.getElementById('examScheduleSubtitle');
   if(subtitleEl){
     subtitleEl.textContent = isAdmin
@@ -9560,21 +10446,17 @@ function handleSeatAssignmentExcelFile(file){
         return;
       }
       const flat = allStudentsFlatRaw();
-      const byDisplayId = new Map();
-      flat.forEach(s=>{
-        if(!s.displayId) return;
-        const key = s.displayId.toString().trim().toLowerCase();
-        if(!byDisplayId.has(key)) byDisplayId.set(key, []);
-        byDisplayId.get(key).push(s);
-      });
+      const idIndex = buildStudentIdIndex(flat);
       const problems = [];
       const parsed = [];
+      let viaFallbackCount = 0;
       rows.forEach(row=>{
         const idVal = (row['Student ID'] || row['ID'] || row['Student ID(s)'] || '').toString().trim();
         if(!idVal) return;
-        const matches = byDisplayId.get(idVal.toLowerCase());
-        if(!matches || matches.length===0){ problems.push(`${idVal}: student not found`); return; }
+        const { matches, viaFallback } = resolveStudentIdToken(idVal, idIndex);
+        if(!matches.length){ problems.push(`${idVal}: student not found`); return; }
         if(matches.length>1){ problems.push(`${idVal}: matches more than one student — fix the duplicate ID in Student Database first`); return; }
+        if(viaFallback) viaFallbackCount++;
         parsed.push({
           studentId: matches[0].id,
           displayId: matches[0].displayId,
@@ -9586,7 +10468,7 @@ function handleSeatAssignmentExcelFile(file){
         });
       });
       if(!parsed.length){
-        alert('Could not find any usable rows with valid Student IDs. Make sure the file has a "Student ID" column matching the STU-#### IDs from the Student Database.');
+        alert('Could not find any usable rows with valid Student IDs. Make sure the file has a "Student ID" column matching a student\'s ID from the Student Database (STU-#### or MILS-#### — the last 4 digits are enough).');
         document.getElementById('seatAssignmentExcelInput').value = '';
         return;
       }
@@ -9598,6 +10480,7 @@ function handleSeatAssignmentExcelFile(file){
       const statusEl = document.getElementById('seatAssignmentStatus');
       if(statusEl){
         statusEl.textContent = `✓ ${parsed.length} seat assignment(s) saved.` +
+          (viaFallbackCount ? ` (${viaFallbackCount} matched by last-4-digits — prefix in the file didn't match exactly.)` : '') +
           (problems.length ? ` ${problems.length} issue(s): ${problems.slice(0,5).join('; ')}${problems.length>5 ? '…' : ''}` : '');
       }
       renderExamSeatCards();
@@ -9755,12 +10638,7 @@ function saveExamSchedule(){
   logActivity('edit', `Updated Exam Schedule — ${examScheduleLabel(term, type, section, grade)}`);
   const statusEl = document.getElementById('examScheduleStatus');
   if(statusEl) statusEl.textContent = `Saved — visible to everyone in ${SECTIONS[section].label} — ${GRADE_LABEL_BY_ID[grade]||grade} now.`;
-  
-  // Show the View and Delete Schedule buttons after saving
-  const viewBtn = document.getElementById('examScheduleViewBtn');
-  if(viewBtn) viewBtn.style.display = 'block';
-  const deleteBtn = document.getElementById('examScheduleDeleteBtn');
-  if(deleteBtn) deleteBtn.style.display = 'block';
+  syncExamScheduleActionButtons();
 }
 
 function openViewExamScheduleModal(){
@@ -9807,14 +10685,9 @@ function deleteExamSchedule(){
     const statusEl = document.getElementById('examScheduleStatus');
     if(statusEl) statusEl.textContent = `✓ Schedule deleted. Please add a new one or refresh the page.`;
     
-    // Hide the View and Delete buttons
-    const viewBtn = document.getElementById('examScheduleViewBtn');
-    if(viewBtn) viewBtn.style.display = 'none';
-    const deleteBtn = document.getElementById('examScheduleDeleteBtn');
-    if(deleteBtn) deleteBtn.style.display = 'none';
-    
-    // Clear the staged rows
+    // Clear the staged rows, then re-sync the buttons off the now-empty state
     examScheduleStaged = [];
+    syncExamScheduleActionButtons();
     renderExamScheduleTable();
   }
 }
@@ -10043,7 +10916,7 @@ function renderBlockedStudentsChips(){
   chipsWrap.innerHTML = blockedStudentIds.map(id=>{
     const s = byId[id];
     const label = s ? `${s.name}${s.displayId?` (${s.displayId})`:''}` : id;
-    return `<span class="att-excl-chip">🚫 ${escapeHtml(label)}<button type="button" class="att-excl-chip-x" title="Unblock this student" onclick="toggleBlockedStudent('${id}', false); renderBlockedStudentsPicker();">×</button></span>`;
+    return `<span class="att-excl-chip">🚫 ${escapeHtml(label)}<button type="button" class="att-excl-chip-x" title="Unblock this student" aria-label="Unblock this student" onclick="toggleBlockedStudent('${id}', false); renderBlockedStudentsPicker();">×</button></span>`;
   }).join('');
 }
 
@@ -10320,8 +11193,8 @@ function renderGradeEntryControlRules(){
           </div>
         </div>
         <div class="ge-rule-actions">
-          <button type="button" title="Edit" onclick="openGeRuleForm('${rule.id}')">✏️</button>
-          <button type="button" title="Delete" onclick="deleteGeRule('${rule.id}')">🗑️</button>
+          <button type="button" title="Edit" aria-label="Edit rule" onclick="openGeRuleForm('${rule.id}')">✏️</button>
+          <button type="button" title="Delete" aria-label="Delete rule" onclick="deleteGeRule('${rule.id}')">🗑️</button>
         </div>
       </div>`;
   }).join('');
@@ -10495,6 +11368,7 @@ function saveGradeEntryControl(){
 // or the Grade Entry Control modal itself is open, re-check every 30s so a scheduled lock
 // disables the score inputs (and an auto-unlock re-enables them) without user action.
 setInterval(function(){
+  if(document.hidden) return;
   if(typeof currentView!=='undefined' && currentView==='grades' && typeof renderTable==='function') renderTable();
   const modal = document.getElementById('gradeEntryControlOverlay');
   if(modal && modal.classList.contains('show')) renderGradeEntryControlRules();
@@ -10743,6 +11617,84 @@ function isReportCardVisible(section, termPeriod, reportType, grade){
     }
   }
   return false;
+}
+
+// Finds the most recently released report card (across both Academic Terms and every
+// Report Type that applies to this student's Stage/Grade) that is CURRENTLY visible to
+// Parent/Student accounts right now, per the Admin's Report Card Release Configuration.
+// "Most recent" = the release with the latest release date/time — i.e. whichever
+// certificate the school actually published last — not just the highest-numbered term.
+// Powers the Dashboard's "My child's certificate" quick-access card (see
+// renderParentQuickCertCard) so a parent can jump straight to it in one tap instead of
+// re-walking the Term -> Report Type stepper. Returns null if nothing is released yet.
+function getLatestReleasedCertForStudent(student){
+  if(!student || !student.section || !student.stage || !student.grade) return null;
+  if(!STAGES[student.stage]) return null;
+  const now = Date.now();
+  let best = null;
+  ['term1','term2'].forEach(termPeriod=>{
+    const types = certReportTypeOptions(termPeriod, student.stage, student.grade).map(o=>o.id);
+    types.forEach(reportType=>{
+      (reportCardReleases||[]).forEach(rc=>{
+        if(rc.section!==student.section || rc.termPeriod!==termPeriod || rc.reportType!==reportType) return;
+        if(rc.grade && rc.grade!==student.grade) return;
+        const releaseTs = new Date(rc.releaseDate+'T'+rc.releaseTime).getTime();
+        if(isNaN(releaseTs) || releaseTs>now) return;
+        const endTs = rc.endDate ? new Date(rc.endDate+'T'+rc.endTime).getTime() : null;
+        if(endTs && endTs<now) return;
+        if(!best || releaseTs>best.releaseTs) best = { termPeriod, reportType, releaseTs };
+      });
+    });
+  });
+  return best;
+}
+
+// A released report counts as "new" for badge purposes (quick-cert card, My Reports feed,
+// sibling switchers) if it went live within this window. 7 days: long enough that a parent
+// who checks in weekly still sees it flagged, short enough that the badge stays meaningful.
+const NEW_REPORT_BADGE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+function isRecentlyReleased(releaseTs){
+  return typeof releaseTs === 'number' && (Date.now() - releaseTs) < NEW_REPORT_BADGE_WINDOW_MS;
+}
+
+// Same visibility rules as getLatestReleasedCertForStudent (release date reached, end date not
+// yet passed, Section/Term/Report Type/Grade match), but collects every currently-visible
+// released report instead of only the single latest one — powers the Parent/Student "My
+// Reports" feed (see renderParentReportsFeed) so a linked parent sees everything that's been
+// released at once instead of re-walking the Term -> Report Type stepper for each report.
+// Sorted most-recently-released first.
+function getAllReleasedCertsForStudent(student){
+  if(!student || !student.section || !student.stage || !student.grade) return [];
+  if(!STAGES[student.stage]) return [];
+  const now = Date.now();
+  const out = [];
+  ['term1','term2'].forEach(termPeriod=>{
+    const types = certReportTypeOptions(termPeriod, student.stage, student.grade).map(o=>o.id);
+    types.forEach(reportType=>{
+      (reportCardReleases||[]).forEach(rc=>{
+        if(rc.section!==student.section || rc.termPeriod!==termPeriod || rc.reportType!==reportType) return;
+        if(rc.grade && rc.grade!==student.grade) return;
+        const releaseTs = new Date(rc.releaseDate+'T'+rc.releaseTime).getTime();
+        if(isNaN(releaseTs) || releaseTs>now) return;
+        const endTs = rc.endDate ? new Date(rc.endDate+'T'+rc.endTime).getTime() : null;
+        if(endTs && endTs<now) return;
+        // The same (termPeriod, reportType) pair can have more than one release record if the
+        // Admin edited/rescheduled it — keep only the latest release timestamp for that pair.
+        const existing = out.find(o=> o.termPeriod===termPeriod && o.reportType===reportType);
+        if(existing){ if(releaseTs>existing.releaseTs) existing.releaseTs = releaseTs; return; }
+        out.push({ termPeriod, reportType, releaseTs });
+      });
+    });
+  });
+  return out.sort((a,b)=> b.releaseTs - a.releaseTs);
+}
+
+// True if this student has any released report card that's still within the "NEW" window —
+// used by the Dashboard and Certificates sibling switchers so a parent with more than one
+// linked child can tell, without opening each one, which child has something new to see.
+function childHasNewReport(student){
+  const reports = getAllReleasedCertsForStudent(student);
+  return reports.length>0 && isRecentlyReleased(reports[0].releaseTs);
 }
 
 /* ================== EXAMS SCHEDULES RELEASE ==================
@@ -11094,19 +12046,23 @@ function markBirthdayNotifSeenToday(){
   catch(err){}
 }
 
-function updateNotifBadge(){
+function updateNotifBadge(flat){
   const badge = document.getElementById('notifBadge');
   const bellBtn = document.getElementById('notifBellBtn');
   if(!badge) return;
   const canSeeBell = !!(currentUser && (currentUser.role==='admin' || currentUser.role==='parent'));
   if(!canSeeBell){ badge.style.display = 'none'; if(bellBtn) bellBtn.classList.remove('has-unread'); return; }
+  // Computed once by the caller (or lazily here) and threaded through to the two
+  // helpers below, instead of each one calling allStudentsFlat() separately.
+  const allFlat = flat || allStudentsFlat();
   const lastSeen = getNotifLastSeen();
   const list = notifRelevantLog();
   let unread = list.filter(e=> e.ts > lastSeen).length;
   // Admin gets the full campus-wide birthday feed; a Parent/Student account only
   // gets reminded about their own linked child(ren)'s birthday, never a classmate's.
-  const todaysBirthdays = getTodaysBirthdaysForCurrentUser();
+  const todaysBirthdays = getTodaysBirthdaysForCurrentUser(allFlat);
   if(todaysBirthdays.length && !isBirthdayNotifSeenToday()) unread += todaysBirthdays.length;
+  if(currentUser && currentUser.role==='parent') unread += getMonthlyAbsenceWarningsForCurrentUser(allFlat).length;
   if(unread > 0){
     badge.style.display = 'flex';
     badge.textContent = unread > 99 ? '99+' : unread;
@@ -11117,13 +12073,110 @@ function updateNotifBadge(){
   }
 }
 
-function renderNotifDropdown(){
+/* ---------- Monthly "missed all evaluations" parent alerts ---------- */
+// Fires once the CURRENT month's last week begins (7 days before termMonthDates[..].end)
+// and stays visible until that month ends — giving the family a heads-up while there's
+// still time to act, instead of an instant ping on every single missed quiz.
+//
+// Detection: a quiz field only counts once the teacher has actually opened it for grading
+// (see isQuizFieldOpened below) — a field nobody in the class has touched yet is just
+// "not graded yet", not an absence. Once opened, still blank for this student = absent.
+const MONTHLY_ABSENCE_SEEN_LS_KEY = 'monthlyAbsenceSeen_v1';
+
+// Every (term, month) pair whose "last week" window we're currently inside.
+function activeMonthlyAlertWindows(){
+  const out = [];
+  ['term1','term2'].forEach(termPeriod=>{
+    ['month1','month2'].forEach(monthKey=>{
+      const r = termMonthDates[termPeriod] && termMonthDates[termPeriod][monthKey];
+      if(!r || !r.start || !r.end) return;
+      const end = new Date(r.end + 'T23:59:59');
+      const threshold = new Date(r.end + 'T00:00:00');
+      threshold.setDate(threshold.getDate() - 7);
+      const now = new Date();
+      if(now >= threshold && now <= end) out.push({ termPeriod, monthKey });
+    });
+  });
+  return out;
+}
+
+// A quiz field counts as "opened" for grading once the teacher has entered at least one
+// score for SOMEONE in that class/subject/term — a field nobody has touched yet just means
+// the teacher hasn't started that quiz, so it must never count as an absence on its own.
+function isQuizFieldOpened(sk, field, excludeStudentId){
+  const bucket = scores[sk] || {};
+  return Object.keys(bucket).some(sid=>{
+    if(sid===excludeStudentId) return false;
+    const v = bucket[sid] && bucket[sid][field];
+    return v!==null && v!==undefined && v!=='';
+  });
+}
+
+function subjectFullyMissedThisMonth(student, subject, termPeriod, monthKey){
+  const sk = `${student.section}|${student.stage}|${student.grade}|${termPeriod}|${subject}`;
+  const fields = [`${monthKey}E1`,`${monthKey}E2`,`${monthKey}E3`,`${monthKey}E4`]
+    .filter(f=> isQuizFieldOpened(sk, f, student.id));
+  if(!fields.length) return false; // teacher hasn't opened any quiz this month yet — not an absence
+  const sc = (scores[sk] || {})[student.id];
+  return fields.every(f => !sc || sc[f]===null || sc[f]===undefined || sc[f]==='');
+}
+
+// One entry per (linked student, active month) with the list of subjects they've missed
+// completely so far, plus an isFullAbsence flag when it's every subject, not just some.
+function getMonthlyAbsenceWarningsForCurrentUser(flat){
+  if(!currentUser || currentUser.role!=='parent') return [];
+  const windows = activeMonthlyAlertWindows();
+  if(!windows.length) return [];
+  let seen = {};
+  try{ seen = JSON.parse(localStorage.getItem(MONTHLY_ABSENCE_SEEN_LS_KEY) || '{}'); }catch(err){}
+  const out = [];
+  (flat || allStudentsFlat()).filter(s=> scopeStudentAllowed(s.id)).forEach(student=>{
+    if(!STAGES[student.stage]) return;
+    const subjects = getSubjectsForStageAndSection(student.stage, student.section);
+    windows.forEach(w=>{
+      const seenKey = `${student.id}__${w.termPeriod}__${w.monthKey}`;
+      if(seen[seenKey]) return;
+      const missed = subjects.filter(subj=> subjectFullyMissedThisMonth(student, subj, w.termPeriod, w.monthKey));
+      if(!missed.length) return;
+      out.push({
+        studentId: student.id,
+        name: student.name,
+        seenKey,
+        missedSubjects: missed,
+        isFullAbsence: missed.length === subjects.length
+      });
+    });
+  });
+  return out;
+}
+
+function dismissMonthlyAbsenceWarning(seenKey){
+  let seen = {};
+  try{ seen = JSON.parse(localStorage.getItem(MONTHLY_ABSENCE_SEEN_LS_KEY) || '{}'); }catch(err){}
+  seen[seenKey] = true;
+  try{ localStorage.setItem(MONTHLY_ABSENCE_SEEN_LS_KEY, JSON.stringify(seen)); }catch(err){}
+}
+
+// Bound to the dismiss (×) button on a monthly absence warning. Computes the full
+// student list once and shares it between the dropdown re-render and the badge
+// update, instead of the two calling allStudentsFlat() separately.
+function dismissMonthlyAbsenceWarningAndRefresh(seenKey){
+  dismissMonthlyAbsenceWarning(seenKey);
+  const flat = allStudentsFlat();
+  renderNotifDropdown(flat);
+  updateNotifBadge(flat);
+}
+
+function renderNotifDropdown(flat){
   const holder = document.getElementById('notifList');
   if(!holder) return;
   const isParentBell = !!(currentUser && currentUser.role==='parent');
+  // Computed once by the caller (or lazily here) and threaded through to the two
+  // helpers below, instead of each one calling allStudentsFlat() separately.
+  const allFlat = flat || allStudentsFlat();
 
   let html = '';
-  const todaysBirthdays = getTodaysBirthdaysForCurrentUser();
+  const todaysBirthdays = getTodaysBirthdaysForCurrentUser(allFlat);
   if(todaysBirthdays.length){
     const names = todaysBirthdays.map(b=> formatBirthdayNameWithClass(b)).join(', ');
     const msg = isParentBell
@@ -11143,7 +12196,7 @@ function renderNotifDropdown(){
   const upcoming = getUpcomingReportCardReleases();
   if(upcoming.length){
     const rc = upcoming[0];
-    const days = Math.max(0, Math.ceil((rc._releaseTs - Date.now()) / 86400000));
+    const days = daysUntilCalendar(rc._releaseTs);
     const dayLabel = days === 0 ? 'today' : (days === 1 ? 'in 1 day' : `in ${days} days`);
     html += `
       <div class="notif-item notif-release">
@@ -11153,6 +12206,25 @@ function renderNotifDropdown(){
         </div>
       </div>`;
   }
+
+  const monthlyAbsenceWarnings = isParentBell ? getMonthlyAbsenceWarningsForCurrentUser(allFlat) : [];
+  monthlyAbsenceWarnings.forEach(w=>{
+    const subjList = w.missedSubjects.join(', ');
+    const msg = w.isFullAbsence
+      ? `🚨 <b>${escapeHtml(w.name)}</b> hasn't been assessed in <b>any subject</b> this month — the last week of the month starts soon.`
+      : `<b>${escapeHtml(w.name)}</b> hasn't been assessed this month in: <b>${escapeHtml(subjList)}</b> — the last week of the month starts soon.`;
+    const barColor = w.isFullAbsence ? '#dc2626' : '#d97706'; // red = full absence, amber = partial
+    const bgColor  = w.isFullAbsence ? 'rgba(220,38,38,.07)' : 'rgba(217,119,6,.07)';
+    html += `
+      <div class="notif-item" style="border-left:3px solid ${barColor}; background:${bgColor};">
+        <div class="notif-row" style="display:flex; align-items:center; gap:8px;">
+          <span class="notif-icon">${w.isFullAbsence ? '🚨' : '⚠️'}</span>
+          <span class="notif-msg" style="flex:1;">${msg}</span>
+          <button type="button" title="Dismiss" aria-label="Dismiss this alert" style="border:none;background:none;cursor:pointer;font-size:16px;opacity:.6;line-height:1;"
+                  onclick="dismissMonthlyAbsenceWarningAndRefresh('${w.seenKey}');">×</button>
+        </div>
+      </div>`;
+  });
 
   const activityItems = notifRelevantLog().slice(0, 10);
   if(activityItems.length === 0 && upcoming.length === 0 && todaysBirthdays.length === 0){
@@ -11188,10 +12260,13 @@ function toggleNotifDropdown(e){
   const opening = !dd.classList.contains('open');
   dd.classList.toggle('open');
   if(opening){
-    renderNotifDropdown();
+    // Computed once here (instead of separately inside renderNotifDropdown and
+    // updateNotifBadge) since both need the same full student list at this instant.
+    const flat = allStudentsFlat();
+    renderNotifDropdown(flat);
     setNotifLastSeen(Date.now());
     markBirthdayNotifSeenToday();
-    updateNotifBadge();
+    updateNotifBadge(flat);
   }
 }
 
@@ -11262,6 +12337,17 @@ function sendParentBroadcast(){
 /* ---------- Report Card Release countdown bar ---------- */
 const RC_COUNTDOWN_WINDOW_DAYS = 14; // the bar visually "fills up" over this many days
 
+// Days between "today" and a target timestamp, compared by CALENDAR DATE (not raw ms/24h).
+// This is what makes "today" actually reachable — e.g. a release later tonight is 0 days
+// away, not 1, even though less than 24 raw hours remain.
+function daysUntilCalendar(targetTs){
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(targetTs);
+  const startOfTarget = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+  return Math.max(0, Math.round((startOfTarget - startOfToday) / 86400000));
+}
+
 function updateReportCardCountdownBar(){
   const bar = document.getElementById('rcCountdownBar');
   const label = document.getElementById('rcCountdownLabel');
@@ -11274,9 +12360,17 @@ function updateReportCardCountdownBar(){
     return;
   }
   const rc = upcoming[0];
-  const msLeft = rc._releaseTs - Date.now();
-  const daysLeft = Math.max(0, Math.ceil(msLeft / 86400000));
-  const dayLabel = daysLeft === 0 ? 'today' : (daysLeft === 1 ? '1 day' : `${daysLeft} days`);
+  const daysLeft = daysUntilCalendar(rc._releaseTs);
+  let dayLabel;
+  if(daysLeft === 0){
+    const msLeft = Math.max(0, rc._releaseTs - Date.now());
+    const totalMinutes = Math.floor(msLeft / 60000);
+    const hLeft = Math.floor(totalMinutes / 60);
+    const mLeft = totalMinutes % 60;
+    dayLabel = (totalMinutes <= 0) ? 'now' : `${hLeft}h ${String(mLeft).padStart(2,'0')}m`;
+  } else {
+    dayLabel = daysLeft === 1 ? '1 day' : `${daysLeft} days`;
+  }
 
   label.innerHTML = `📊 ${escapeHtml(reportCardReleaseLabel(rc))} releases in <b>${dayLabel}</b>`;
   const pct = Math.max(4, Math.min(100, Math.round((1 - (daysLeft / RC_COUNTDOWN_WINDOW_DAYS)) * 100)));
@@ -11288,11 +12382,16 @@ function updateReportCardCountdownBar(){
    often (after saves, after activity log writes, after login, and on a timer). */
 function refreshHeaderQuickWidgets(){
   updateQuickStatsWidget();
-  updateNotifBadge();
+  // Only worth precomputing when there's actually a bell to feed (admin/parent) —
+  // otherwise skip the allStudentsFlat() pass entirely, same as before.
+  const canSeeBell = !!(currentUser && (currentUser.role==='admin' || currentUser.role==='parent'));
+  const dd = document.getElementById('notifDropdown');
+  const dropdownOpen = !!(dd && dd.classList.contains('open'));
+  const flat = canSeeBell ? allStudentsFlat() : null;
+  updateNotifBadge(flat);
   updateReportCardCountdownBar();
   renderBirthdayTopBar();
-  const dd = document.getElementById('notifDropdown');
-  if(dd && dd.classList.contains('open')) renderNotifDropdown();
+  if(dropdownOpen) renderNotifDropdown(flat);
 }
 
 document.addEventListener('click', (e)=>{
@@ -11302,7 +12401,7 @@ document.addEventListener('click', (e)=>{
   }
 });
 
-setInterval(refreshHeaderQuickWidgets, 60 * 1000);
+setInterval(function(){ if(!document.hidden) refreshHeaderQuickWidgets(); }, 60 * 1000);
 
 const ROLE_LABELS = { 
   admin:'Admin', 
@@ -11311,6 +12410,11 @@ const ROLE_LABELS = {
   teacher:'Teacher', 
   parent:'Parent / Student' 
 };
+// Display order for roles in the Manage Users table (highest scope/authority first).
+// Used to sort the table and to group rows under a role header instead of one long
+// mixed list — makes it much faster to scan for a particular Teacher/Parent account
+// among dozens of accounts.
+const ROLE_ORDER = ['admin','hos','hod','teacher','parent'];
 
 function showWelcomeModal(user){
   const nameEl = document.getElementById('welcomeName');
@@ -11585,6 +12689,7 @@ function saveUsers(){
   if(adminUser && adminUser.role !== 'admin'){
     adminUser.role = 'admin';
   }
+  usersUnsavedChanges = true;
   const savedOk = saveUsersLocalOnly();
   scheduleGithubPush();
   return savedOk;
@@ -12281,12 +13386,43 @@ function toggleDarkMode(){
     const uField = document.getElementById('loginUsername');
     const overlay = document.getElementById('loginOverlay');
     if(uField && overlay && overlay.style.display !== 'none') uField.focus();
-    setInterval(updateLockoutUI, 1000);
+    // Only tick every second while the login screen is actually visible (i.e. a
+    // lockout countdown may be showing). Once the user logs in and the overlay
+    // is hidden, stop the interval instead of letting it run forever in the background.
+    const lockoutTimer = setInterval(()=>{
+      const ov = document.getElementById('loginOverlay');
+      if(!ov || ov.style.display === 'none'){ clearInterval(lockoutTimer); return; }
+      updateLockoutUI();
+    }, 1000);
   });
 })();
 
+// Makes the Teachers Database the single source of truth for which Classes/Subjects a
+// Teacher (or HOD's Subjects) account sees. Previously a Teacher's classrooms/subjects only
+// ever came from whatever was picked in the "Manage Users" form when the account was created —
+// if that step was skipped, or the Teachers Database row was edited afterwards, the account's
+// Class/Subject steppers stayed empty even though the Teachers Database clearly listed classes
+// and a subject for that teacher. Called right after login (and re-login), this looks up the
+// matching Teachers Database row (by linked username first, falling back to a name match for
+// older rows that pre-date the linking) and — whenever that row actually has data — overwrites
+// the account's classrooms/subjects with it, so the database's "Classes"/"Subject" columns are
+// always what the Teacher/HOD account actually sees.
+function syncTeacherScopeFromDb(user){
+  if(!user || (user.role!=='teacher' && user.role!=='hod')) return;
+  let t = teachers.find(x=> x.username===user.username);
+  if(!t) t = teachers.find(x=> !x.username && (x.name===user.displayName || x.name===user.username));
+  if(!t) return;
+  const dbSubjects = (t.subject||'').split(',').map(s=>s.trim()).filter(Boolean);
+  if(dbSubjects.length) user.subjects = dbSubjects;
+  if(user.role==='teacher'){
+    const dbClassrooms = (t.classes||'').split(',').map(c=>c.trim()).filter(Boolean);
+    if(dbClassrooms.length) user.classrooms = dbClassrooms;
+  }
+}
+
 function loginAs(user, remember, showWelcome){
   currentUser = user;
+  syncTeacherScopeFromDb(currentUser);
   currentUser.effective = getEffectivePermissions(user);
   sanitizeScopedState();
   try{
@@ -12366,6 +13502,7 @@ function canAccessTab(tab){
   if(!currentUser || !currentUser.effective) return false;
   if(isViewerAccountBlocked()) return false; // blocked accounts can't open ANY tab
   if(tab==='teachers') return currentUser.role === 'admin'; // Teachers Database only for Admin
+  if(tab==='teacherClasses') return currentUser.role === 'admin'; // Teachers and Classes only for Admin
   if(tab==='teacherStatistics') return currentUser.role === 'admin'; // Teachers Statistics only for Admin
   if(tab==='statistics') return currentUser.role === 'admin' || currentUser.role === 'hod'; // Statistics for Admin & HOD
   if(tab==='certReports') return !!currentUser.effective.reports; // Certificates tab shares the Reports permission
@@ -12474,7 +13611,28 @@ function openUsersModal(){
   }
   onRoleFormChange();
   renderUsersTable();
+  widenUsersModalBox();
   document.getElementById('usersOverlay').classList.add('show');
+}
+// Injects (once) a small stylesheet that widens the Manage Users modal box.
+// Uses a <style> tag with !important rather than inline styles because the modal box's
+// class name isn't known here (its markup lives in the HTML file, not this script) —
+// this targets it structurally via #usersOverlay instead, and !important guarantees it
+// wins over whatever fixed width the original CSS set.
+// IMPORTANT: this only touches width/max-width. It deliberately leaves the box's own
+// max-height/overflow-y alone — that's the scrolling container the table's sticky
+// header (position:sticky) is pinned to, so removing it detaches the sticky header
+// from its scroll parent and breaks it. Only the height ceiling is raised a bit (90vh)
+// so there's more room before that inner scroll ever kicks in.
+function widenUsersModalBox(){
+  if(document.getElementById('ufWideModalStyle')) return;
+  const style = document.createElement('style');
+  style.id = 'ufWideModalStyle';
+  style.textContent = `
+    #usersOverlay > * { max-width: min(1200px, 96vw) !important; width: 96vw !important;
+      max-height: 90vh !important; }
+  `;
+  document.head.appendChild(style);
 }
 function closeUsersModal(){
   document.getElementById('usersOverlay').classList.remove('show');
@@ -12664,6 +13822,7 @@ function setUfSelectedStages(stages){
   document.querySelectorAll('.uf-stage-cb').forEach(cb=>{ cb.checked = stages.includes(cb.value); });
 }
 function resetUserForm(){
+  removeUfEditingBanner();
   document.getElementById('editingUsername').value = '';
   document.getElementById('ufUsername').value = '';
   document.getElementById('ufUsername').disabled = false;
@@ -12709,6 +13868,28 @@ function editUser(username){
   onRoleFormChange();
   document.getElementById('ufSubmitBtn').textContent = '💾 Save Changes';
   document.getElementById('ufCancelBtn').style.display = '';
+  showUfEditingBanner(user);
+}
+// Inserts a visible "Editing <user>" banner right above the form (with a one-click
+// way to back out) and scrolls the form into view. Without this, clicking "Edit" on
+// a row far down the Manage Users table silently repopulates a form the admin can no
+// longer see, which reads as if nothing happened.
+function showUfEditingBanner(user){
+  removeUfEditingBanner();
+  const anchor = document.getElementById('usersModalSub');
+  if(anchor){
+    anchor.insertAdjacentHTML('afterend',
+      `<div id="ufEditingBanner" style="margin:8px 0;padding:10px 14px;border-radius:8px;background:#fff7e0;border:1px solid #f0d98c;font-size:14px;">
+        ✏️ Editing <b>${escapeHtml(user.displayName || user.username)}</b> (${escapeHtml(user.username)}) —
+        <a onclick="resetUserForm()" style="cursor:pointer;text-decoration:underline;">cancel and add a new user instead</a>
+      </div>`);
+  }
+  const formStart = document.getElementById('ufUsername');
+  if(formStart && formStart.scrollIntoView) formStart.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+function removeUfEditingBanner(){
+  const el = document.getElementById('ufEditingBanner');
+  if(el) el.remove();
 }
 function saveUserFromForm(){
   const editing = document.getElementById('editingUsername').value;
@@ -12724,6 +13905,14 @@ function saveUserFromForm(){
   if(!username){ alert('Please enter a username.'); return; }
   if(!password){ alert('Please enter a password.'); return; }
   if(currentUser.role==='hod' && (role==='admin' || role==='hod' || role==='hos')){ alert('You can only create Teacher or Parent/Student accounts.'); return; }
+  // Surfaces the exact mistake that used to cause a Parent/Student account to silently keep
+  // showing the full manual Section/Stage/Grade/Class stepper forever: saving with no student
+  // checked in the picker above (search filter hid the intended child, a click didn't
+  // register, etc.). Previously this saved silently — now the admin gets one explicit chance
+  // to go back and check a box before an unlinked account goes live.
+  if(role==='parent' && ufSelectedStudentIds.length===0){
+    if(!confirm('No student is checked for this account — it will show the full manual Term/Section/Stage/Grade stepper instead of jumping straight to their child\'s certificate. Save anyway?')) return;
+  }
 
   const userObj = { username, displayName, password, role };
   if(role==='teacher' || role==='hod' || role==='hos') userObj.section = section;
@@ -12770,6 +13959,7 @@ function saveUserFromForm(){
     
     if(currentUser && currentUser.username === user.username){
       currentUser = user;
+      syncTeacherScopeFromDb(currentUser);
       currentUser.effective = getEffectivePermissions(user);
     }
     saveUsers();
@@ -12857,11 +14047,35 @@ function usersMatchingCurrentFilter(){
     list = users.filter(u=> (u.role==='teacher' || u.role==='parent') && hodSectionMatches(u.section));
   }
   if(roleFilter!=='all') list = list.filter(u=> u.role===roleFilter);
-  return list;
+  // Sort by role (Admin → HOS → HOD → Teacher → Parent/Student), then — for Teacher
+  // accounts specifically — by Section (English → French → Both) then Subject(s) A-Z,
+  // mirroring the Teachers Database order, so teachers of the same subject sit together.
+  // Non-teacher roles just fall back to alphabetical by display name (or username).
+  // NOTE: Teacher/HOD/HOS accounts store their section as the dropdown's underlying
+  // code — 'en', 'fr', or '' (empty string) for "Both" — not the display words, so the
+  // sort key below must match those codes (see #ufSection's <option value="en"|"fr"|"">).
+  const TEACHER_SECTION_SORT_ORDER = { 'en': 0, 'fr': 1, '': 2 };
+  return list.slice().sort((a,b)=>{
+    const ra = ROLE_ORDER.indexOf(a.role), rb = ROLE_ORDER.indexOf(b.role);
+    if(ra!==rb) return ra-rb;
+    if(a.role==='teacher' && b.role==='teacher'){
+      const aSec = a.section || '', bSec = b.section || '';
+      const sa = TEACHER_SECTION_SORT_ORDER.hasOwnProperty(aSec) ? TEACHER_SECTION_SORT_ORDER[aSec] : 99;
+      const sb = TEACHER_SECTION_SORT_ORDER.hasOwnProperty(bSec) ? TEACHER_SECTION_SORT_ORDER[bSec] : 99;
+      if(sa!==sb) return sa-sb;
+      const subjA = (a.subjects||[]).join(', ').trim();
+      const subjB = (b.subjects||[]).join(', ').trim();
+      const subjCmp = subjA.localeCompare(subjB, undefined, { sensitivity:'base' });
+      if(subjCmp!==0) return subjCmp;
+    }
+    return (a.displayName||a.username).localeCompare(b.displayName||b.username);
+  });
 }
 function renderUsersTable(){
   const body = document.getElementById('usersTableBody');
   const list = usersMatchingCurrentFilter();
+  let lastRole = null;
+  let lastTeacherSubjectKey = null;
   body.innerHTML = list.map(u=>{
     const needsSectionCol = u.role==='teacher' || u.role==='hod' || u.role==='hos';
     const sectionLabel = u.section ? SECTIONS[u.section].label : (needsSectionCol ? 'Both' : '—');
@@ -12871,7 +14085,29 @@ function renderUsersTable(){
         ? `${(u.subjects||[]).length} subject(s), ${(u.classrooms||[]).length} class(es)`
         : (u.role==='hod' ? 'Entire department' : (u.role==='hos' ? 'Relevant stages' : 'Full system access')));
     const isProtected = u.username==='admin' || (currentUser && currentUser.username===u.username);
-    return `
+    // The list is already sorted by role (see usersMatchingCurrentFilter), so a role
+    // change here means a new group is starting — drop in a labeled header row above it.
+    let groupHeader = '';
+    if(u.role !== lastRole){
+      lastRole = u.role;
+      lastTeacherSubjectKey = null; // reset so the first teacher subject also gets a subheader
+      const count = list.filter(x=>x.role===u.role).length;
+      groupHeader = `<tr class="user-group-row"><td colspan="7" style="padding:8px 10px;font-weight:600;background:rgba(0,0,0,0.04);">${ROLE_LABELS[u.role]||u.role} <span style="font-weight:400;opacity:.7;">(${count})</span></td></tr>`;
+    }
+    // Within the Teacher group, also break out a subheader per Section + Subject(s)
+    // combo (matches the Section→Subject→Name order applied in usersMatchingCurrentFilter),
+    // so teachers of the same subject are visually clustered together.
+    let subjectHeader = '';
+    if(u.role==='teacher'){
+      const subjectsLabel = (u.subjects||[]).length ? u.subjects.join(', ') : '—';
+      const subjectKey = `${sectionLabel}||${subjectsLabel}`;
+      if(subjectKey !== lastTeacherSubjectKey){
+        lastTeacherSubjectKey = subjectKey;
+        const subjCount = list.filter(x=> x.role==='teacher' && (x.section?SECTIONS[x.section].label:'Both')===sectionLabel && ((x.subjects||[]).length?x.subjects.join(', '):'—')===subjectsLabel).length;
+        subjectHeader = `<tr class="user-subgroup-row"><td colspan="7" style="padding:6px 10px 6px 26px;font-weight:500;font-size:0.9em;opacity:.85;background:rgba(0,0,0,0.02);">${escapeHtml(sectionLabel)} · ${escapeHtml(subjectsLabel)} <span style="font-weight:400;opacity:.7;">(${subjCount})</span></td></tr>`;
+      }
+    }
+    return `${groupHeader}${subjectHeader}
       <tr>
         <td>${isProtected ? '' : `<input type="checkbox" class="user-row-cb" value="${u.username}" onchange="updateUsersBulkCount()">`}</td>
         <td><b>${u.username}</b></td>
@@ -12929,6 +14165,7 @@ function bulkDeleteUsernames(usernames){
     if(user && (user.role==='teacher' || user.role==='hod')){
       const displayName = user.displayName || username;
       const droppedIds = teachers.filter(t=> t.username ? t.username===username : (t.name===displayName || t.name===username)).map(t=>t.id);
+      console.log('[Sync] bulkDeleteUsernames dropping', droppedIds.length, 'linked teacher row(s) for user:', username);
       droppedIds.forEach(id=>{ if(!deletedTeacherIds.includes(id)) deletedTeacherIds.push(id); });
       teachers = teachers.filter(t=> t.username ? t.username!==username : (t.name!==displayName && t.name!==username));
     }
@@ -12958,14 +14195,16 @@ function findRoleId(label){
 function downloadUserTemplate(){
   const sample = [
     { "Username":"mona.teacher", "Display Name":"Mona Adel", "Password":"12345", "Role":"Teacher",
-      "Section":"English Section", "Subjects":"Mathematics; Science", "Classes":"3/A; 4/B" },
+      "Section":"English Section", "Subjects":"Mathematics; Science", "Classes":"3/A; 4/B", "Student ID(s)":"" },
     { "Username":"fatima.hos", "Display Name":"Fatima Deputy", "Password":"12345", "Role":"HOS/Deputy",
-      "Section":"French Section", "Subjects":"", "Classes":"" },
+      "Section":"French Section", "Subjects":"", "Classes":"", "Student ID(s)":"" },
     { "Username":"ahmed.hod", "Display Name":"Ahmed Samir", "Password":"12345", "Role":"Head of Department",
-      "Section":"French Section", "Subjects":"Mathematics", "Classes":"" },
+      "Section":"French Section", "Subjects":"Mathematics", "Classes":"", "Student ID(s)":"" },
     { "Username":"sara.parent", "Display Name":"Sara's Parent", "Password":"12345", "Role":"Parent / Student",
-      "Section":"English Section", "Subjects":"", "Classes":"" },
-    { "Username":"", "Display Name":"", "Password":"", "Role":"", "Section":"", "Subjects":"", "Classes":"" }
+      "Section":"English Section", "Subjects":"", "Classes":"", "Student ID(s)":"MILS-3188" },
+    { "Username":"omar.parent", "Display Name":"Omar's Parent", "Password":"12345", "Role":"Parent / Student",
+      "Section":"English Section", "Subjects":"", "Classes":"", "Student ID(s)":"MILS-3190; MILS-3191" },
+    { "Username":"", "Display Name":"", "Password":"", "Role":"", "Section":"", "Subjects":"", "Classes":"", "Student ID(s)":"" }
   ];
   const wsData = XLSX.utils.json_to_sheet(sample);
   const guide = [
@@ -12973,8 +14212,9 @@ function downloadUserTemplate(){
     { "Field":"Password", "Allowed Values":"Any text — the user can change it later" },
     { "Field":"Role", "Allowed Values":"Admin / HOS/Deputy / Teacher / Head of Department / Parent / Student" },
     { "Field":"Section", "Allowed Values":"English Section / French Section — required for Teacher, HOS/Deputy, Head of Department and Parent/Student (leave blank for Admin)" },
-    { "Field":"Subjects", "Allowed Values":"Semicolon-separated subject names — required for Teacher and Head of Department (a Head of Department normally has just one), optional for Parent/Student. Available: " + ALL_SUBJECTS.join(', ') },
-    { "Field":"Classes", "Allowed Values":"Semicolon-separated class values (must match the 'Class' step used in Grade Book, e.g. 3/A) — only for Teacher/Parent/Student, leave blank for Head of Department" }
+    { "Field":"Subjects", "Allowed Values":"Semicolon-separated subject names — required for Teacher and Head of Department (a Head of Department normally has just one). Not used for Parent/Student. Available: " + ALL_SUBJECTS.join(', ') },
+    { "Field":"Classes", "Allowed Values":"Semicolon-separated class values (must match the 'Class' step used in Grade Book, e.g. 3/A) — only for Teacher, leave blank for Head of Department and Parent/Student" },
+    { "Field":"Student ID(s)", "Allowed Values":"Only for Parent/Student rows — one or more Student ID(s) from the Students Database (either the STU-#### or MILS-#### format, whichever that student has), separated by semicolons for a parent with more than one child at the school. You don't need to get the prefix exactly right — the last 4 digits alone are enough to find the right student, as long as they're unique. The account is created AND linked to that child in this same import — no separate 'Link Parent Accounts' step needed. Leave blank for every other role." }
   ];
   const wsGuide = XLSX.utils.json_to_sheet(guide);
   const wb = XLSX.utils.book_new();
@@ -12993,7 +14233,7 @@ function downloadParentLinkTemplate(){
   const wsData = XLSX.utils.json_to_sheet(sample);
   const guide = [
     { "Field":"Username", "Notes":"Must match an EXISTING Parent/Student account username exactly (create the account first via 'Add Users from Excel' or the form above)." },
-    { "Field":"Student ID(s)", "Notes":"The student's 'STU-####' ID — visible in the Student Database Excel export (column 'ID') or in the Grade Book. Separate multiple IDs (for parents with more than one child) with a semicolon, e.g. STU-0034; STU-0035." },
+    { "Field":"Student ID(s)", "Notes":"The student's ID from the Students Database — either the 'STU-####' or 'MILS-####' format, whichever that student has (visible in the 'ID' column of a Student Database export, or in the Grade Book). The prefix doesn't need to match exactly — the last 4 digits alone are enough to find the right student, as long as they're unique. Separate multiple IDs (for parents with more than one child) with a semicolon, e.g. STU-0034; STU-0035." },
     { "Field":"Note", "Notes":"Re-uploading a username that was already linked REPLACES its previous student list — it does not add to it." }
   ];
   const wsGuide = XLSX.utils.json_to_sheet(guide);
@@ -13013,15 +14253,10 @@ function importParentLinksExcel(file){
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
       const flat = allStudentsFlat();
-      const byDisplayId = new Map();
-      flat.forEach(s=>{
-        if(!s.displayId) return;
-        const key = s.displayId.toString().trim().toLowerCase();
-        if(!byDisplayId.has(key)) byDisplayId.set(key, []);
-        byDisplayId.get(key).push(s);
-      });
+      const idIndex = buildStudentIdIndex(flat);
 
       let linked = 0;
+      let viaFallbackCount = 0;
       const problems = [];
       // Merge multiple rows for the same username into one final ID list, rather than
       // letting a later row silently wipe out IDs collected from an earlier row.
@@ -13042,9 +14277,10 @@ function importParentLinksExcel(file){
 
         const resolvedIds = pending.has(username) ? pending.get(username) : [];
         tokens.forEach(tok=>{
-          const matches = byDisplayId.get(tok.toLowerCase());
-          if(!matches || matches.length===0){ problems.push(`${username}: student ID "${tok}" not found`); return; }
+          const { matches, viaFallback } = resolveStudentIdToken(tok, idIndex);
+          if(!matches.length){ problems.push(`${username}: student ID "${tok}" not found — check the exact ID in Student Database, or just the last 4 digits`); return; }
           if(matches.length>1){ problems.push(`${username}: student ID "${tok}" matches more than one student — please fix the duplicate ID in Student Database first`); return; }
+          if(viaFallback) viaFallbackCount++;
           if(!resolvedIds.includes(matches[0].id)) resolvedIds.push(matches[0].id);
         });
         pending.set(username, resolvedIds);
@@ -13053,6 +14289,20 @@ function importParentLinksExcel(file){
       pending.forEach((ids, username)=>{
         const user = findUser(username);
         if(!user) return;
+        // BUG FIXED: this used to run unconditionally, so a row whose Student ID(s) all
+        // failed to resolve (typo, wrong ID, etc. — each already pushed to `problems` above)
+        // still overwrote user.studentIds with an EMPTY array. That satisfies
+        // getEffectivePermissions' `Array.isArray(user.studentIds)` check, so the account
+        // counted as "linked" — it just wasn't linked to anyone. The result: the admin saw a
+        // reassuring "N account(s) linked/updated successfully" message, but the parent kept
+        // seeing the full manual Section/Stage/Grade/Class stepper forever, with no visible
+        // error anywhere. Now: an all-IDs-failed row is skipped entirely (leaving whatever
+        // link the account already had untouched) and reported as an issue instead, so a
+        // previously-working link can never be silently wiped down to zero students by a typo.
+        if(!ids.length){
+          problems.push(`${username}: none of the given Student ID(s) could be resolved — account left unchanged`);
+          return;
+        }
         user.studentIds = ids;
         linked++;
       });
@@ -13061,6 +14311,9 @@ function importParentLinksExcel(file){
 
       document.getElementById('importTitle').textContent = 'Parent Linking Result';
       let msg = `${linked} account(s) linked/updated successfully.`;
+      if(viaFallbackCount>0){
+        msg += `<br><span style="color:var(--green);font-weight:800;">🔗 ${viaFallbackCount} ID(s) matched by their last 4 digits (the prefix typed in the file didn't match exactly, e.g. STU- vs MILS-) — double-check these are the right student(s).</span>`;
+      }
       if(problems.length){
         msg += `<br><br><b>${problems.length} issue(s):</b><br>` +
           problems.slice(0,10).map(p=>`• ${p}`).join('<br>') +
@@ -13087,6 +14340,8 @@ function importUsersExcel(file){
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
       let added = 0;
+      let linkedAuto = 0;
+      let viaFallbackIdCount = 0;
       const problems = [];
 
       // Column headers can vary slightly (extra spaces, different case, "Subject" instead
@@ -13104,6 +14359,12 @@ function importUsersExcel(file){
       // Accept both ";" and "," as the separator between multiple subjects/classes, since
       // the template uses ";" but a hand-edited sheet commonly uses ",".
       const splitMulti = (raw) => raw ? raw.split(/[;,]/).map(s=>s.trim()).filter(Boolean) : [];
+
+      // Same Student ID -> student lookup importParentLinksExcel() uses, built once here so
+      // a Parent/Student row's "Student ID(s)" column can be resolved and linked in this same
+      // pass — creating the account AND linking it to the child in one upload, instead of
+      // needing a separate "Link Parent Accounts" import afterwards.
+      const idIndex = buildStudentIdIndex(allStudentsFlat());
 
       rows.forEach((row, idx)=>{
         // Each row is now isolated in its own try/catch. Previously the entire
@@ -13127,6 +14388,7 @@ function importUsersExcel(file){
           const sectionLabel = getField(row, ['Section']);
           const subjectsRaw = getField(row, ['Subjects','Subject']);
           const classesRaw = getField(row, ['Classes','Class']);
+          const studentIdsRaw = getField(row, ['Student ID(s)','Student IDs','Student ID','StudentIDs']);
 
           if(!username){ return; } // skip fully blank helper rows
           if(!password){ problems.push(`${username}: missing password`); return; }
@@ -13144,12 +14406,29 @@ function importUsersExcel(file){
 
           const userObj = { username, displayName, password, role };
           if(sectionId) userObj.section = sectionId;
-          if(role==='teacher' || role==='hod' || role==='parent'){
+          if(role==='teacher' || role==='hod'){
             userObj.subjects = splitMulti(subjectsRaw);
             userObj.classrooms = splitMulti(classesRaw);
             if(role==='hod' && !userObj.subjects.length){
               problems.push(`${username}: Head of Department has no "Subjects" value in this row — added with Subject left blank, please fill it in manually`);
             }
+          }
+          // Parent/Student rows link straight to their child(ren) via the "Student ID(s)"
+          // column — resolved against the Students Database the same way importParentLinksExcel()
+          // does, so the account is created AND linked in this one upload.
+          if(role==='parent'){
+            const tokens = splitMulti(studentIdsRaw);
+            const resolvedIds = [];
+            tokens.forEach(tok=>{
+              const { matches, viaFallback } = resolveStudentIdToken(tok, idIndex);
+              if(!matches.length){ problems.push(`${username}: student ID "${tok}" not found — check the exact ID in Student Database, or just the last 4 digits`); return; }
+              if(matches.length>1){ problems.push(`${username}: student ID "${tok}" matches more than one student — please fix the duplicate ID in Student Database first`); return; }
+              if(viaFallback) viaFallbackIdCount++;
+              if(!resolvedIds.includes(matches[0].id)) resolvedIds.push(matches[0].id);
+            });
+            if(!tokens.length){ problems.push(`${username}: no "Student ID(s)" given — account created but not linked to any student yet`); }
+            else if(resolvedIds.length){ linkedAuto++; }
+            userObj.studentIds = resolvedIds;
           }
           // Clear any leftover deletion-tombstone for this username — see the matching
           // comment in saveUserFromForm() above for why this is required.
@@ -13215,6 +14494,12 @@ function importUsersExcel(file){
       }else{
         msg = `${added} user(s) added successfully.`;
       }
+      if(linkedAuto>0){
+        msg += `<br><span style="color:var(--green);font-weight:800;">🔗 ${linkedAuto} Parent/Student account(s) were linked to their child automatically in this same step — no separate linking upload needed.</span>`;
+      }
+      if(viaFallbackIdCount>0){
+        msg += `<br><span style="color:var(--amber);font-weight:800;">⚠ ${viaFallbackIdCount} Student ID(s) matched by their last 4 digits only (the prefix typed in the file didn't match exactly, e.g. STU- vs MILS-) — double-check these are the right student(s) in the table below.</span>`;
+      }
       if(problems.length){
         msg += `<br><br><b>${problems.length} row(s) could not be added:</b><br>` +
           problems.slice(0,8).map(p=>`• ${p}`).join('<br>') +
@@ -13250,7 +14535,38 @@ const fbDb  = firebase.firestore();
 // listener (onSnapshot) to keep every open browser in sync automatically.
 const FB_DOC_REF = fbDb.collection('gradebook').doc('main');
 
+// ✅ تتبع ما إذا كانت بيانات المدرسين قد تم تحديثها من Firestore
+let teachersUpdatedFlag = false;
+
 const GITHUB_CFG_KEY = 'gradesSystemFirebaseCfg_v1'; // kept name for minimal disruption to storage; holds { enabled }
+
+// Tracks when this browser last actually received confirmed data from Firestore (a
+// successful pull OR a live-listener update) — kept in localStorage so it survives a
+// reload instead of resetting to "Never" every time the page opens. Lets an Admin
+// glance at the header pill and confirm everyone is looking at the same version,
+// instead of just knowing sync is "on" with no sense of how fresh the data actually is.
+const LAST_SYNC_LS_KEY = 'lastFirestoreSyncAt_v1';
+function recordLastSyncTime(){
+  const now = Date.now();
+  try{ localStorage.setItem(LAST_SYNC_LS_KEY, String(now)); }catch(err){}
+  return now;
+}
+function getLastSyncTime(){
+  try{ const raw = localStorage.getItem(LAST_SYNC_LS_KEY); return raw ? parseInt(raw,10) : null; }
+  catch(err){ return null; }
+}
+// "2:45 PM" for today, "Jul 14, 2:45 PM" for any earlier day — short enough for an
+// inline badge while still being unambiguous once a few days have passed.
+function formatSyncTimeLabel(ts){
+  if(!ts) return null;
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const time = d.toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'});
+  if(sameDay) return time;
+  const datePart = d.toLocaleDateString(undefined, {month:'short', day:'numeric'});
+  return `${datePart}, ${time}`;
+}
 let githubConfig = null; // { enabled }
 let fbUnsubscribe = null;
 let fbApplyingRemote = false; // guard so a remote snapshot doesn't immediately re-trigger a push
@@ -13263,6 +14579,14 @@ let fbLastPushedAt = 0;
 // echo/snapshot is recognized as not-newer and is ignored instead of overwriting the freshly
 // entered grades still sitting only in memory/localStorage.
 let knownDataVersion = 0;
+// Tracks whether ANY edit made via scheduleGithubPush() (users, teachers, bell times, admin
+// structure, exam schedules, blocked students, report card/exam releases, etc.) has actually
+// finished round-tripping to Firestore yet. Unlike gbUnsavedChanges (which only covers Grade
+// Book scores), this covers every other save path in the app, all of which are debounced by
+// ~2.5s. Without this flag, closing or hard-refreshing the tab inside that 2.5s window loses
+// the edit silently: it looked "saved" locally, but the write never reached the server, and
+// the very next page load pulls the older server copy over it.
+let pendingFirestorePush = false;
 
 function loadGithubConfig(){
   try{
@@ -13283,14 +14607,18 @@ function setSyncStatus(state){
   if(!el) return;
   if(!currentUser || currentUser.role!=='admin'){ el.style.display = 'none'; return; }
   if(!githubConfig || !githubConfig.enabled){ el.style.display = 'none'; return; }
+  if(state==='synced') recordLastSyncTime();
+  const lastSyncTs = getLastSyncTime();
+  const lastSyncLabel = formatSyncTimeLabel(lastSyncTs);
   const map = {
     idle:    ['☁ Not synced yet', '#B8B2A0'],
     syncing: ['☁ Syncing…', 'var(--gold-deep)'],
-    synced:  ['☁ Synced with Firebase', 'var(--green)'],
-    error:   ['⚠ Firebase sync error', 'var(--red)']
+    synced:  [`☁ Synced${lastSyncLabel ? ' · Last: '+lastSyncLabel : ' with Firebase'}`, 'var(--green)'],
+    error:   [`⚠ Firebase sync error${lastSyncLabel ? ' · Last synced: '+lastSyncLabel : ''}`, 'var(--red)']
   };
   const [text,color] = map[state] || map.idle;
   el.textContent = text;
+  el.title = lastSyncTs ? `Last confirmed sync with Firestore: ${new Date(lastSyncTs).toLocaleString()}` : 'No successful sync yet on this device';
   el.style.color = color;
   el.style.display = 'inline-flex';
   if(state!=='idle') flashSyncBadgeNearEdit(text, color);
@@ -13316,6 +14644,29 @@ function flashSyncBadgeNearEdit(text, color){
   }, 1600);
 }
 
+/* One-off, everyone-sees-it indicator (unlike setSyncStatus's header pill, which is
+   Admin-only) for the very first data pull on page load. Without this, whatever was
+   last cached in localStorage renders immediately and the app can look complete —
+   or, on a brand-new device with no cache yet, look empty — for however long the
+   Firestore round-trip to fetch the real latest data takes, with no sign anything
+   is happening in the background. */
+function showInitialSyncIndicator(){
+  let el = document.getElementById('initialSyncBanner');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'initialSyncBanner';
+    el.innerHTML = `<span class="initial-sync-spinner"></span><span>Loading the latest data…</span>`;
+    document.body.appendChild(el);
+  }
+  requestAnimationFrame(()=> el.classList.add('show'));
+}
+function hideInitialSyncIndicator(){
+  const el = document.getElementById('initialSyncBanner');
+  if(!el) return;
+  el.classList.remove('show');
+  setTimeout(()=>{ const cur = document.getElementById('initialSyncBanner'); if(cur && !cur.classList.contains('show')) cur.remove(); }, 400);
+}
+
 function applyRemotePayload(payload){
   if(!payload) return;
   fbApplyingRemote = true;
@@ -13335,14 +14686,18 @@ function applyRemotePayload(payload){
   const currentTeacherIdsAtApply = new Set(teachers.map(t=>t.id));
   deletedTeacherIds = Array.from(new Set([...(payload.deletedTeacherIds||[]), ...deletedTeacherIds]))
     .filter(id => !currentTeacherIdsAtApply.has(id));
-  // teachers is ALWAYS merged (never hard-replaced), regardless of gbUnsavedChanges. A pure
-  // replace here was the remaining path that could make a just-imported/just-added teacher
-  // vanish: if this device's own push hadn't fully round-tripped yet, or a same-document
-  // snapshot arrived from a source (this tab's own listener re-attaching, a delayed/duplicate
-  // event, etc.) carrying a copy of teachers older than what's in memory, a hard replace would
-  // silently drop the new rows. Merging is safe even when there's nothing pending locally —
-  // it's a superset by id, and deletedTeacherIds still prunes anything genuinely deleted.
-  teachers = mergeArrayById(payload.teachers, teachers, 'id');
+  // teachers used to be ALWAYS merged (never hard-replaced) regardless of whether this
+  // device had anything pending — but mergeArrayById always keeps the LOCAL value for any
+  // id present on both sides. That meant once a browser had ever cached a teacher row, a
+  // genuine edit to that same teacher (e.g. renaming them) made and *confirmed* on another
+  // device would never overwrite this browser's stale copy on later pulls — this was the
+  // direct cause of "teacher name edits don't show correctly on another browser". Mirror the
+  // same fix already applied to `users` below: merge (local wins) only while THIS device has
+  // an edit of its own still in flight (pendingFirestorePush) — otherwise trust the server's
+  // copy outright, since with nothing pending, the server is guaranteed at least as fresh.
+  teachers = pendingFirestorePush
+    ? mergeArrayById(payload.teachers, teachers, 'id')
+    : (Array.isArray(payload.teachers) ? payload.teachers : teachers);
   teacherIdCounter = Math.max(payload.teacherIdCounter || 1, teacherIdCounter || 1);
   if(gbUnsavedChanges){
     students = mergeObjectField(payload.students, students);
@@ -13360,6 +14715,17 @@ function applyRemotePayload(payload){
     grade3FlexibleMaximaBySubject = payload.grade3FlexibleMaxima || grade3FlexibleMaximaBySubject || {};
   }
   teachers = teachers.filter(t=> !deletedTeacherIds.includes(t.id));
+  
+  // ✅ حفظ في localStorage أيضاً للأداء والموثوقية
+  // إذا حدث تأخير في Firestore، سيكون لدينا الأحدث محفوظاً
+  try{
+    localStorage.setItem(LS_KEY, JSON.stringify({ 
+      students, scores, studentIdCounter, attendance, approvedLeave, 
+      teachers, teacherIdCounter, deletedTeacherIds, 
+      savedAt: new Date().toISOString() 
+    }));
+  }catch(err){ /* localStorage full أو محظور - لا مشكلة */ }
+  
   try{ localStorage.setItem(GRADE3_MAXIMA_LS_KEY, JSON.stringify(grade3FlexibleMaximaBySubject)); }catch(err){}
   knownDataVersion = Math.max(knownDataVersion, payload.dataVersion || 0);
   if(Array.isArray(payload.users) && payload.users.length){
@@ -13383,7 +14749,18 @@ function applyRemotePayload(payload){
     // Teacher account) appear to have been "deleted" right after saving. Merge with the
     // current in-memory `users` instead, the same way `teachers` is merged above, so a local
     // edit that hasn't round-tripped to Firestore yet always survives.
-    users = mergeArrayById(payload.users, users, 'username').filter(u=> !deletedUsernames.includes(u.username));
+    //
+    // BUT only while usersUnsavedChanges is actually true (a real edit on THIS device still
+    // in flight) — mergeArrayById prefers the LOCAL copy for any username present on both
+    // sides, so once that condition is no longer true, merging would instead permanently trap
+    // this device on its own stale cache: e.g. a Parent/Student account that gains a second
+    // linked child on another device would never pick that up here, even after logging out and
+    // back in, because this device's own (older) copy of that same username keeps winning the
+    // merge forever. With nothing genuinely unsaved locally, the server's copy is strictly at
+    // least as fresh as ours, so trust it outright instead.
+    users = usersUnsavedChanges
+      ? mergeArrayById(payload.users, users, 'username').filter(u=> !deletedUsernames.includes(u.username))
+      : payload.users.filter(u=> !deletedUsernames.includes(u.username));
     saveUsersLocalOnly();
   }
   if(Array.isArray(payload.activityLog) && payload.activityLog.length){
@@ -13433,8 +14810,37 @@ function applyRemotePayload(payload){
     examScheduleReleases = payload.examScheduleReleases;
     saveExamScheduleReleasesLocalOnly();
   }
+  // A Teacher/HOD who was already logged in before this snapshot arrived (e.g. right after
+  // page load, before the very first Firestore pull completes) had their Class/Subject scope
+  // computed with an empty/stale `teachers` list. Now that `teachers` has just been merged
+  // in above, re-sync that scope from it and refresh the stepper so the Teacher immediately
+  // sees the Classes/Subjects actually assigned to them in the database, instead of only
+  // picking them up on next login.
+  //
+  // A Parent/Student account has the exact same staleness problem, just via `users` instead
+  // of `teachers`: currentUser.effective (specifically .studentScope) is only ever computed
+  // once, at login — see loginAs(). If that account was already open in a browser tab when
+  // an Admin links it to a student (or adds a sibling) from another device, this Firestore
+  // snapshot merges the new studentIds into `users` above, but without the block below the
+  // already-open tab kept using its original (unlinked, or missing-a-sibling) effective
+  // permissions for the rest of the session — silently showing the full generic Section/
+  // Stage/Grade/Class stepper instead of the simplified linked-parent view, with no error and
+  // no indication anything was wrong, until the parent happened to log out and back in.
+  if(currentUser && (currentUser.role==='teacher' || currentUser.role==='hod' || currentUser.role==='parent')){
+    if(currentUser.role==='teacher' || currentUser.role==='hod') syncTeacherScopeFromDb(currentUser);
+    currentUser.effective = getEffectivePermissions(currentUser);
+    sanitizeScopedState();
+    if(typeof renderStepper==='function') renderStepper();
+    if(typeof renderAttendanceStepper==='function') renderAttendanceStepper();
+    if(currentUser.role==='parent'){
+      if(typeof autoSelectDashboardChildForParent==='function') autoSelectDashboardChildForParent();
+      if(typeof renderDashboard==='function') renderDashboard();
+      if(typeof renderCertReportsStepper==='function') renderCertReportsStepper();
+      if(typeof renderCertReportsWorkspace==='function') renderCertReportsWorkspace();
+    }
+  }
   saveStateLocalOnly();
-  renderDatabase();
+  renderDatabaseNow();
   if(typeof renderTeachersDatabase==='function') renderTeachersDatabase();
   if(typeof renderTable==='function') renderTable();
   if(typeof renderAttendanceWorkspace==='function') renderAttendanceWorkspace();
@@ -13462,6 +14868,17 @@ function applyRemotePayload(payload){
       else document.getElementById('noAccessPanel').style.display = 'flex';
     }
   }
+  
+  // ✅ إعادة تصيير Manage Users إذا كانت البيانات قد تحديثت من Firestore
+  // هذا يضمن ظهور المدرسين الجدد على الفور في Manage Users tab على جميع المتصفحات
+  if(Array.isArray(payload.teachers) && payload.teachers.length > 0 && currentView === 'teachers'){
+    setTimeout(() => {
+      if(typeof renderTeachersDatabase === 'function'){
+        renderTeachersDatabase();
+      }
+    }, 50);
+  }
+  
   fbApplyingRemote = false;
   // gbUnsavedChanges is deliberately left untouched here: if this device had
   // pending local edits, the merge above kept them in memory and they still
@@ -13499,7 +14916,22 @@ function startFirebaseLiveSync(){
     const incomingVersion = data.dataVersion || 0;
     if(incomingVersion>0 && incomingVersion<=knownDataVersion) return;
     if(Date.now() - fbLastPushedAt < 1500) return;
+    
+    // ✅ تتبع عدد المدرسين قبل تطبيق البيانات
+    const teachersCountBefore = teachers.length;
+    
     applyRemotePayload(data);
+    
+    // ✅ إذا تغير عدد المدرسين وكنا على Manage Users tab
+    const teachersCountAfter = teachers.length;
+    if(currentView === 'teachers' && teachersCountBefore !== teachersCountAfter){
+      setTimeout(() => {
+        if(typeof renderTeachersDatabase === 'function'){
+          renderTeachersDatabase();
+        }
+      }, 100);
+    }
+    
     setSyncStatus('synced');
   }, err=>{
     console.warn('Firebase live sync error', err);
@@ -13515,14 +14947,31 @@ async function pushToGithub(){
   setSyncStatus('syncing');
   const ok = await pushMergedToFirestoreWithRetry();
   setSyncStatus(ok ? 'synced' : 'error');
+  // A successful push means whatever local `users` edit triggered it (see saveUsers()) has now
+  // actually reached Firestore — from this point on, the next incoming snapshot's copy of
+  // `users` is at least as fresh as ours, so it's safe to trust it fully again instead of
+  // defensively preferring our local copy.
+  if(ok){
+    usersUnsavedChanges = false;
+    pendingFirestorePush = false; // this device's memory now matches the server — safe to close/reload
+  }
   return ok;
 }
 
 let githubPushTimer = null;
 function scheduleGithubPush(){
   if(!githubReady() || fbApplyingRemote) return; // don't echo back a change we just received
+  pendingFirestorePush = true; // there is now an edit sitting only in memory until the debounced push below lands
   clearTimeout(githubPushTimer);
-  githubPushTimer = setTimeout(()=> pushToGithub(), 2500);
+  githubPushTimer = setTimeout(()=>{
+    pushToGithub().then(ok=>{
+      // This is the ONLY place most saves (Users/Parent accounts, Teachers, Bell Times, Admin
+      // Structure, Exam Schedules, Blocked Students, Releases, etc.) ever get a visible
+      // confirmation that the edit truly reached the server — closing the form/modal earlier
+      // only meant the edit was accepted locally, not that it was safe to close the tab yet.
+      showGbToast(ok ? 'success' : 'error', ok ? '✓ Saved' : '✕ Save failed — check your internet connection');
+    });
+  }, 1000);
 }
 
 /* ---------- Firebase Sync modal ---------- */
@@ -13532,7 +14981,9 @@ function openGithubModal(){
   const cfg = githubConfig || {};
   document.getElementById('fbProjectLabel').textContent = firebaseConfig.projectId || '—';
   document.getElementById('ghEnabled').checked = !!cfg.enabled;
-  document.getElementById('ghModalStatus').textContent = cfg.enabled ? 'Automatic live sync is currently ON.' : 'Automatic live sync is currently OFF.';
+  const lastSyncLabel = formatSyncTimeLabel(getLastSyncTime());
+  const baseStatus = cfg.enabled ? 'Automatic live sync is currently ON.' : 'Automatic live sync is currently OFF.';
+  document.getElementById('ghModalStatus').textContent = lastSyncLabel ? `${baseStatus} Last synced: ${lastSyncLabel}.` : baseStatus;
   document.getElementById('githubOverlay').classList.add('show');
 }
 function closeGithubModal(){
@@ -13555,7 +15006,10 @@ function manualPushToGithub(){
 }
 function manualPullFromGithub(){
   pullFromGithub(false).then(ok=>{
-    document.getElementById('ghModalStatus').textContent = ok ? 'Latest data pulled from Firebase.' : 'Pull failed or no data saved yet on Firebase.';
+    const lastSyncLabel = formatSyncTimeLabel(getLastSyncTime());
+    document.getElementById('ghModalStatus').textContent = ok
+      ? `Latest data pulled from Firebase.${lastSyncLabel ? ' Last synced: '+lastSyncLabel+'.' : ''}`
+      : 'Pull failed or no data saved yet on Firebase.';
     if(ok) applyPermissionsUI();
   });
 }
@@ -13718,15 +15172,12 @@ function initHeaderInfo(){
 initHeaderInfo();
 
 /* ================== STICKY NAV + BREADCRUMB SPACING ================== */
-// Keeps the breadcrumb bar sticking directly under the nav bar, whatever its actual height is
-// (the nav can wrap onto two lines on narrow screens, changing its height).
+// The nav is now a fixed vertical rail down the left edge, so it no longer reserves any
+// vertical space above the page content — the breadcrumb stepper just sticks near the top
+// of the viewport with a small fixed gap, the same way it would on any page without a top bar.
 function updateStickySpacing(){
-  const nav = document.getElementById('mainNav');
-  if(!nav) return;
-  const navTopGap = 12; // matches .main-nav{ top:12px }
-  const gapBelowNav = 12;
-  const top = navTopGap + nav.getBoundingClientRect().height + gapBelowNav;
-  document.querySelectorAll('.stepper').forEach(el=>{ el.style.top = top + 'px'; });
+  const STEPPER_TOP_GAP = 12;
+  document.querySelectorAll('.stepper').forEach(el=>{ el.style.top = STEPPER_TOP_GAP + 'px'; });
 }
 window.addEventListener('resize', updateStickySpacing);
 window.addEventListener('load', updateStickySpacing);
@@ -13748,8 +15199,13 @@ renderStepper();
 renderAttendanceStepper();
 renderWorkspace();
 renderAttendanceWorkspace();
-renderDatabase();
-renderTeachersDatabase();
+// renderDatabaseNow() and renderTeachersDatabase() used to run here unconditionally on
+// every page load, building the FULL unfiltered student/teacher tables (sticky columns,
+// badges, etc.) into #appWrap — which is display:none until login. That work is pure
+// waste before login (nobody can see it yet) and is redundant even after login, since
+// switchView() already renders each table on demand the moment its tab is actually
+// opened (see the 'database'/'teachers' cases above). Removing them here noticeably
+// speeds up the time the login screen becomes responsive.
 renameAttendanceNavTab();
 // Renames the "Absence" nav tab button to "Absence & Approved Leave", preserving any leading
 // icon element inside the button (only the trailing text node is replaced) since the button's
@@ -13893,7 +15349,25 @@ tryAutoLogin();
 // live listener open — this is what makes data appear on every device/
 // browser instantly, not just the one that originally saved it.
 if(githubReady()){ setSyncStatus('idle'); }
-pullFromGithub(true).then(()=>{ if(githubReady()) startFirebaseLiveSync(); refreshHeaderQuickWidgets(); });
+showInitialSyncIndicator();
+pullFromGithub(true).then(()=>{ if(githubReady()) startFirebaseLiveSync(); refreshHeaderQuickWidgets(); hideInitialSyncIndicator(); });
+
+// Safety net for a gap in the live listener: browsers heavily throttle timers/network
+// activity in a backgrounded tab, and Firestore's onSnapshot listener can end up sitting
+// on a stale snapshot for a while as a result — so a device left open in the background
+// during a big change elsewhere (e.g. a 200-row Teacher Excel import on another browser)
+// can still be showing old data minutes later even though the server-side write itself
+// succeeded immediately. Force a fresh pull the moment the tab becomes visible again,
+// so switching back to it always shows current data without needing a manual refresh.
+let lastVisibilityPullAt = 0;
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState !== 'visible') return;
+  if(!githubReady()) return;
+  const now = Date.now();
+  if(now - lastVisibilityPullAt < 5000) return; // avoid piling up pulls from rapid tab-switching
+  lastVisibilityPullAt = now;
+  pullFromGithub(true);
+});
 
 /* ================== BULK GRADES IMPORT BY SUBJECT(S) ================== */
 
