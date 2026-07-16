@@ -1064,6 +1064,7 @@
         <button class="nav-tab" data-view="teachers" id="navTabTeachers" title="Teachers" onclick="toggleTeachersMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 9 12 5 2 9l10 4 10-4Z"/><path d="M6 10.5V16c0 1 2.7 3 6 3s6-2 6-3v-5.5"/><path d="M22 9v6"/></svg> Teachers ▾</button>
         <div class="nav-dropdown-menu" id="teachersMenu">
           <button class="opt-btn" onclick="switchView('teachers');closeTeachersMenu();">🗂 Teachers Database</button>
+          <button class="opt-btn" onclick="switchView('teacherClasses');closeTeachersMenu();">📚 Teachers and Classes</button>
           <button class="opt-btn" onclick="switchView('teacherStatistics');closeTeachersMenu();">📊 Statistics</button>
         </div>
       </div>
@@ -1331,8 +1332,14 @@
   </div>
 
   <div id="dashboardView" style="display:none;">
-    <div class="classbar">
-      <div class="classbar-crumbs" id="dashboardCrumbs"></div>
+    <div class="dashboard-hero">
+      <div>
+        <span class="dashboard-kicker">STUDENT PERFORMANCE</span>
+        <h2>Dashboard</h2>
+        <p>See progress, subject trends and class comparison in one place.</p>
+        <div class="classbar-crumbs dashboard-crumbs" id="dashboardCrumbs"></div>
+      </div>
+      <button type="button" class="btn btn-outline dashboard-reset-btn" onclick="resetDashboardFilters()">↺ Reset filters</button>
     </div>
     <div class="workspace show" id="dashboardWorkspace">
       <div id="dashboardChildSwitch"></div>
@@ -1559,6 +1566,40 @@
     <p class="foot-note">
       Add teachers one by one with the "Add Teacher" button, bulk-import them all at once from an Excel/CSV sheet using "Bulk Import from Excel" (download the blank template first to see the required columns: ID, Teachers Name, Section, Subject, Classes), or click "🔄 Import from Teacher/HOD Accounts" to pull in every Manage Users account whose role is Teacher or Head of Department. New Teacher/HOD accounts are also added here automatically the moment they're created or edited in Manage Users — the button is only needed to catch up any that were created before this linking existed.
     </p>
+  </div>
+
+  <div id="teacherClassesView" style="display:none;">
+    <div class="classbar" style="margin-bottom:14px;">
+      <div class="classbar-crumbs"><span class="crumb">📚 Teachers and Classes</span></div>
+      <div class="classbar-count" id="teacherClassesCount">Choose filters</div>
+    </div>
+
+    <div class="db-filters teacher-classes-filters">
+      <div class="field">
+        <label>Section</label>
+        <select id="teacherClassesSection" onchange="handleTeacherClassesFilterChange('section')">
+          <option value="en">English Section</option>
+          <option value="fr">French Section</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Stage</label>
+        <select id="teacherClassesStage" onchange="handleTeacherClassesFilterChange('stage')">
+          <option value="primary">Primary Stage</option>
+          <option value="prep">Prep Stage</option>
+          <option value="secondary">Secondary Stage</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Grade</label>
+        <select id="teacherClassesGrade" onchange="renderTeachersAndClasses()"></select>
+      </div>
+    </div>
+
+    <div class="table-card teacher-classes-card">
+      <div id="teacherClassesTableHolder"></div>
+    </div>
+    <p class="foot-note">Each row is a subject and each column is a class. A cell shows the teacher assigned to that subject and class in the Teachers Database.</p>
   </div>
 
   <div id="teacherStatisticsView" style="display:none;">
