@@ -8272,19 +8272,22 @@ function syncTeachersFromUserAccounts(){
 // "Sync from Manage Users" (or the auto-link in saveUserFromForm) would then create a
 // brand-new row for them instead of reusing the existing one — two different ids for the
 // same teacher, both surviving the old always-local-wins merge forever.
-// Grouping key: linked accounts are grouped by username (the reliable identity — this is
-// how the two rows in the screenshot, e.g. "Abd El Rahman Hassan" TCH-2246 and TCH-1861,
-// actually get recognized as the same person). Rows with no username (never linked to a
-// Manage Users account) are grouped more conservatively by name+section+subject, so two
-// unrelated teachers who simply share a name are never merged by mistake.
+// Grouping key: ONLY rows sharing the same non-empty username are merged — username is a
+// unique Manage Users identity, so this can never falsely combine two different people.
+// IMPORTANT: this deliberately does NOT also group by name+section+subject. An earlier
+// version of this function did, and that turned out to delete real, distinct teachers who
+// simply shared a name/section/subject with someone else and had no linked account —
+// exactly the "teacher names got deleted while I was working on them" report. Rows with no
+// username are therefore left untouched, even if they look like visual duplicates; those
+// need a human to confirm before merging, not an automatic heuristic.
 // Returns the number of duplicate rows removed (0 if nothing needed merging).
 function dedupeTeachersDatabase(){
   const groups = {};
   const order = [];
   teachers.forEach(t=>{
-    const key = t.username
-      ? `u:${t.username}`
-      : `n:${(t.name||'').trim().toLowerCase()}|${t.section||''}|${(t.subject||'').trim().toLowerCase()}`;
+    // Rows with no username each get their own unique key (their own id) so they're never
+    // considered part of a group and can never be auto-merged.
+    const key = t.username ? `u:${t.username}` : `id:${t.id}`;
     if(!groups[key]){ groups[key] = []; order.push(key); }
     groups[key].push(t);
   });
