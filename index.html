@@ -180,7 +180,7 @@
 
 <!-- ================= BIRTHDAY TOAST (auto-dismissing, shown on login) ================= -->
 <div class="birthday-toast" id="birthdayToast">
-  <button class="birthday-toast-close" onclick="hideBirthdayToast()" title="Dismiss" aria-label="Dismiss">✕</button>
+  <button class="birthday-toast-close" onclick="hideBirthdayToast()" title="Dismiss">✕</button>
   <span class="birthday-toast-icon">🎂</span>
   <div>
     <div class="birthday-toast-title">Birthday Alert</div>
@@ -289,7 +289,6 @@
         <select id="ufSection">
           <option value="en">English Section</option>
           <option value="fr">French Section</option>
-          <option value="">Both Sections (English &amp; French)</option>
         </select>
       </div>
 
@@ -964,7 +963,7 @@
   <div class="birthday-topbar" id="birthdayTopBar" style="display:none;">
     <span class="birthday-topbar-icon">🎉🎂</span>
     <span class="birthday-topbar-text" id="birthdayTopBarText"></span>
-    <button class="birthday-topbar-close" onclick="dismissBirthdayTopBar()" title="Dismiss" aria-label="Dismiss">✕</button>
+    <button class="birthday-topbar-close" onclick="dismissBirthdayTopBar()" title="Dismiss">✕</button>
   </div>
 
   <div class="masthead">
@@ -981,8 +980,8 @@
     </div>
     <div class="masthead-right">
       <div class="masthead-right-row">
-        <button class="dark-toggle-btn" id="infoToggleBtn" onclick="toggleHeaderInfo()" title="Show clock, weather &amp; online users" aria-label="Show clock, weather and online users" style="display:none;">ⓘ</button>
-        <button class="dark-toggle-btn" id="darkToggleBtn" onclick="toggleDarkMode()" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
+        <button class="dark-toggle-btn" id="infoToggleBtn" onclick="toggleHeaderInfo()" title="Show clock, weather &amp; online users" style="display:none;">ⓘ</button>
+        <button class="dark-toggle-btn" id="darkToggleBtn" onclick="toggleDarkMode()" title="Toggle dark mode">🌙</button>
         <div class="user-badge" id="userBadge">
           <span id="userBadgeName">—</span>
           <span class="u-role" id="userBadgeRole">—</span>
@@ -1034,7 +1033,7 @@
         </div>
         <button class="ghost-btn" id="notifyParentsBtn" style="display:none;" onclick="openNotifyParentsModal()" title="Send an in-app alert to Parent/Student accounts">📢 Notify Parents</button>
         <div class="notif-bell-wrap" id="notifBellWrap" style="display:none;">
-          <button class="notif-bell-btn" id="notifBellBtn" onclick="toggleNotifDropdown(event)" title="Notifications" aria-label="Notifications">
+          <button class="notif-bell-btn" id="notifBellBtn" onclick="toggleNotifDropdown(event)" title="Notifications">
             🔔<span class="notif-badge" id="notifBadge" style="display:none;">0</span>
           </button>
           <div class="notif-dropdown" id="notifDropdown">
@@ -1419,7 +1418,7 @@
     <div class="db-filters">
       <div class="field">
         <label>Search by name or ID</label>
-        <input type="text" id="dbSearch" placeholder="Type to search..." aria-label="Search students" oninput="renderDatabase()">
+        <input type="text" id="dbSearch" placeholder="Type to search..." oninput="renderDatabase()">
       </div>
       <div class="field">
         <label>Section</label>
@@ -1721,7 +1720,7 @@
   </div>
 </div>
 
-<script src="assets/app.js?v=20260715"></script>
+<script src="assets/app.js?v=20260716"></script>
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
 <script>
 // .main-nav can wrap to 2-3 rows on narrow/mobile screens, so its real height
