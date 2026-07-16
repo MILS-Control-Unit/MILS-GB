@@ -363,9 +363,15 @@ function classKey(){ return `${state.section}|${state.stage}|${state.grade}`; }
 function findSubjectTeacherName(section, subject, classroom){
   if(!classroom || !subject) return null;
   const subj = String(subject).trim().toLowerCase();
+  // Grade Book stores a section as its code (en/fr), while Teachers Database stores
+  // its displayed value (English/French/Both). Normalise that difference here so the
+  // same lookup works in every class-level report.
+  const sectionName = section==='en' ? 'English' : section==='fr' ? 'French' : String(section||'').trim();
   const t = teachers.find(t=>{
-    if((t.section||'')!==section) return false;
-    if((t.subject||'').trim().toLowerCase()!==subj) return false;
+    const teacherSection = String(t.section||'').trim();
+    if(teacherSection!==sectionName && teacherSection!=='Both') return false;
+    const teacherSubjects = String(t.subject||'').split(/[,;]/).map(s=>s.trim().toLowerCase()).filter(Boolean);
+    if(!teacherSubjects.includes(subj)) return false;
     const classList = (t.classes||'').split(',').map(c=>c.trim()).filter(Boolean);
     return classList.includes(classroom);
   });
@@ -489,7 +495,7 @@ function classKeyLabels(ck){
 // Students — the block applies to the whole account, not just Reports.
 function showAccountBlockedScreen(){
   currentView = null;
-  ['gradesView','databaseView','markEntryReportView','attendanceView','dashboardView','examsAnalysisView','teachersView','teacherStatisticsView','perfAlertsView'].forEach(id=>{
+  ['gradesView','databaseView','markEntryReportView','attendanceView','dashboardView','examsAnalysisView','teachersView','teacherClassesView','teacherStatisticsView','perfAlertsView'].forEach(id=>{
     const el = document.getElementById(id);
     if(el) el.style.display = 'none';
   });
@@ -520,6 +526,7 @@ function switchView(view){
   document.getElementById('dashboardView').style.display = view==='dashboard' ? '' : 'none';
   document.getElementById('examsAnalysisView').style.display = view==='examsAnalysis' ? '' : 'none';
   document.getElementById('teachersView').style.display = view==='teachers' ? '' : 'none';
+  document.getElementById('teacherClassesView').style.display = view==='teacherClasses' ? '' : 'none';
   document.getElementById('teacherStatisticsView').style.display = view==='teacherStatistics' ? '' : 'none';
   document.getElementById('perfAlertsView').style.display = view==='perfAlerts' ? '' : 'none';
   document.getElementById('classListsView').style.display = view==='classLists' ? '' : 'none';
@@ -553,6 +560,7 @@ function switchView(view){
     }
   }
   if(view==='teacherStatistics') renderTeacherStatistics();
+  if(view==='teacherClasses') renderTeachersAndClasses();
   if(view==='markEntryReport'){ renderMarkEntryStepper(); renderMarkEntryWorkspace(); }
   if(view==='attendance'){ renderAttendanceStepper(); renderAttendanceWorkspace(); }
   if(view==='dashboard'){ renderDashboard(); }
@@ -1677,6 +1685,17 @@ function setDashboardFilter(kind, value){
   renderDashboardChildSwitch();
   renderDashboardFilters();
   renderDashboardCharts();
+}
+
+// Returns the Dashboard to its starting point. Linked parent/student accounts keep
+// their protected child scope and are immediately re-pointed to their default child.
+function resetDashboardFilters(){
+  state.dashboardSection = null;
+  state.dashboardStage = null;
+  state.dashboardGrade = null;
+  state.dashboardClassroom = null;
+  state.dashboardStudent = null;
+  renderDashboard();
 }
 
 /* ---------- Cycle Dashboard: data ---------- */
@@ -3941,6 +3960,48 @@ function renderCertReportsCards(){
       </div>
     </div>`;
   }).join('');
+  addTeacherSignatureColumnToReportCards(holder, roster, type);
+}
+
+// Adds a subject teacher signature column to the three progress report formats.
+// Keeping this as a post-render enhancement lets every grade's specialised report-table
+// layout (Primary, Prep and Secondary) share the same accurate Teachers Database lookup.
+function addTeacherSignatureColumnToReportCards(holder, roster, reportType){
+  if(!holder || !['month1','month2','coursework'].includes(reportType)) return;
+  const cards = holder.querySelectorAll('.cert2-print-page');
+  cards.forEach((card, index)=>{
+    const student = roster[index];
+    if(!student) return;
+    const applicableSubjects = certApplicableSubjects(certState.stage, student, certState.section);
+    const table = card.querySelector('.cert-subjects, .cert2-table');
+    if(!table || table.dataset.teacherColumnAdded==='1') return;
+
+    const headerRow = table.tHead && table.tHead.rows[0];
+    if(!headerRow) return;
+    const header = document.createElement('th');
+    header.className = 'teacher-signature-th';
+    header.textContent = 'Teacher';
+    headerRow.appendChild(header);
+
+    Array.from(table.tBodies[0] ? table.tBodies[0].rows : []).forEach(row=>{
+      const cell = document.createElement('td');
+      cell.className = 'teacher-signature-cell';
+      const isTotal = row.classList.contains('cert-subtotal-row') || row.classList.contains('cert2-total-row');
+      const firstCellText = row.cells[0] ? row.cells[0].textContent : '';
+      const subject = !isTotal ? applicableSubjects.find(s=> firstCellText.includes(s)) : null;
+      const teacherName = subject ? findSubjectTeacherName(certState.section, subject, student.classroom) : null;
+      if(teacherName){
+        const signature = document.createElement('span');
+        signature.className = 'teacher-signature-name';
+        signature.textContent = teacherName;
+        cell.appendChild(signature);
+      } else if(!isTotal){
+        cell.innerHTML = '<span class="teacher-signature-empty">—</span>';
+      }
+      row.appendChild(cell);
+    });
+    table.dataset.teacherColumnAdded = '1';
+  });
 }
 
 // Handles edits to the Initial Exam / Final Exam fields on the Grade 1 & 2 First Term Report
@@ -4076,7 +4137,7 @@ function renderMarkEntryReport(){
       const c = markEntryColor(fr.pct);
       bodyRows += `<tr>`;
       if(idx===0){
-        const teacherLine = block.teacherName ? `<small>${escapeHtml(block.teacherName)}</small>` : '';
+        const teacherLine = block.teacherName ? `<small class="me-teacher-name">👨‍🏫 ${escapeHtml(block.teacherName)}</small>` : '';
         bodyRows += `<td class="me-subject-cell" rowspan="${rowspan}">${escapeHtml(block.subject)}${teacherLine}<small>${block.subjPct}% complete</small></td>`;
       }
       bodyRows += `
@@ -8490,6 +8551,70 @@ function renderTeachersDatabase(){
       </thead>
       <tbody>${rows}</tbody>
     </table>`;
+}
+
+/* ================== TEACHERS AND CLASSES MATRIX ================== */
+function handleTeacherClassesFilterChange(changed){
+  const stageSelect = document.getElementById('teacherClassesStage');
+  const gradeSelect = document.getElementById('teacherClassesGrade');
+  if(!stageSelect || !gradeSelect) return;
+  if(changed==='stage' || !gradeSelect.options.length){
+    const stage = STAGES[stageSelect.value];
+    gradeSelect.innerHTML = (stage ? stage.grades : []).map(g=>
+      `<option value="${g.id}">${escapeHtml(g.label)}</option>`).join('');
+  }
+  renderTeachersAndClasses();
+}
+
+function renderTeachersAndClasses(){
+  const holder = document.getElementById('teacherClassesTableHolder');
+  const count = document.getElementById('teacherClassesCount');
+  if(!holder || !count) return;
+  if(!currentUser || currentUser.role !== 'admin'){
+    holder.innerHTML = '<p style="color: var(--red); padding: 20px; text-align: center;">⛔ Access Denied - Teachers and Classes is only available to Administrators.</p>';
+    return;
+  }
+
+  const section = document.getElementById('teacherClassesSection').value;
+  const stage = document.getElementById('teacherClassesStage').value;
+  const gradeSelect = document.getElementById('teacherClassesGrade');
+  if(!gradeSelect.options.length) handleTeacherClassesFilterChange('stage');
+  const grade = gradeSelect.value;
+  const stageData = STAGES[stage];
+  const gradeData = stageData && stageData.grades.find(g=>g.id===grade);
+  if(!stageData || !gradeData){
+    holder.innerHTML = '<div class="empty-state"><h3>Select a stage and grade</h3></div>';
+    return;
+  }
+
+  const classKey = `${section}|${stage}|${grade}`;
+  const classrooms = classesForKey(classKey);
+  const subjects = getSubjectsForStageAndSection(stage, section);
+  const sectionLabel = section==='en' ? 'English' : 'French';
+  count.textContent = `${subjects.length} subjects · ${classrooms.length} classes`;
+
+  if(!classrooms.length){
+    holder.innerHTML = `<div class="empty-state"><div class="seal-lg">📚</div><h3>No classes found</h3><p>Add students for ${escapeHtml(gradeData.label)} in the ${escapeHtml(SECTIONS[section].label)} to display this matrix.</p></div>`;
+    return;
+  }
+
+  const teacherFor = (subject, classroom) => teachers.filter(t=>{
+    const teacherSection = (t.section||'').trim();
+    if(teacherSection !== sectionLabel && teacherSection !== 'Both') return false;
+    const teacherSubjects = (t.subject||'').split(/[,;]/).map(s=>s.trim()).filter(Boolean);
+    const teacherClasses = (t.classes||'').split(',').map(c=>c.trim()).filter(Boolean);
+    return teacherSubjects.includes(subject) && teacherClasses.includes(classroom);
+  }).map(t=>t.name||t.displayId||'—');
+
+  const rows = subjects.map(subject=>{
+    const cells = classrooms.map(classroom=>{
+      const assigned = teacherFor(subject, classroom);
+      return `<td class="teacher-class-cell ${assigned.length ? 'assigned' : 'unassigned'}">${assigned.length ? assigned.map(escapeHtml).join('<br>') : '<span>—</span>'}</td>`;
+    }).join('');
+    return `<tr><th scope="row" class="teacher-class-subject">${escapeHtml(subject)}</th>${cells}</tr>`;
+  }).join('');
+
+  holder.innerHTML = `<table class="teacher-classes-table"><thead><tr><th class="teacher-class-subject">Subject</th>${classrooms.map(c=>`<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function exportTeachersDatabase(){
@@ -13334,6 +13459,7 @@ function canAccessTab(tab){
   if(!currentUser || !currentUser.effective) return false;
   if(isViewerAccountBlocked()) return false; // blocked accounts can't open ANY tab
   if(tab==='teachers') return currentUser.role === 'admin'; // Teachers Database only for Admin
+  if(tab==='teacherClasses') return currentUser.role === 'admin'; // Teachers and Classes only for Admin
   if(tab==='teacherStatistics') return currentUser.role === 'admin'; // Teachers Statistics only for Admin
   if(tab==='statistics') return currentUser.role === 'admin' || currentUser.role === 'hod'; // Statistics for Admin & HOD
   if(tab==='certReports') return !!currentUser.effective.reports; // Certificates tab shares the Reports permission
