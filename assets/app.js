@@ -3873,6 +3873,14 @@ function renderCertReportsCards(){
       tableBodyHtml = rowsHtml + totalRow;
     }
 
+    // Build the Teacher column before mounting the certificate, so it is included in
+    // on-screen preview, printing and PDF output for every report layout.
+    if(['month1','month2','coursework'].includes(type)){
+      const teacherColumn = appendTeacherSignatureColumnToReportMarkup(tableHeadHtml, tableBodyHtml, student, subjects, type);
+      tableHeadHtml = teacherColumn.headHtml;
+      tableBodyHtml = teacherColumn.bodyHtml;
+    }
+
     // Long names get a smaller script font-size so they never overflow the card width
     // (Brush Script's swashes/descenders are wide, so this stays conservative).
     const nameLen = (student.name||'').length;
@@ -3960,9 +3968,44 @@ function renderCertReportsCards(){
       </div>
     </div>`;
   }).join('');
-  addTeacherSignatureColumnToReportCards(holder, roster, type);
 }
 
+// Adds the Teacher signature column to the HTML fragments before a report card is
+// inserted into the document. All grade-specific table designs therefore stay in sync.
+function appendTeacherSignatureColumnToReportMarkup(headHtml, bodyHtml, student, subjects, reportType){
+  if(!['month1','month2','coursework'].includes(reportType)) return { headHtml, bodyHtml };
+  const template = document.createElement('template');
+  template.innerHTML = `<table><thead>${headHtml}</thead><tbody>${bodyHtml}</tbody></table>`;
+  const table = template.content.querySelector('table');
+  const headerRow = table && table.tHead && table.tHead.rows[0];
+  if(!table || !headerRow) return { headHtml, bodyHtml };
+
+  const header = document.createElement('th');
+  header.className = 'teacher-signature-th';
+  header.textContent = 'Teacher';
+  headerRow.appendChild(header);
+
+  Array.from(table.tBodies[0].rows).forEach(row=>{
+    const cell = document.createElement('td');
+    cell.className = 'teacher-signature-cell';
+    const isTotal = row.classList.contains('cert-subtotal-row') || row.classList.contains('cert2-total-row');
+    const firstCellText = row.cells[0] ? row.cells[0].textContent : '';
+    const subject = !isTotal ? subjects.find(s=> firstCellText.includes(s)) : null;
+    const teacherName = subject ? findSubjectTeacherName(certState.section, subject, student.classroom) : null;
+    if(teacherName){
+      const signature = document.createElement('span');
+      signature.className = 'teacher-signature-name';
+      signature.textContent = teacherName;
+      cell.appendChild(signature);
+    } else if(!isTotal){
+      cell.innerHTML = '<span class="teacher-signature-empty">—</span>';
+    }
+    row.appendChild(cell);
+  });
+  return { headHtml: table.tHead.innerHTML, bodyHtml: table.tBodies[0].innerHTML };
+}
+
+// Legacy post-render helper retained for compatibility with any existing callers.
 // Adds a subject teacher signature column to the three progress report formats.
 // Keeping this as a post-render enhancement lets every grade's specialised report-table
 // layout (Primary, Prep and Secondary) share the same accurate Teachers Database lookup.
