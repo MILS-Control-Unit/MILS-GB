@@ -1880,38 +1880,77 @@ function renderParentMotivationCards(mode, perSubject, band, weakestSubjects, se
   return html;
 }
 
+/* ---------- Dashboard icon set (stroke-style, same visual language as the top-nav icons) ---------- */
+const DB_ICONS = {
+  avg:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="13" width="3" height="5" fill="currentColor" stroke="none"/><rect x="12" y="9" width="3" height="9" fill="currentColor" stroke="none"/><rect x="17" y="5" width="3" height="13" fill="currentColor" stroke="none"/></svg>',
+  book:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
+  up:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
+  down:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>',
+  layers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>',
+  check:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+  percent:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.2"/><circle cx="17.5" cy="17.5" r="2.2"/></svg>',
+  alert:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+  pie:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>',
+  radar:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 19 8.5 16.5 20 7.5 20 5 8.5"/><line x1="12" y1="2" x2="12" y2="20"/><line x1="19" y1="8.5" x2="5" y2="8.5"/></svg>',
+  cap:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1 3 3 6 3s6-2 6-3v-5"/></svg>',
+  info:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+};
+/* Builds one redesigned stat card: colored icon badge + optional trend pill on top,
+   big number underneath, label below. trend = {dir:'up'|'down', text:'+0.35'} or null. */
+function dbStatCard(icon, color, value, suffix, label, trend){
+  const sfx = suffix ? `<small>${suffix}</small>` : '';
+  const trendHtml = trend ? `<span class="db-trend db-trend-${trend.dir==='up'?'up':'down'}">${DB_ICONS[trend.dir==='up'?'up':'down']}<small>${trend.text}</small></span>` : '';
+  return `<div class="db-stat-card">
+      <div class="db-stat-top">
+        <div class="db-stat-icon db-stat-${color}">${DB_ICONS[icon]||''}</div>
+        ${trendHtml}
+      </div>
+      <div class="db-stat-num">${value}${sfx}</div>
+      <div class="db-stat-label">${label}</div>
+    </div>`;
+}
+/* Small icon badge used before chart-card <h4> titles (replaces the old inline emoji). */
+function dbChartIcon(icon, color){
+  return `<span class="db-chart-icon db-stat-${color||'blue'}">${DB_ICONS[icon]||''}</span>`;
+}
+
+/* Dashboard-styled empty state: colored rounded icon badge instead of the app-wide gold seal emoji. */
+function dbEmptyState(icon, color, title, body){
+  return `<div class="empty-state db-empty-state"><div class="db-empty-icon db-stat-${color}">${DB_ICONS[icon]||''}</div><h3>${title}</h3><p>${body}</p></div>`;
+}
+
 function renderDashboardCharts(){
   const area = document.getElementById('dashboardChartsArea');
   if(!area) return;
   const { dashboardSection:section, dashboardStage:stage, dashboardGrade:grade, dashboardTerm:term, dashboardMode:mode, dashboardStudent:studentId } = state;
   if(!section || !stage || !grade){
-    area.innerHTML = `<div class="empty-state"><div class="seal-lg">📈</div><h3>Choose a class</h3><p>Select the Section, Stage and Grade above to view the Cycle 1 analysis.</p></div>`;
+    area.innerHTML = dbEmptyState('avg','blue','Choose a class','Select the Section, Stage and Grade above to view the Cycle 1 analysis.');
     return;
   }
   const preStats = computeCycleStats(section, stage, grade, term, studentId);
   if(preStats.junior){
-    area.innerHTML = `<div class="empty-state"><div class="seal-lg">ℹ️</div><h3>Not applicable</h3><p>Cycle scores are not recorded for Grade 1 &amp; Grade 2 Primary.</p></div>`;
+    area.innerHTML = dbEmptyState('info','amber','Not applicable','Cycle scores are not recorded for Grade 1 &amp; Grade 2 Primary.');
     return;
   }
   if(preStats.empty){
-    area.innerHTML = `<div class="empty-state"><div class="seal-lg">ℹ️</div><h3>No students</h3><p>There are no students registered for this class yet.</p></div>`;
+    area.innerHTML = dbEmptyState('info','amber','No students','There are no students registered for this class yet.');
     return;
   }
   if(!studentId){
-    area.innerHTML = `<div class="empty-state"><div class="seal-lg">🎓</div><h3>Choose a student</h3><p>Select the Classroom (optional) and Student above to view their Cycle analysis across all subjects.</p></div>`;
+    area.innerHTML = dbEmptyState('cap','gold','Choose a student','Select the Classroom (optional) and Student above to view their Cycle analysis across all subjects.');
     return;
   }
   const stats = preStats;
   const withData = stats.perSubject.filter(p=> p.hasV1 || p.hasV2);
   if(!withData.length){
-    area.innerHTML = `<div class="empty-state"><div class="seal-lg">ℹ️</div><h3>No Cycle marks yet</h3><p>No Cycle scores have been entered for <b>${escapeXml(stats.student.name)}</b> in ${TERM_LABELS[term]||'this term'}.</p></div>`;
+    area.innerHTML = dbEmptyState('info','amber','No Cycle marks yet', `No Cycle scores have been entered for <b>${escapeXml(stats.student.name)}</b> in ${TERM_LABELS[term]||'this term'}.`);
     return;
   }
 
   const isParent = isParentDashboardViewer();
   const badge = isParent ? getMotivationBadge(mode, withData) : null;
   const badgeHtml = badge ? `<span class="db-motivation-badge">${badge.icon} ${badge.label}</span>` : '';
-  const nameBanner = `<div class="db-student-banner"><span class="seal-lg" style="width:38px;height:38px;font-size:16px;">🎓</span><div><div class="db-student-name">${escapeXml(stats.student.name)}</div><div class="db-student-meta">${STAGES[stage].grades.find(g=>g.id===grade).label} • ${SECTIONS[section].label}${stats.student.classroom?' • '+escapeXml(stats.student.classroom):''}</div></div>${badgeHtml}</div>`;
+  const nameBanner = `<div class="db-student-banner"><span class="db-stat-icon db-stat-gold" style="width:38px;height:38px;">${DB_ICONS.cap}</span><div><div class="db-student-name">${escapeXml(stats.student.name)}</div><div class="db-student-meta">${STAGES[stage].grades.find(g=>g.id===grade).label} • ${SECTIONS[section].label}${stats.student.classroom?' • '+escapeXml(stats.student.classroom):''}</div></div>${badgeHtml}</div>`;
 
   let motivationHtml = '';
   if(isParent){
@@ -1978,23 +2017,23 @@ function renderCycle1View(perSubject, section, stage, grade, term, studentId){
 
   return `
     <div class="db-summary-row">
-      <div class="db-stat-card"><div class="db-stat-num">${overallAvg.toFixed(2)}<small>/5</small></div><div class="db-stat-label">Student's Average</div></div>
-      <div class="db-stat-card"><div class="db-stat-num">${vals.length}</div><div class="db-stat-label">Subjects Recorded</div></div>
+      ${dbStatCard('avg', 'blue', overallAvg.toFixed(2), '/5', "Student's Average")}
+      ${dbStatCard('book', 'gold', vals.length, null, 'Subjects Recorded')}
     </div>
     ${renderStrengthAlertCard('cycle1', perSubject)}
     ${renderSubjectTrendTable(perSubject, 'cycle1', section, stage, grade, term, studentId)}
     <div class="db-charts-grid">
       <div class="db-chart-card">
-        <h4>Cycle 1 — Student vs Class Average (Max 5)</h4>
+        <h4>${dbChartIcon('avg','blue')}Cycle 1 — Student vs Class Average (Max 5)</h4>
         ${barSvg}
       </div>
       <div class="db-chart-card">
-        <h4>Performance Distribution Across Subjects</h4>
+        <h4>${dbChartIcon('pie','gold')}Performance Distribution Across Subjects</h4>
         ${pieSvg}
         ${legendHtml(bandCounts)}
       </div>
       <div class="db-chart-card db-chart-full">
-        <h4>🕸️ Subject Balance (Radar) — Student vs Class Average</h4>
+        <h4>${dbChartIcon('radar','green')}Subject Balance (Radar) — Student vs Class Average</h4>
         ${radarSvg}
       </div>
     </div>`;
@@ -2030,25 +2069,25 @@ function renderCycleCompareView(perSubject){
 
   return `
     <div class="db-summary-row">
-      <div class="db-stat-card"><div class="db-stat-num">${a1.toFixed(2)}<small>/5</small></div><div class="db-stat-label">Cycle 1 Average</div></div>
-      <div class="db-stat-card"><div class="db-stat-num">${a2.toFixed(2)}<small>/5</small></div><div class="db-stat-label">Cycle 2 Average</div></div>
-      <div class="db-stat-card" style="color:${diff>=0?'var(--green)':'var(--red)'}"><div class="db-stat-num">${diff>=0?'+':''}${diff.toFixed(2)}</div><div class="db-stat-label">Change</div></div>
-      <div class="db-stat-card"><div class="db-stat-num">${total}</div><div class="db-stat-label">Subjects Compared</div></div>
+      ${dbStatCard('avg', 'blue', a1.toFixed(2), '/5', 'Cycle 1 Average')}
+      ${dbStatCard('avg', 'gold', a2.toFixed(2), '/5', 'Cycle 2 Average')}
+      ${dbStatCard(diff>=0?'up':'down', diff>=0?'green':'red', (diff>=0?'+':'')+diff.toFixed(2), null, 'Change')}
+      ${dbStatCard('layers', 'blue', total, null, 'Subjects Compared')}
     </div>
     ${renderStrengthAlertCard('cycle1vs2', perSubject)}
     ${renderSubjectTrendTable(perSubject, 'cycle1vs2')}
     <div class="db-charts-grid">
       <div class="db-chart-card">
-        <h4>Cycle 1 vs Cycle 2 per Subject (Max 5)</h4>
+        <h4>${dbChartIcon('avg','blue')}Cycle 1 vs Cycle 2 per Subject (Max 5)</h4>
         ${barSvg}
       </div>
       <div class="db-chart-card">
-        <h4>Progress: Cycle 1 → Cycle 2</h4>
+        <h4>${dbChartIcon('pie','gold')}Progress: Cycle 1 → Cycle 2</h4>
         ${pieSvg}
         ${legendHtml(pieData)}
       </div>
       <div class="db-chart-card db-chart-full">
-        <h4>🕸️ Subject Balance (Radar) — Cycle 1 vs Cycle 2</h4>
+        <h4>${dbChartIcon('radar','green')}Subject Balance (Radar) — Cycle 1 vs Cycle 2</h4>
         ${radarSvg}
       </div>
     </div>`;
@@ -4203,12 +4242,13 @@ function renderMarkEntryReport(){
         </tr>`;
   });
 
+  const overallColorKey = overallPct>=95 ? 'green' : overallPct>=75 ? 'blue' : overallPct>=50 ? 'amber' : 'red';
   holder.innerHTML = `
     <div class="db-summary-row">
-      <div class="db-stat-card"><div class="db-stat-num">${grandEntered}<small>/${grandTotal}</small></div><div class="db-stat-label">Cells Entered</div></div>
-      <div class="db-stat-card" style="color:${overallColor.fg}"><div class="db-stat-num">${overallPct}%</div><div class="db-stat-label">Overall Completion</div></div>
-      <div class="db-stat-card" style="color:var(--red)"><div class="db-stat-num">${overallEmpty}</div><div class="db-stat-label">Empty Cells</div></div>
-      <div class="db-stat-card"><div class="db-stat-num">${subjectBlocks.length}</div><div class="db-stat-label">Subjects Tracked</div></div>
+      ${dbStatCard('check', 'blue', grandEntered, '/'+grandTotal, 'Cells Entered')}
+      ${dbStatCard('percent', overallColorKey, overallPct+'%', null, 'Overall Completion')}
+      ${dbStatCard('alert', 'red', overallEmpty, null, 'Empty Cells')}
+      ${dbStatCard('layers', 'gold', subjectBlocks.length, null, 'Subjects Tracked')}
     </div>
     <table class="mark-entry-table">
       <thead>
