@@ -8756,15 +8756,69 @@ function renderTeachersAndClasses(){
     return name;
   });
 
+  teacherAssignmentConflicts = [];
+
   const rows = subjects.map(subject=>{
     const cells = classrooms.map(classroom=>{
       const assigned = teacherFor(subject, classroom);
-      return `<td class="teacher-class-cell ${assigned.length ? 'assigned' : 'unassigned'}">${assigned.length ? assigned.map(escapeHtml).join('<br>') : '<span>—</span>'}</td>`;
+      const hasConflict = assigned.length > 1;
+      // A subject should normally have exactly one teacher per classroom. More than one
+      // match here means two (or more) rows in the Teachers Database both claim this
+      // exact subject+classroom combo — almost always a data entry issue (duplicate or
+      // wrongly-assigned classes), not something the matrix itself can safely resolve.
+      // Flag it visibly instead of silently picking one, so it gets reviewed and fixed
+      // at the source (Teachers Database) rather than hidden.
+      const cellClass = assigned.length ? (hasConflict ? 'assigned conflict' : 'assigned') : 'unassigned';
+      const title = hasConflict
+        ? `title="⚠ تعارض: أكثر من مدرّس مسجّل لنفس المادة والفصل — ${assigned.map(n=>escapeHtml(n)).join(' + ')}. راجع Teachers Database."`
+        : '';
+      const style = hasConflict ? 'style="background:#fff3cd;border:1.5px solid #e0a800;"' : '';
+      const content = assigned.length
+        ? (hasConflict ? `⚠ ${assigned.map(escapeHtml).join('<br>⚠ ')}` : assigned.map(escapeHtml).join('<br>'))
+        : '<span>—</span>';
+      if(hasConflict){
+        teacherAssignmentConflicts.push({ subject, classroom, section: sectionLabel, teachers: assigned.slice() });
+      }
+      return `<td class="teacher-class-cell ${cellClass}" ${title} ${style}>${content}</td>`;
     }).join('');
     return `<tr><th scope="row" class="teacher-class-subject">${escapeHtml(subject)}</th>${cells}</tr>`;
   }).join('');
 
   holder.innerHTML = `<table class="teacher-classes-table"><thead><tr><th class="teacher-class-subject">Subject</th>${classrooms.map(c=>`<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+
+  if(teacherAssignmentConflicts.length){
+    count.innerHTML = `${subjects.length} subjects · ${classrooms.length} classes · <span style="color:#b8860b;font-weight:600;cursor:pointer;text-decoration:underline;" onclick="showTeacherAssignmentConflicts()">⚠ ${teacherAssignmentConflicts.length} تعارض(ات) — اضغط للمراجعة</span>`;
+  }
+}
+
+// Populated fresh on every renderTeachersAndClasses() call (see above) with every
+// subject+classroom combo currently matched to more than one teacher, so it always
+// reflects only what's visible in the matrix right now.
+let teacherAssignmentConflicts = [];
+
+// Shows the current section/stage/grade's teacher-assignment conflicts (if any) in the
+// existing bulk-import result overlay, so the admin gets a plain-language list of exactly
+// which subject+classroom combos need fixing in the Teachers Database, and why.
+function showTeacherAssignmentConflicts(){
+  const overlay = document.getElementById('importResultOverlay');
+  const titleEl = document.getElementById('importTitle');
+  const msgEl = document.getElementById('importMsg');
+  if(!overlay || !titleEl || !msgEl){
+    alert(teacherAssignmentConflicts.map(c=>`${c.subject} — ${c.classroom}: ${c.teachers.join(' + ')}`).join('\n'));
+    return;
+  }
+  if(!teacherAssignmentConflicts.length){
+    titleEl.textContent = 'No Conflicts';
+    msgEl.innerHTML = 'لا يوجد تعارض حاليًا في هذا الفصل/الصف.';
+  } else {
+    titleEl.textContent = 'Teacher Assignment Conflicts';
+    msgEl.innerHTML = `<b>${teacherAssignmentConflicts.length} تعارض تم رصده — نفس المادة والفصل مسجّلين لأكثر من مدرّس:</b><br><br>` +
+      teacherAssignmentConflicts.map(c=>
+        `• <b>${escapeHtml(c.subject)}</b> — ${escapeHtml(c.classroom)}: ${c.teachers.map(escapeHtml).join(' + ')}`
+      ).join('<br>') +
+      `<br><br>الحل: افتح <b>Teachers Database</b> وشوف كل واحد من المدرّسين دول، وشيل الفصل ده من "Classes" بتاعة اللي مش بيدرّس المادة دي فعليًا في هذا الفصل.`;
+  }
+  overlay.classList.add('show');
 }
 
 function exportTeachersDatabase(){
@@ -14295,6 +14349,20 @@ function renderUsersTable(){
       : (u.role==='teacher'
         ? `${(u.subjects||[]).length} subject(s), ${(u.classrooms||[]).length} class(es)`
         : (u.role==='hod' ? 'Entire department' : (u.role==='hos' ? 'Relevant stages' : 'Full system access')));
+    // Names of the student(s) linked to a Parent/Student account, for the dedicated
+    // "Student(s)" column (u.studentIds only stores ids, so resolve against the live
+    // student roster). Falls back to '—' for non-parent rows or unresolved ids.
+    const linkedStudentNames = u.role==='parent'
+      ? (Array.isArray(u.studentIds) && u.studentIds.length
+          ? (() => {
+              const flat = allStudentsFlat();
+              const names = u.studentIds
+                .map(id => { const s = flat.find(x=>x.id===id); return s ? s.name : null; })
+                .filter(Boolean);
+              return names.length ? names.join(', ') : '—';
+            })()
+          : '—')
+      : '—';
     const isProtected = u.username==='admin' || (currentUser && currentUser.username===u.username);
     // The list is already sorted by role (see usersMatchingCurrentFilter), so a role
     // change here means a new group is starting — drop in a labeled header row above it.
@@ -14303,7 +14371,7 @@ function renderUsersTable(){
       lastRole = u.role;
       lastTeacherSubjectKey = null; // reset so the first teacher subject also gets a subheader
       const count = list.filter(x=>x.role===u.role).length;
-      groupHeader = `<tr class="user-group-row"><td colspan="7" style="padding:8px 10px;font-weight:600;background:rgba(0,0,0,0.04);">${ROLE_LABELS[u.role]||u.role} <span style="font-weight:400;opacity:.7;">(${count})</span></td></tr>`;
+      groupHeader = `<tr class="user-group-row"><td colspan="8" style="padding:8px 10px;font-weight:600;background:rgba(0,0,0,0.04);">${ROLE_LABELS[u.role]||u.role} <span style="font-weight:400;opacity:.7;">(${count})</span></td></tr>`;
     }
     // Within the Teacher group, also break out a subheader per Section + Subject(s)
     // combo (matches the Section→Subject→Name order applied in usersMatchingCurrentFilter),
@@ -14315,7 +14383,7 @@ function renderUsersTable(){
       if(subjectKey !== lastTeacherSubjectKey){
         lastTeacherSubjectKey = subjectKey;
         const subjCount = list.filter(x=> x.role==='teacher' && (x.section?SECTIONS[x.section].label:'Both')===sectionLabel && ((x.subjects||[]).length?x.subjects.join(', '):'—')===subjectsLabel).length;
-        subjectHeader = `<tr class="user-subgroup-row"><td colspan="7" style="padding:6px 10px 6px 26px;font-weight:500;font-size:0.9em;opacity:.85;background:rgba(0,0,0,0.02);">${escapeHtml(sectionLabel)} · ${escapeHtml(subjectsLabel)} <span style="font-weight:400;opacity:.7;">(${subjCount})</span></td></tr>`;
+        subjectHeader = `<tr class="user-subgroup-row"><td colspan="8" style="padding:6px 10px 6px 26px;font-weight:500;font-size:0.9em;opacity:.85;background:rgba(0,0,0,0.02);">${escapeHtml(sectionLabel)} · ${escapeHtml(subjectsLabel)} <span style="font-weight:400;opacity:.7;">(${subjCount})</span></td></tr>`;
       }
     }
     return `${groupHeader}${subjectHeader}
@@ -14326,6 +14394,7 @@ function renderUsersTable(){
         <td><span class="perm-pill">${ROLE_LABELS[u.role]||u.role}</span></td>
         <td>${sectionLabel}</td>
         <td>${scopeInfo}</td>
+        <td>${escapeHtml(linkedStudentNames)}</td>
         <td class="row-actions">
           <button class="edit-a" onclick="editUser('${u.username}')">Edit</button>
           <button class="del-a" onclick="deleteUserRow('${u.username}')">Delete</button>
