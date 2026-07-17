@@ -375,7 +375,9 @@ function findSubjectTeacherName(section, subject, classroom){
     const classList = (t.classes||'').split(',').map(c=>c.trim()).filter(Boolean);
     return classList.includes(classroom);
   });
-  return t ? t.name : null;
+  // ✅ FIXED: Clean teacher name - remove newlines, normalize whitespace
+  const name = t ? ((t.name||'').replace(/[\n\r\t]/g, ' ').replace(/\s+/g, ' ').trim()) : null;
+  return name;
 }
 
 // Looks up the Head of Department for a subject + stage within a section, from the Manage
@@ -619,7 +621,7 @@ function makeStepConfig(st, sectionsData, stagesData){
     },
     requires:['termPeriod','section','stage','grade','term'] };
   const subjectStep = { key:'subject', title:'Subject', state: st, getLabel:()=> st.subject ? subjectWithIcon(st.subject) : null,
-    options: ()=> st.stage ? getSubjectsForStageAndSection(st.stage, st.section).filter(s=>scopeSubjectAllowed(s)).map(s=>({id:s,label:subjectWithIcon(s)})) : [], requires:['termPeriod','section','stage','grade','term','academicTerm'] };
+    options: ()=> st.stage ? getSubjectsForStageAndSection(st.stage, st.section).filter(s=>scopeSubjectAllowedForClassroom(s, st.term)).map(s=>({id:s,label:subjectWithIcon(s)})) : [], requires:['termPeriod','section','stage','grade','term','academicTerm'] };
 
   // Teachers only ever have one Section, and a fixed, pre-assigned set of Classes/Subjects —
   // making them click through Stage and Grade first (even though those dropdowns only ever
@@ -673,7 +675,7 @@ function attStepConfig(){
   const subjectStep = {
     key:'subject', title:'Subject', state: attState,
     getLabel:()=> attState.subject ? subjectWithIcon(attState.subject) : null,
-    options: ()=> attState.stage ? getSubjectsForStageAndSection(attState.stage, attState.section).filter(s=>scopeSubjectAllowed(s)).map(s=>({id:s,label:subjectWithIcon(s)})) : [],
+    options: ()=> attState.stage ? getSubjectsForStageAndSection(attState.stage, attState.section).filter(s=>scopeSubjectAllowedForClassroom(s, attState.term)).map(s=>({id:s,label:subjectWithIcon(s)})) : [],
     requires:['termPeriod','section','stage','grade','term']
   };
   const monthStep = {
@@ -6986,48 +6988,22 @@ function mergeActivityLogEntries(remoteArr, localArr){
   return Object.values(map).sort((a,b)=> b.ts-a.ts).slice(0, ACTIVITY_LOG_MAX);
 }
 
-async function pushMergedToFirestore(){
+// ---- pushMainDoc(): students/scores/attendance/activityLog/config — NO teachers, NO users.
+// Editing a Teacher or a Parent/Student account never reaches this function or this
+// document at all anymore (see pushTeachersDoc/pushUsersDocs below).
+async function pushMainDoc(){
   try{
     let newVersion = 0;
     await fbDb.runTransaction(async (tx)=>{
       const snap = await tx.get(FB_DOC_REF);
       const remote = (snap.exists ? snap.data() : null) || {};
       newVersion = (remote.dataVersion || 0) + 1;
-      // Union of every teacher ID either device has deleted, so a deletion made on THIS
-      // device isn't silently re-added just because the server's copy of `teachers`
-      // (from before the deletion reached it) still contains that row.
-      // EXCEPT: if a teacher id currently exists in our own in-memory `teachers` (this
-      // device just added/re-added them), that row wins over any stale tombstone —
-      // otherwise a teacher re-added under an id/username that was ever deleted in the
-      // past (on this device or another) would get silently stripped back out by this
-      // very push, the moment the merge below filters it against the tombstone list.
-      const currentTeacherIds = new Set(teachers.map(t=>t.id));
-      const mergedDeletedTeacherIds = Array.from(new Set([...(remote.deletedTeacherIds||[]), ...deletedTeacherIds]))
-        .filter(id => !currentTeacherIds.has(id));
-      const mergedTeachers = mergeArrayById(remote.teachers, teachers, 'id')
-        .filter(t=> !mergedDeletedTeacherIds.includes(t.id));
-      // Union of every username either device has deleted, same reasoning as teachers above —
-      // and the same fix: a username currently present in our own `users` array (just
-      // added/re-added, e.g. via a fresh Excel import) is excluded from the tombstone list
-      // instead of being blindly unioned back in from the server's older copy. Without this,
-      // re-importing a username that had EVER been deleted (even long ago, even on another
-      // device) would silently vanish again the moment this very push round-trips.
-      const currentUsernamesSet = new Set(users.map(u=>u.username));
-      const mergedDeletedUsernames = Array.from(new Set([...(remote.deletedUsernames||[]), ...deletedUsernames]))
-        .filter(u => !currentUsernamesSet.has(u));
-      const mergedUsers = mergeArrayById(remote.users, users, 'username')
-        .filter(u=> !mergedDeletedUsernames.includes(u.username));
       const merged = {
         students: mergeObjectField(remote.students, students),
         scores: mergeObjectField(remote.scores, scores),
         attendance: mergeObjectField(remote.attendance, attendance),
         approvedLeave: mergeObjectField(remote.approvedLeave, approvedLeave),
         studentIdCounter: Math.max(remote.studentIdCounter||1, studentIdCounter||1),
-        teachers: mergedTeachers,
-        deletedTeacherIds: mergedDeletedTeacherIds,
-        teacherIdCounter: Math.max(remote.teacherIdCounter||1, teacherIdCounter||1),
-        users: mergedUsers,
-        deletedUsernames: mergedDeletedUsernames,
         activityLog: mergeActivityLogEntries(remote.activityLog, activityLog),
         termMonthDates: termMonthDates || remote.termMonthDates || null,
         examSchedules: examSchedules || remote.examSchedules || null,
@@ -7057,22 +7033,145 @@ async function pushMergedToFirestore(){
     fbLastPushedAt = Date.now();
     return true;
   }catch(err){
-    console.warn('Firestore merged push failed', err);
+    console.warn('Firestore main-doc push failed', err);
     return false;
   }
 }
 
-// pushMergedToFirestore() already retries internally (the Firestore SDK backs off and
-// retries a transaction a handful of times on its own when it detects contention on the
-// document), but under sustained concurrent load on this single shared document those
-// internal retries can still be exhausted, surfacing as a `failed-precondition` error and
-// leaving whatever was just added/imported stranded in memory only — never reaching the
-// server. Wrap it in a few more attempts with a growing delay so a temporary traffic spike
+// ---- pushTeachersDoc(): Teachers Database only, its own document, its own transaction.
+// Adding/editing/deleting a Teacher no longer touches Students/Scores/Attendance/Users at all.
+async function pushTeachersDoc(){
+  try{
+    let newVersion = 0;
+    await fbDb.runTransaction(async (tx)=>{
+      const snap = await tx.get(FB_TEACHERS_DOC_REF);
+      const remote = (snap.exists ? snap.data() : null) || {};
+      newVersion = (remote.dataVersion || 0) + 1;
+      // Union of every teacher ID either device has deleted, so a deletion made on THIS
+      // device isn't silently re-added just because the server's copy of `teachers`
+      // (from before the deletion reached it) still contains that row.
+      // EXCEPT: if a teacher id currently exists in our own in-memory `teachers` (this
+      // device just added/re-added them), that row wins over any stale tombstone —
+      // otherwise a teacher re-added under an id/username that was ever deleted in the
+      // past (on this device or another) would get silently stripped back out by this
+      // very push, the moment the merge below filters it against the tombstone list.
+      //
+      // SAFETY GUARD (added after an incident where the entire Teachers Database was
+      // wiped with zero activity-log entries): a device whose in-memory `teachers` is
+      // empty while the server's copy is NOT empty has, by definition, either not
+      // finished loading real data yet or lost it locally — it must never be allowed to
+      // "vote" on which teacher ids are tombstoned. Before this guard, such a device
+      // would contribute an empty `currentTeacherIds` set, so nothing was excluded from
+      // the tombstone union; if that device's local `deletedTeacherIds` (loaded from an
+      // old/incorrect localStorage snapshot) happened to already contain every teacher
+      // id, this push would tombstone — and filter out — the server's entire, correct
+      // teachers list in one shot, with no deleteTeacherFromDb()/bulk-delete call ever
+      // running, hence no activity-log trace. When this fires, this push simply leaves
+      // teachers/deletedTeacherIds exactly as the server already has them, untouched.
+      const remoteTeachersCount = (remote.teachers||[]).length;
+      let mergedTeachers, mergedDeletedTeacherIds;
+      if(teachers.length===0 && remoteTeachersCount>0){
+        console.warn('pushTeachersDoc: local teachers is empty but server has '+remoteTeachersCount+' — skipping this push to avoid wiping the server copy.');
+        mergedTeachers = remote.teachers;
+        mergedDeletedTeacherIds = remote.deletedTeacherIds || [];
+      }else{
+        const currentTeacherIds = new Set(teachers.map(t=>t.id));
+        mergedDeletedTeacherIds = Array.from(new Set([...(remote.deletedTeacherIds||[]), ...deletedTeacherIds]))
+          .filter(id => !currentTeacherIds.has(id));
+        mergedTeachers = mergeArrayById(remote.teachers, teachers, 'id')
+          .filter(t=> !mergedDeletedTeacherIds.includes(t.id));
+      }
+      tx.set(FB_TEACHERS_DOC_REF, {
+        teachers: mergedTeachers,
+        deletedTeacherIds: mergedDeletedTeacherIds,
+        teacherIdCounter: Math.max(remote.teacherIdCounter||1, teacherIdCounter||1),
+        dataVersion: newVersion,
+        savedAt: new Date().toISOString()
+      });
+    });
+    knownTeachersVersion = Math.max(knownTeachersVersion, newVersion);
+    fbLastPushedAt = Date.now();
+    return true;
+  }catch(err){
+    console.warn('Firestore teachers-doc push failed', err);
+    return false;
+  }
+}
+
+// ---- pushUsersDocs(): Manage Users, split into two documents by CURRENT role — Staff
+// (admin/hos/hod/teacher) in one document, Parents/Students in the other. The in-memory
+// `users` array stays a single combined list everywhere else in the app; only this push
+// (and its matching pull/listener logic) knows about the two-document split.
+// A role change (e.g. Teacher -> Parent) simply moves that row to the other document on
+// the next push — tombstones are unioned across BOTH remote documents so a stale delete
+// from either side can never resurrect a row on the other.
+async function pushUsersDocs(){
+  try{
+    let newStaffVersion = 0, newParentVersion = 0;
+    await fbDb.runTransaction(async (tx)=>{
+      const staffSnap = await tx.get(FB_STAFF_USERS_DOC_REF);
+      const parentSnap = await tx.get(FB_PARENT_USERS_DOC_REF);
+      const remoteStaff = (staffSnap.exists ? staffSnap.data() : null) || {};
+      const remoteParent = (parentSnap.exists ? parentSnap.data() : null) || {};
+      newStaffVersion = (remoteStaff.dataVersion || 0) + 1;
+      newParentVersion = (remoteParent.dataVersion || 0) + 1;
+
+      const remoteDeletedUsernames = Array.from(new Set([
+        ...(remoteStaff.deletedUsernames||[]), ...(remoteParent.deletedUsernames||[])
+      ]));
+      const remoteUsersCombinedCount = (remoteStaff.users||[]).length + (remoteParent.users||[]).length;
+
+      let mergedStaffUsers, mergedParentUsers, mergedDeletedUsernames;
+      // SAFETY GUARD, same reasoning as pushTeachersDoc above: an unloaded/empty local
+      // `users` array must never be allowed to tombstone a non-empty remote list.
+      if(users.length===0 && remoteUsersCombinedCount>0){
+        console.warn('pushUsersDocs: local users is empty but server has '+remoteUsersCombinedCount+' — skipping this push to avoid wiping the server copy.');
+        mergedStaffUsers = remoteStaff.users || [];
+        mergedParentUsers = remoteParent.users || [];
+        mergedDeletedUsernames = remoteDeletedUsernames;
+      }else{
+        const currentUsernamesSet = new Set(users.map(u=>u.username));
+        mergedDeletedUsernames = Array.from(new Set([...remoteDeletedUsernames, ...deletedUsernames]))
+          .filter(u => !currentUsernamesSet.has(u));
+        const allRemoteUsers = [...(remoteStaff.users||[]), ...(remoteParent.users||[])];
+        const mergedAll = mergeArrayById(allRemoteUsers, users, 'username')
+          .filter(u=> !mergedDeletedUsernames.includes(u.username));
+        // Split by CURRENT role — this is what actually relocates a username between the
+        // two documents the moment its role changes.
+        mergedStaffUsers = mergedAll.filter(u=> u.role!=='parent');
+        mergedParentUsers = mergedAll.filter(u=> u.role==='parent');
+      }
+
+      tx.set(FB_STAFF_USERS_DOC_REF, {
+        users: mergedStaffUsers, deletedUsernames: mergedDeletedUsernames,
+        dataVersion: newStaffVersion, savedAt: new Date().toISOString()
+      });
+      tx.set(FB_PARENT_USERS_DOC_REF, {
+        users: mergedParentUsers, deletedUsernames: mergedDeletedUsernames,
+        dataVersion: newParentVersion, savedAt: new Date().toISOString()
+      });
+    });
+    knownStaffUsersVersion = Math.max(knownStaffUsersVersion, newStaffVersion);
+    knownParentUsersVersion = Math.max(knownParentUsersVersion, newParentVersion);
+    fbLastPushedAt = Date.now();
+    return true;
+  }catch(err){
+    console.warn('Firestore users-docs push failed', err);
+    return false;
+  }
+}
+
+// A transaction already retries internally (the Firestore SDK backs off and retries a
+// transaction a handful of times on its own when it detects contention on the document),
+// but under sustained concurrent load those internal retries can still be exhausted,
+// surfacing as a `failed-precondition` error and leaving whatever was just added/imported
+// stranded in memory only — never reaching the server. Wrap any of the three push
+// functions above in a few more attempts with a growing delay so a temporary traffic spike
 // doesn't turn into permanent, invisible data loss the way it did before.
-async function pushMergedToFirestoreWithRetry(maxAttempts){
+async function pushWithRetry(pushFn, maxAttempts){
   maxAttempts = maxAttempts || 4;
   for(let attempt=1; attempt<=maxAttempts; attempt++){
-    const ok = await pushMergedToFirestore();
+    const ok = await pushFn();
     if(ok) return true;
     if(attempt<maxAttempts){
       const delayMs = 1000 * attempt; // 1s, 2s, 3s...
@@ -7081,14 +7180,18 @@ async function pushMergedToFirestoreWithRetry(maxAttempts){
   }
   return false;
 }
+async function pushMainDocWithRetry(maxAttempts){ return pushWithRetry(pushMainDoc, maxAttempts); }
+async function pushTeachersDocWithRetry(maxAttempts){ return pushWithRetry(pushTeachersDoc, maxAttempts); }
+async function pushUsersDocsWithRetry(maxAttempts){ return pushWithRetry(pushUsersDocs, maxAttempts); }
 
-// Pushes the full shared dataset to Firestore, merged with whatever the
-// server currently holds (see pushMergedToFirestore above) — but bypasses
-// the "auto-sync enabled" toggle, since this manual button IS the sync
-// mechanism for the Grade Book now, not an extra pathway running alongside
-// the old automatic one.
+// Pushes the Grade Book's own document (students/scores/attendance/config — see
+// pushMainDoc above) merged with whatever the server currently holds — but bypasses
+// the "auto-sync enabled" toggle, since this manual button IS the sync mechanism for
+// the Grade Book now, not an extra pathway running alongside the old automatic one.
+// Deliberately does NOT touch the Teachers or Users documents — Grade Book Save only
+// ever needs to persist Grade Book data.
 async function pushGradeBookToFirestore(){
-  const ok = await pushMergedToFirestoreWithRetry();
+  const ok = await pushMainDocWithRetry();
   if(currentUser && currentUser.role==='admin') setSyncStatus(ok ? 'synced' : 'error');
   if(!ok){
     console.warn('Grade Book manual save failed after retries');
@@ -7124,7 +7227,7 @@ function showGbToast(type, text){
 // Closing/hard-refreshing during that window used to silently lose the edit.
 window.addEventListener('beforeunload', function(e){
   flushLocalSave(); // force through any edit still sitting in the 500ms debounce window
-  if(gbUnsavedChanges || pendingFirestorePush){ e.preventDefault(); e.returnValue = ''; }
+  if(gbUnsavedChanges || pendingFirestorePush || pendingTeachersPush || pendingUsersPush){ e.preventDefault(); e.returnValue = ''; }
 });
 
 function downloadBackup(){
@@ -8239,7 +8342,7 @@ function addTeacherManual(){
   // scheduleGithubPush(). If a remote snapshot arrived (another device, or this device's
   // own page reload) before that button was pressed, the newly added teacher would be
   // silently overwritten by the older server copy. Push immediately so it can't be lost.
-  scheduleGithubPush();
+  scheduleTeachersPush();
   logActivity('add', `Added teacher "${name}" to the Teachers Database`);
 }
 
@@ -8257,7 +8360,7 @@ function deleteTeacherFromDb(id){
   if(!deletedTeacherIds.includes(id)) deletedTeacherIds.push(id);
   renderTeachersDatabase();
   saveState();
-  scheduleGithubPush(); // push the deletion tombstone immediately (see addTeacherManual note)
+  scheduleTeachersPush(); // push the deletion tombstone immediately (see addTeacherManual note)
   logActivity('delete', `Permanently deleted teacher "${removedName}" from the Teachers Database`);
 }
 
@@ -8272,7 +8375,7 @@ function updateTeacherField(id, field, value){
   if(!t) return;
   t[field] = value;
   saveState();
-  scheduleGithubPush(); // see addTeacherManual note
+  scheduleTeachersPush(); // see addTeacherManual note
 
   // Name, Section and Subject are the sort keys for the table (Section → Subject → Name),
   // so re-render after editing any of them to reflect the teacher's new position. Other
@@ -8314,7 +8417,7 @@ function toggleTeacherClassSelection(id, checkboxEl){
   const selected = panel ? Array.from(panel.querySelectorAll('input[type="checkbox"]:checked')).map(cb=>cb.value) : [];
   t.classes = selected.join(', ');
   saveState();
-  scheduleGithubPush(); // see addTeacherManual note
+  scheduleTeachersPush(); // see addTeacherManual note
 
   const dd = document.getElementById('tcDD_'+id);
   const toggleBtn = dd ? dd.querySelector('.teacher-classes-toggle') : null;
@@ -8347,7 +8450,7 @@ function deleteSelectedTeachers(){
   ids.forEach(id=>{ if(!deletedTeacherIds.includes(id)) deletedTeacherIds.push(id); });
   renderTeachersDatabase();
   saveState();
-  scheduleGithubPush(); // push the deletion tombstones immediately (see addTeacherManual note)
+  scheduleTeachersPush(); // push the deletion tombstones immediately (see addTeacherManual note)
   logActivity('delete', `Permanently deleted ${ids.length} teacher(s) from the Teachers Database`);
 }
 
@@ -8387,7 +8490,7 @@ function syncTeachersFromUserAccounts(){
   });
 
   saveState();
-  scheduleGithubPush(); // see addTeacherManual note
+  scheduleTeachersPush(); // see addTeacherManual note
   renderTeachersDatabase();
   logActivity('edit', `Synced Teachers Database from Teacher/HOD accounts (${added} added, ${updated} refreshed)`);
   alert(`Sync complete: ${added} new row(s) added, ${updated} existing row(s) refreshed from Manage Users.`);
@@ -8448,7 +8551,7 @@ function dedupeTeachersDatabase(){
   if(removedCount>0){
     teachers = survivors;
     saveState();
-    scheduleGithubPush();
+    scheduleTeachersPush();
     logActivity('edit', `Auto-merged ${removedCount} duplicate Teachers Database row(s) left over from a sync conflict`);
   }
   return removedCount;
@@ -8647,17 +8750,75 @@ function renderTeachersAndClasses(){
     const teacherSubjects = (t.subject||'').split(/[,;]/).map(s=>s.trim()).filter(Boolean);
     const teacherClasses = (t.classes||'').split(',').map(c=>c.trim()).filter(Boolean);
     return teacherSubjects.includes(subject) && teacherClasses.includes(classroom);
-  }).map(t=>t.name||t.displayId||'—');
+  }).map(t => {
+    // ✅ FIXED: Clean teacher name - remove newlines, tabs, normalize spaces
+    const name = ((t.name||'').replace(/[\n\r\t]/g, ' ').replace(/\s+/g, ' ').trim()) || t.displayId || '—';
+    return name;
+  });
+
+  teacherAssignmentConflicts = [];
 
   const rows = subjects.map(subject=>{
     const cells = classrooms.map(classroom=>{
       const assigned = teacherFor(subject, classroom);
-      return `<td class="teacher-class-cell ${assigned.length ? 'assigned' : 'unassigned'}">${assigned.length ? assigned.map(escapeHtml).join('<br>') : '<span>—</span>'}</td>`;
+      const hasConflict = assigned.length > 1;
+      // A subject should normally have exactly one teacher per classroom. More than one
+      // match here means two (or more) rows in the Teachers Database both claim this
+      // exact subject+classroom combo — almost always a data entry issue (duplicate or
+      // wrongly-assigned classes), not something the matrix itself can safely resolve.
+      // Flag it visibly instead of silently picking one, so it gets reviewed and fixed
+      // at the source (Teachers Database) rather than hidden.
+      const cellClass = assigned.length ? (hasConflict ? 'assigned conflict' : 'assigned') : 'unassigned';
+      const title = hasConflict
+        ? `title="⚠ تعارض: أكثر من مدرّس مسجّل لنفس المادة والفصل — ${assigned.map(n=>escapeHtml(n)).join(' + ')}. راجع Teachers Database."`
+        : '';
+      const style = hasConflict ? 'style="background:#fff3cd;border:1.5px solid #e0a800;"' : '';
+      const content = assigned.length
+        ? (hasConflict ? `⚠ ${assigned.map(escapeHtml).join('<br>⚠ ')}` : assigned.map(escapeHtml).join('<br>'))
+        : '<span>—</span>';
+      if(hasConflict){
+        teacherAssignmentConflicts.push({ subject, classroom, section: sectionLabel, teachers: assigned.slice() });
+      }
+      return `<td class="teacher-class-cell ${cellClass}" ${title} ${style}>${content}</td>`;
     }).join('');
     return `<tr><th scope="row" class="teacher-class-subject">${escapeHtml(subject)}</th>${cells}</tr>`;
   }).join('');
 
   holder.innerHTML = `<table class="teacher-classes-table"><thead><tr><th class="teacher-class-subject">Subject</th>${classrooms.map(c=>`<th>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+
+  if(teacherAssignmentConflicts.length){
+    count.innerHTML = `${subjects.length} subjects · ${classrooms.length} classes · <span style="color:#b8860b;font-weight:600;cursor:pointer;text-decoration:underline;" onclick="showTeacherAssignmentConflicts()">⚠ ${teacherAssignmentConflicts.length} تعارض(ات) — اضغط للمراجعة</span>`;
+  }
+}
+
+// Populated fresh on every renderTeachersAndClasses() call (see above) with every
+// subject+classroom combo currently matched to more than one teacher, so it always
+// reflects only what's visible in the matrix right now.
+let teacherAssignmentConflicts = [];
+
+// Shows the current section/stage/grade's teacher-assignment conflicts (if any) in the
+// existing bulk-import result overlay, so the admin gets a plain-language list of exactly
+// which subject+classroom combos need fixing in the Teachers Database, and why.
+function showTeacherAssignmentConflicts(){
+  const overlay = document.getElementById('importResultOverlay');
+  const titleEl = document.getElementById('importTitle');
+  const msgEl = document.getElementById('importMsg');
+  if(!overlay || !titleEl || !msgEl){
+    alert(teacherAssignmentConflicts.map(c=>`${c.subject} — ${c.classroom}: ${c.teachers.join(' + ')}`).join('\n'));
+    return;
+  }
+  if(!teacherAssignmentConflicts.length){
+    titleEl.textContent = 'No Conflicts';
+    msgEl.innerHTML = 'لا يوجد تعارض حاليًا في هذا الفصل/الصف.';
+  } else {
+    titleEl.textContent = 'Teacher Assignment Conflicts';
+    msgEl.innerHTML = `<b>${teacherAssignmentConflicts.length} تعارض تم رصده — نفس المادة والفصل مسجّلين لأكثر من مدرّس:</b><br><br>` +
+      teacherAssignmentConflicts.map(c=>
+        `• <b>${escapeHtml(c.subject)}</b> — ${escapeHtml(c.classroom)}: ${c.teachers.map(escapeHtml).join(' + ')}`
+      ).join('<br>') +
+      `<br><br>الحل: افتح <b>Teachers Database</b> وشوف كل واحد من المدرّسين دول، وشيل الفصل ده من "Classes" بتاعة اللي مش بيدرّس المادة دي فعليًا في هذا الفصل.`;
+  }
+  overlay.classList.add('show');
 }
 
 function exportTeachersDatabase(){
@@ -8726,20 +8887,24 @@ function importTeachersExcel(file){
         const classes = getField(row, ['Classes','Class']);
 
         if(!name){ problems.push(`Row ${idx+2}: missing teacher name`); return; }
+        
+        // ✅ FIXED: Clean teacher name - remove newlines, tabs, normalize spaces
+        const cleanName = name.replace(/[\n\r\t]/g, ' ').replace(/\s+/g, ' ').trim();
+        
         const section = findTeacherSection(sectionLabel);
-        if(!section){ problems.push(`${name}: unrecognized "Section" value ("${sectionLabel}") — must be English, French or Both`); return; }
+        if(!section){ problems.push(`${cleanName}: unrecognized "Section" value ("${sectionLabel}") — must be English, French or Both`); return; }
 
-        const key = dupKey(name, section);
+        const key = dupKey(cleanName, section);
         if(existingKeys.has(key)){
           skippedDuplicates++;
-          problems.push(`${name} (${section}): already exists — skipped to avoid a duplicate`);
+          problems.push(`${cleanName} (${section}): already exists — skipped to avoid a duplicate`);
           return;
         }
         existingKeys.add(key);
 
-        if(!subject){ problems.push(`${name}: no "Subject" value found in this row — added with Subject left blank, please fill it in manually`); }
+        if(!subject){ problems.push(`${cleanName}: no "Subject" value found in this row — added with Subject left blank, please fill it in manually`); }
 
-        teachers.push({ id: uid(), displayId: providedId || nextTeacherDisplayId(), name, section, subject, classes });
+        teachers.push({ id: uid(), displayId: providedId || nextTeacherDisplayId(), name: cleanName, section, subject, classes });
         added++;
       });
 
@@ -8750,7 +8915,7 @@ function importTeachersExcel(file){
       // remote Firestore snapshot arrived first (another device, a live-sync tick, or simply
       // reloading the page) the older server copy — which never had these rows — would
       // silently replace them, making a successful import look like it got "deleted".
-      scheduleGithubPush();
+      scheduleTeachersPush();
       document.getElementById('importTitle').textContent = 'Bulk Import Result';
       let msg = `${added} teacher(s) added successfully.`;
       if(skippedDuplicates) msg += ` ${skippedDuplicates} duplicate row(s) skipped.`;
@@ -12691,7 +12856,7 @@ function saveUsers(){
   }
   usersUnsavedChanges = true;
   const savedOk = saveUsersLocalOnly();
-  scheduleGithubPush();
+  scheduleUsersPush();
   return savedOk;
 }
 function saveUsersLocalOnly(){
@@ -12823,7 +12988,11 @@ function getEffectivePermissions(user){
     // absence is restricted to Admin and HOS/Deputy only.
     const scope = computeTeacherGradeScope(user);
     return { database:false, grades:true, attendance:true, approvedLeave:false, reports:false, dashboard:false, examsAnalysis:false, examSchedule:false, perfAlerts:false, classLists:false, settings:false, edit:true,
-      sectionScope:user.section||null, stageScope:scope.stages, gradeScope:scope.grades, classroomScope:user.classrooms||[], subjectScope:user.subjects||[] };
+      sectionScope:user.section||null, stageScope:scope.stages, gradeScope:scope.grades, classroomScope:user.classrooms||[], subjectScope:user.subjects||[],
+      // Per-classroom subject map (e.g. Math in 5A, Science in 5B) — see scopeSubjectAllowedForClassroom()
+      // below, which is what actually enforces this; subjectScope above stays a flat union for any
+      // older code path that only ever checked subject in isolation, without a classroom.
+      classroomSubjects: user.classroomSubjects || null };
   }
   // Parent/Student: Can View ONLY Certificates, Dashboard and the Exams Schedule
   const hasStudentLink = Array.isArray(user.studentIds);
@@ -12862,6 +13031,19 @@ function scopeSubjectAllowed(name){
   const sc = currentUser.effective.subjectScope;
   return !sc || sc.includes(name);
 }
+// Same idea as scopeSubjectAllowed(), but also checks WHICH classroom the subject is
+// being requested for — a Teacher assigned Math in 5A and Science in 5B must not be
+// allowed to open Science in 5A just because Science is somewhere in their flat subject
+// list. Falls back to the flat, classroom-independent check for roles/accounts that
+// don't have a classroomSubjects map (HOD, or a legacy Teacher account not yet re-saved).
+function scopeSubjectAllowedForClassroom(name, classroom){
+  if(!currentUser || !currentUser.effective) return true;
+  const cs = currentUser.effective.classroomSubjects;
+  if(cs && classroom && Object.prototype.hasOwnProperty.call(cs, classroom)){
+    return (cs[classroom]||[]).includes(name);
+  }
+  return scopeSubjectAllowed(name);
+}
 function scopeClassroomAllowed(name){
   if(!currentUser || !currentUser.effective) return true;
   const sc = currentUser.effective.classroomScope;
@@ -12894,7 +13076,7 @@ function sanitizeScopedState(){
   } else if(state.term && !scopeClassroomAllowed(state.term)){
     state.term = null;
   }
-  if(state.subject && !scopeSubjectAllowed(state.subject)) state.subject = null;
+  if(state.subject && !scopeSubjectAllowedForClassroom(state.subject, state.term)) state.subject = null;
 
   // Attendance tab's own independent stepper state
   if(attState.section && !scopeSectionAllowed(attState.section)){
@@ -12904,7 +13086,7 @@ function sanitizeScopedState(){
   } else if(attState.term && !scopeClassroomAllowed(attState.term)){
     attState.term = null;
   }
-  if(attState.subject && !scopeSubjectAllowed(attState.subject)) attState.subject = null;
+  if(attState.subject && !scopeSubjectAllowedForClassroom(attState.subject, attState.term)) attState.subject = null;
 
   // Cycle Dashboard filters
   if(state.dashboardSection && !scopeSectionAllowed(state.dashboardSection)){
@@ -13592,7 +13774,10 @@ function openUsersModal(){
   if(!currentUser || !currentUser.effective || !currentUser.effective.settings){ alert('You do not have permission to manage users.'); return; }
   populateUfSectionOptions();
   resetUserForm();
-  buildSubjectCheckboxes();
+  buildSubjectCheckboxes([]);        // ✅ FIXED: Explicitly pass empty array
+  buildClassroomOptions([]);         // ✅ FIXED: Clear classroom selections
+  setUfSelectedStages([]);           // ✅ FIXED: Clear stage selections (for HOS/HOD)
+  ufClassroomSubjects = {};          // ✅ FIXED: Clear per-classroom subject mappings
   const isHod = currentUser.role==='hod';
   const hodSectionLabel = currentUser.section ? SECTIONS[currentUser.section].label : 'English & French';
   document.getElementById('usersModalSub').textContent = isHod
@@ -13765,9 +13950,17 @@ function getAllClassroomsInDb(){
 }
 
 let ufSelectedClassrooms = [];
+// { [classroomName]: [subject, subject, ...] } — lets the same Teacher teach a different
+// subject in each of their assigned classes, instead of one flat subject list shared
+// across every class (which had no way to express "Math in 5A, Science in 5B").
+let ufClassroomSubjects = {};
 
-function buildClassroomOptions(selected){
+function buildClassroomOptions(selected, classroomSubjectsData){
   ufSelectedClassrooms = (selected||[]).slice();
+  ufClassroomSubjects = {};
+  ufSelectedClassrooms.forEach(c=>{
+    ufClassroomSubjects[c] = (classroomSubjectsData && classroomSubjectsData[c]) ? classroomSubjectsData[c].slice() : [];
+  });
   const panel = document.getElementById('ufClassroomsPanel');
   const all = getAllClassroomsInDb();
   if(!all.length){
@@ -13779,12 +13972,67 @@ function buildClassroomOptions(selected){
     }).join('');
   }
   updateUfClassroomsBtnText();
+  renderUfClassroomSubjectPanels();
 }
 
 function toggleUfClassroom(c, checked){
-  if(checked){ if(!ufSelectedClassrooms.includes(c)) ufSelectedClassrooms.push(c); }
-  else { ufSelectedClassrooms = ufSelectedClassrooms.filter(x=> x!==c); }
+  if(checked){
+    if(!ufSelectedClassrooms.includes(c)) ufSelectedClassrooms.push(c);
+    if(!ufClassroomSubjects[c]) ufClassroomSubjects[c] = [];
+  } else {
+    ufSelectedClassrooms = ufSelectedClassrooms.filter(x=> x!==c);
+    delete ufClassroomSubjects[c];
+  }
   updateUfClassroomsBtnText();
+  renderUfClassroomSubjectPanels();
+}
+
+// Renders one subject checklist per currently-selected Assigned Class, each independently
+// checkable — this is what actually lets a Teacher (or a teaching HOD) have a different
+// subject in one class vs. another. Shown for Teacher and HOD (see onRoleFormChange); HOD
+// additionally keeps the old single flat list (#ufSubjectsWrap) for its department-wide
+// oversight scope, which is separate from what it personally teaches here.
+function renderUfClassroomSubjectPanels(){
+  const wrap = document.getElementById('ufClassroomSubjectsWrap');
+  if(!wrap) return;
+  if(!ufSelectedClassrooms.length){
+    wrap.innerHTML = `<p class="foot-note" style="margin:6px 0;">Pick at least one Assigned Class above to choose its subjects.</p>`;
+    return;
+  }
+  const groups = subjectGroupsForChecklist();
+  wrap.innerHTML = ufSelectedClassrooms.map(c=>{
+    const selected = ufClassroomSubjects[c] || [];
+    const cSafe = c.replace(/'/g,"\\'");
+    const groupsHtml = groups.map(g=>{
+      const itemsHtml = g.subjects.map(s=>{
+        const id = 'ufClassSubj_' + c.replace(/[^a-zA-Z0-9]/g,'_') + '_' + s.replace(/[^a-zA-Z0-9]/g,'_');
+        const checked = selected.includes(s) ? 'checked' : '';
+        return `<label class="perm-check"><input type="checkbox" id="${id}" ${checked} onchange="toggleUfClassroomSubject('${cSafe}','${s.replace(/'/g,"\\'")}',this.checked)"> ${subjectWithIcon(s)}</label>`;
+      }).join('');
+      return `<div class="subj-group">${g.title ? `<div class="subj-group-title">${g.title}</div>` : ''}<div class="subj-grid">${itemsHtml}</div></div>`;
+    }).join('');
+    return `<div class="uf-class-subj-block" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px;">
+        <b style="font-size:13px;">${escapeHtml(c)}</b>
+        <span>
+          <a onclick="setAllUfClassroomSubjects('${cSafe}', true)" style="cursor:pointer;font-size:11.5px;margin-inline-end:10px;">Select all</a>
+          <a onclick="setAllUfClassroomSubjects('${cSafe}', false)" style="cursor:pointer;font-size:11.5px;">Clear all</a>
+        </span>
+      </div>
+      <div class="subj-groups-wrap">${groupsHtml}</div>
+    </div>`;
+  }).join('');
+}
+function toggleUfClassroomSubject(classroom, subject, checked){
+  if(!ufClassroomSubjects[classroom]) ufClassroomSubjects[classroom] = [];
+  const list = ufClassroomSubjects[classroom];
+  if(checked){ if(!list.includes(subject)) list.push(subject); }
+  else { ufClassroomSubjects[classroom] = list.filter(s=> s!==subject); }
+}
+function setAllUfClassroomSubjects(classroom, checked){
+  const allSubjects = subjectGroupsForChecklist().flatMap(g=>g.subjects);
+  ufClassroomSubjects[classroom] = checked ? allSubjects.slice() : [];
+  renderUfClassroomSubjectPanels();
 }
 
 function updateUfClassroomsBtnText(){
@@ -13803,14 +14051,26 @@ function onRoleFormChange(){
   const needsSection = role==='teacher' || role==='hod' || role==='hos';
   const needsStages = role==='hos' || role==='hod';
   const needsScope = role==='teacher' || role==='hod';
-  const needsClassrooms = role==='teacher'; // HOD is scoped by subject+stage, not by classroom
+  // An HOD's *oversight* scope is subject+stage (see ufHodSubjectsField/ufScopeField above),
+  // but an HOD may also personally teach specific classes alongside that oversight — so the
+  // same Assigned Classes / per-class subjects picker used for Teacher is shown for HOD too.
+  const needsClassrooms = role==='teacher' || role==='hod';
   const needsStudents = role==='parent';
   document.getElementById('ufSectionField').style.display = needsSection ? '' : 'none';
   document.getElementById('ufStagesField').style.display = needsStages ? '' : 'none';
   document.getElementById('ufScopeField').style.display = needsScope ? '' : 'none';
   document.getElementById('ufClassroomsField').style.display = needsClassrooms ? '' : 'none';
+  document.getElementById('ufHodSubjectsField').style.display = (role==='hod') ? '' : 'none';
+  document.getElementById('ufClassroomSubjectsField').style.display = needsClassrooms ? '' : 'none';
   document.getElementById('ufScopeTitle').textContent = role==='hod' ? 'Head of Department access scope' : 'Teacher access scope';
-  document.getElementById('ufSubjectsLabel').textContent = role==='hod' ? 'Subject (leave unchecked = no subject yet)' : 'Assigned Subjects (leave all unchecked = no subjects yet)';
+  const classroomsLabel = document.getElementById('ufClassroomsLabelText');
+  const classroomSubjectsLabel = document.getElementById('ufClassroomSubjectsLabelText');
+  if(classroomsLabel){
+    classroomsLabel.textContent = role==='hod' ? 'Classes taught (optional)' : 'Assigned Classes';
+  }
+  if(classroomSubjectsLabel){
+    classroomSubjectsLabel.textContent = role==='hod' ? 'Subjects taught per class (optional, in addition to oversight above)' : 'Subjects taught per class';
+  }
   document.getElementById('ufStudentsField').style.display = needsStudents ? '' : 'none';
   if(needsStudents) renderUfStudentPicker();
 }
@@ -13860,7 +14120,14 @@ function editUser(username){
   document.getElementById('ufPassword').value = user.password || '';
   document.getElementById('ufRole').value = user.role;
   document.getElementById('ufSection').value = user.section !== undefined ? user.section : 'en';
-  buildClassroomOptions(user.classrooms||[]);
+  // Legacy fallback: an account saved before classroomSubjects existed only has the old
+  // flat `subjects` array shared across all classrooms — seed each of its classes with
+  // that same flat list so editing an old account doesn't look like it lost its subjects.
+  const classroomSubjectsForEdit = user.classroomSubjects
+    || ((user.classrooms && user.classrooms.length && user.subjects && user.subjects.length)
+        ? Object.fromEntries(user.classrooms.map(c=> [c, user.subjects.slice()]))
+        : null);
+  buildClassroomOptions(user.classrooms||[], classroomSubjectsForEdit);
   buildSubjectCheckboxes(user.subjects||[]);
   setUfSelectedStages(user.stages||[]);
   ufSelectedStudentIds = (user.studentIds||[]).slice();
@@ -13917,8 +14184,29 @@ function saveUserFromForm(){
   const userObj = { username, displayName, password, role };
   if(role==='teacher' || role==='hod' || role==='hos') userObj.section = section;
   if(role==='hos'){ userObj.stages = stages; }
+  // `subjects` here is the flat department-oversight list (who this HOD oversees) — kept
+  // separate from what the HOD may personally teach, computed just below.
   if(role==='hod'){ userObj.stages = stages; userObj.subjects = subjects; }
-  if(role==='teacher'){ userObj.subjects = subjects; userObj.classrooms = classrooms; }
+  // Classes + per-class subjects: available to Teacher AND Head of Department. An HOD may
+  // teach alongside their general department oversight, so they get the same Assigned
+  // Classes / per-class subject picker a Teacher uses. `classroomSubjects` is the real
+  // source of truth for what's actually taught in each class; it's kept distinct from an
+  // HOD's flat `subjects` (oversight) list above so the two meanings never get confused.
+  let classroomSubjects = {};
+  if(role==='teacher' || role==='hod'){
+    classrooms.forEach(c=>{ classroomSubjects[c] = (ufClassroomSubjects[c]||[]).slice(); });
+    userObj.classrooms = classrooms;
+    userObj.classroomSubjects = classroomSubjects;
+    if(role==='teacher'){
+      // For a Teacher, "subjects" IS the union of what they teach across their classes.
+      userObj.subjects = [...new Set(Object.values(classroomSubjects).flat())];
+    }
+  }
+  // What this account actually teaches in a classroom (used for the Teachers Database
+  // "who teaches this" lookup). For a Teacher this is the same as userObj.subjects; for an
+  // HOD it's unioned with their oversight subjects, since either can be true for a class.
+  const teachingSubjects = [...new Set(Object.values(classroomSubjects).flat())];
+  const dbSubjects = role==='hod' ? [...new Set([...subjects, ...teachingSubjects])] : teachingSubjects;
   if(role==='parent'){ userObj.studentIds = ufSelectedStudentIds.slice(); }
 
   if(editing){
@@ -13942,10 +14230,10 @@ function saveUserFromForm(){
       teacher.username = username;
       teacher.name = displayName || username;
       teacher.section = sectionLabelFromCode(section);
-      teacher.subject = subjects.join(', ');
+      teacher.subject = dbSubjects.join(', ');
       // Classes stay whatever was picked in Manage Users; admins can also add/adjust
-      // them later directly from the Teachers Database "Classes" column. HOD accounts
-      // don't collect classrooms in Manage Users, so this simply leaves Classes as-is for them.
+      // them later directly from the Teachers Database "Classes" column. This now applies
+      // to Teacher and HOD alike, since an HOD can also be assigned classes it teaches.
       teacher.classes = classrooms.length ? classrooms.join(', ') : (teacher.classes || '');
     } else if(previousRole === 'teacher' || previousRole === 'hod'){
       // Role changed away from Teacher/HOD: drop the linked Teachers Database row.
@@ -13990,7 +14278,7 @@ function saveUserFromForm(){
         name: displayName || username,
         username: username,
         section: sectionLabelFromCode(section),
-        subject: subjects.join(', '),
+        subject: dbSubjects.join(', '),
         classes: classrooms.join(', ')
       };
       teachers.push(teacherEntry);
@@ -14084,6 +14372,20 @@ function renderUsersTable(){
       : (u.role==='teacher'
         ? `${(u.subjects||[]).length} subject(s), ${(u.classrooms||[]).length} class(es)`
         : (u.role==='hod' ? 'Entire department' : (u.role==='hos' ? 'Relevant stages' : 'Full system access')));
+    // Names of the student(s) linked to a Parent/Student account, for the dedicated
+    // "Student(s)" column (u.studentIds only stores ids, so resolve against the live
+    // student roster). Falls back to '—' for non-parent rows or unresolved ids.
+    const linkedStudentNames = u.role==='parent'
+      ? (Array.isArray(u.studentIds) && u.studentIds.length
+          ? (() => {
+              const flat = allStudentsFlat();
+              const names = u.studentIds
+                .map(id => { const s = flat.find(x=>x.id===id); return s ? s.name : null; })
+                .filter(Boolean);
+              return names.length ? names.join(', ') : '—';
+            })()
+          : '—')
+      : '—';
     const isProtected = u.username==='admin' || (currentUser && currentUser.username===u.username);
     // The list is already sorted by role (see usersMatchingCurrentFilter), so a role
     // change here means a new group is starting — drop in a labeled header row above it.
@@ -14092,7 +14394,7 @@ function renderUsersTable(){
       lastRole = u.role;
       lastTeacherSubjectKey = null; // reset so the first teacher subject also gets a subheader
       const count = list.filter(x=>x.role===u.role).length;
-      groupHeader = `<tr class="user-group-row"><td colspan="7" style="padding:8px 10px;font-weight:600;background:rgba(0,0,0,0.04);">${ROLE_LABELS[u.role]||u.role} <span style="font-weight:400;opacity:.7;">(${count})</span></td></tr>`;
+      groupHeader = `<tr class="user-group-row"><td colspan="8" style="padding:8px 10px;font-weight:600;background:rgba(0,0,0,0.04);">${ROLE_LABELS[u.role]||u.role} <span style="font-weight:400;opacity:.7;">(${count})</span></td></tr>`;
     }
     // Within the Teacher group, also break out a subheader per Section + Subject(s)
     // combo (matches the Section→Subject→Name order applied in usersMatchingCurrentFilter),
@@ -14104,7 +14406,7 @@ function renderUsersTable(){
       if(subjectKey !== lastTeacherSubjectKey){
         lastTeacherSubjectKey = subjectKey;
         const subjCount = list.filter(x=> x.role==='teacher' && (x.section?SECTIONS[x.section].label:'Both')===sectionLabel && ((x.subjects||[]).length?x.subjects.join(', '):'—')===subjectsLabel).length;
-        subjectHeader = `<tr class="user-subgroup-row"><td colspan="7" style="padding:6px 10px 6px 26px;font-weight:500;font-size:0.9em;opacity:.85;background:rgba(0,0,0,0.02);">${escapeHtml(sectionLabel)} · ${escapeHtml(subjectsLabel)} <span style="font-weight:400;opacity:.7;">(${subjCount})</span></td></tr>`;
+        subjectHeader = `<tr class="user-subgroup-row"><td colspan="8" style="padding:6px 10px 6px 26px;font-weight:500;font-size:0.9em;opacity:.85;background:rgba(0,0,0,0.02);">${escapeHtml(sectionLabel)} · ${escapeHtml(subjectsLabel)} <span style="font-weight:400;opacity:.7;">(${subjCount})</span></td></tr>`;
       }
     }
     return `${groupHeader}${subjectHeader}
@@ -14115,6 +14417,7 @@ function renderUsersTable(){
         <td><span class="perm-pill">${ROLE_LABELS[u.role]||u.role}</span></td>
         <td>${sectionLabel}</td>
         <td>${scopeInfo}</td>
+        <td>${escapeHtml(linkedStudentNames)}</td>
         <td class="row-actions">
           <button class="edit-a" onclick="editUser('${u.username}')">Edit</button>
           <button class="del-a" onclick="deleteUserRow('${u.username}')">Delete</button>
@@ -14534,6 +14837,16 @@ const fbDb  = firebase.firestore();
 // small dataset like a grade book, and it lets us use one real-time
 // listener (onSnapshot) to keep every open browser in sync automatically.
 const FB_DOC_REF = fbDb.collection('gradebook').doc('main');
+// Teachers Database and Manage Users (split into Staff vs Parents/Students) each live in
+// their own document now, instead of inside the single 'main' document above. This means
+// editing a Teacher, or adding/editing a Parent/Student account, no longer reads or writes
+// Students/Scores/Attendance at all — each domain is pushed and pulled independently.
+// Parents/Students get their own document (separate from Staff) because that list is
+// expected to grow far larger (one row per family) than the handful of Staff accounts,
+// so it should never share a size/contention budget with Teacher/HOD/Admin accounts.
+const FB_TEACHERS_DOC_REF = fbDb.collection('gradebook').doc('teachers');
+const FB_STAFF_USERS_DOC_REF = fbDb.collection('gradebook').doc('staffUsers');
+const FB_PARENT_USERS_DOC_REF = fbDb.collection('gradebook').doc('parentUsers');
 
 // ✅ تتبع ما إذا كانت بيانات المدرسين قد تم تحديثها من Firestore
 let teachersUpdatedFlag = false;
@@ -14579,6 +14892,12 @@ let fbLastPushedAt = 0;
 // echo/snapshot is recognized as not-newer and is ignored instead of overwriting the freshly
 // entered grades still sitting only in memory/localStorage.
 let knownDataVersion = 0;
+// Same purpose as knownDataVersion above, one per newly-split document, so each document's
+// live listener can independently recognize "this is just an echo of my own push" without
+// depending on the other documents' version numbers.
+let knownTeachersVersion = 0;
+let knownStaffUsersVersion = 0;
+let knownParentUsersVersion = 0;
 // Tracks whether ANY edit made via scheduleGithubPush() (users, teachers, bell times, admin
 // structure, exam schedules, blocked students, report card/exam releases, etc.) has actually
 // finished round-tripping to Firestore yet. Unlike gbUnsavedChanges (which only covers Grade
@@ -14587,6 +14906,12 @@ let knownDataVersion = 0;
 // the edit silently: it looked "saved" locally, but the write never reached the server, and
 // the very next page load pulls the older server copy over it.
 let pendingFirestorePush = false;
+// Same purpose as pendingFirestorePush above, one per newly-split document — kept separate
+// so an edit still in flight in one document (e.g. a Teacher edit) doesn't make the merge
+// logic for an unrelated document (e.g. Users) defensively distrust the server when it
+// doesn't need to.
+let pendingTeachersPush = false;
+let pendingUsersPush = false;
 
 function loadGithubConfig(){
   try{
@@ -14667,38 +14992,53 @@ function hideInitialSyncIndicator(){
   setTimeout(()=>{ const cur = document.getElementById('initialSyncBanner'); if(cur && !cur.classList.contains('show')) cur.remove(); }, 400);
 }
 
-function applyRemotePayload(payload){
+// Shared post-apply UI refresh — cheap to call after ANY of the three documents below
+// finishes applying, since re-rendering already-visible tables/steppers is far cheaper
+// than the network reads/writes that used to be entangled across documents. Kept as one
+// function so all three apply* functions below stay in sync on what gets refreshed.
+function refreshUIAfterRemoteChange(){
+  saveStateLocalOnly();
+  renderDatabaseNow();
+  if(typeof renderTeachersDatabase==='function') renderTeachersDatabase();
+  if(typeof renderTable==='function') renderTable();
+  if(typeof renderAttendanceWorkspace==='function') renderAttendanceWorkspace();
+  // Re-render the Certificates tab live if a Parent/Student (or Admin) currently has it open,
+  // so a newly-released Report Card appears immediately without needing a manual refresh.
+  if(currentView==='certReports' && typeof renderCertReportsWorkspace==='function'){
+    if(typeof renderCertReportsStepper==='function') renderCertReportsStepper();
+    renderCertReportsWorkspace();
+  }
+  if(document.getElementById('reportCardReleaseOverlay') && document.getElementById('reportCardReleaseOverlay').classList.contains('show')){
+    renderReportCardReleaseTable();
+  }
+  if(document.getElementById('examScheduleReleaseOverlay') && document.getElementById('examScheduleReleaseOverlay').classList.contains('show')){
+    renderExamScheduleReleaseTable();
+  }
+  if(currentUser){
+    if(isViewerAccountBlocked()){
+      showAccountBlockedScreen();
+    } else if(document.getElementById('accountBlockedPanel') && document.getElementById('accountBlockedPanel').style.display==='flex'){
+      // was blocked, just got unblocked remotely — restore normal navigation
+      document.getElementById('mainNav').style.display = '';
+      document.getElementById('accountBlockedPanel').style.display = 'none';
+      const allowed = firstAllowedTab();
+      if(allowed) switchView(allowed);
+      else document.getElementById('noAccessPanel').style.display = 'flex';
+    }
+  }
+  updateGradeBookSaveUI();
+}
+
+// ---- applyMainPayload(): students/scores/attendance/activityLog/config — the document
+// written by pushMainDoc(). No longer touches teachers or users at all.
+function applyMainPayload(payload){
   if(!payload) return;
   fbApplyingRemote = true;
-  // If this device has Grade Book edits sitting locally that haven't been pushed
-  // yet (gbUnsavedChanges), blindly replacing students/scores/attendance/teachers
-  // with the incoming snapshot would silently wipe them out the moment ANY other
-  // device pushes anything — even something unrelated like a Bell Times change.
-  // Merge instead (remote as the base, local pending edits win per key) so those
-  // unsaved edits survive until the person actually presses Save.
-  // Union deleted-teacher tombstones from the incoming snapshot with whatever this device
-  // already knows about, then use that to keep any resurrected-by-merge rows out of the
-  // final teachers list, however teachers ends up being set below.
-  // EXCEPTION: a teacher id currently present in our own in-memory `teachers` (just added
-  // or re-added on this device, e.g. via Excel import) is excluded from the tombstone list —
-  // otherwise a stale tombstone that reached the server from an earlier, unrelated deletion
-  // would keep silently stripping that row back out on every pull/page-refresh forever.
-  const currentTeacherIdsAtApply = new Set(teachers.map(t=>t.id));
-  deletedTeacherIds = Array.from(new Set([...(payload.deletedTeacherIds||[]), ...deletedTeacherIds]))
-    .filter(id => !currentTeacherIdsAtApply.has(id));
-  // teachers used to be ALWAYS merged (never hard-replaced) regardless of whether this
-  // device had anything pending — but mergeArrayById always keeps the LOCAL value for any
-  // id present on both sides. That meant once a browser had ever cached a teacher row, a
-  // genuine edit to that same teacher (e.g. renaming them) made and *confirmed* on another
-  // device would never overwrite this browser's stale copy on later pulls — this was the
-  // direct cause of "teacher name edits don't show correctly on another browser". Mirror the
-  // same fix already applied to `users` below: merge (local wins) only while THIS device has
-  // an edit of its own still in flight (pendingFirestorePush) — otherwise trust the server's
-  // copy outright, since with nothing pending, the server is guaranteed at least as fresh.
-  teachers = pendingFirestorePush
-    ? mergeArrayById(payload.teachers, teachers, 'id')
-    : (Array.isArray(payload.teachers) ? payload.teachers : teachers);
-  teacherIdCounter = Math.max(payload.teacherIdCounter || 1, teacherIdCounter || 1);
+  // If this device has Grade Book edits sitting locally that haven't been pushed yet
+  // (gbUnsavedChanges), blindly replacing students/scores/attendance with the incoming
+  // snapshot would silently wipe them out the moment ANY other device pushes anything —
+  // even something unrelated like a Bell Times change. Merge instead (remote as the base,
+  // local pending edits win per key) so those unsaved edits survive until Save is pressed.
   if(gbUnsavedChanges){
     students = mergeObjectField(payload.students, students);
     scores = mergeObjectField(payload.scores, scores);
@@ -14714,55 +15054,14 @@ function applyRemotePayload(payload){
     approvedLeave = payload.approvedLeave || {};
     grade3FlexibleMaximaBySubject = payload.grade3FlexibleMaxima || grade3FlexibleMaximaBySubject || {};
   }
-  teachers = teachers.filter(t=> !deletedTeacherIds.includes(t.id));
-  
-  // ✅ حفظ في localStorage أيضاً للأداء والموثوقية
-  // إذا حدث تأخير في Firestore، سيكون لدينا الأحدث محفوظاً
   try{
-    localStorage.setItem(LS_KEY, JSON.stringify({ 
-      students, scores, studentIdCounter, attendance, approvedLeave, 
-      teachers, teacherIdCounter, deletedTeacherIds, 
-      savedAt: new Date().toISOString() 
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      students, scores, studentIdCounter, attendance, approvedLeave,
+      savedAt: new Date().toISOString()
     }));
   }catch(err){ /* localStorage full أو محظور - لا مشكلة */ }
-  
   try{ localStorage.setItem(GRADE3_MAXIMA_LS_KEY, JSON.stringify(grade3FlexibleMaximaBySubject)); }catch(err){}
   knownDataVersion = Math.max(knownDataVersion, payload.dataVersion || 0);
-  if(Array.isArray(payload.users) && payload.users.length){
-    // Same fix as deletedTeacherIds above, and the direct cause of the reported bug:
-    // a username currently present in our own in-memory `users` (just added/re-imported
-    // on this device) is excluded from the merged tombstone list instead of being unioned
-    // in from the server's copy. Previously, if that exact username had EVER been deleted
-    // before — even long ago, even by a different admin/device, unrelated to this import —
-    // its tombstone would still be sitting in the server's `deletedUsernames`, and the very
-    // next pull (e.g. the page refresh right after a bulk Excel import) would silently
-    // filter the freshly-added user back out, making it look "auto-deleted".
-    const currentUsernamesAtApply = new Set(users.map(u=>u.username));
-    deletedUsernames = Array.from(new Set([...(payload.deletedUsernames||[]), ...deletedUsernames]))
-      .filter(u => !currentUsernamesAtApply.has(u));
-    // This used to hard-replace `users` with whatever the incoming snapshot contained. If an
-    // admin had just added/edited a user (e.g. a Teacher) and that edit hadn't reached
-    // Firestore yet (saveUsers()'s push is debounced by ~2.5s — see scheduleGithubPush()),
-    // any snapshot that arrived in that window — from another device, or a delayed echo of
-    // an older write — would silently overwrite the brand-new local edit and then persist
-    // that older list back to localStorage, making the user (often a just-added/edited
-    // Teacher account) appear to have been "deleted" right after saving. Merge with the
-    // current in-memory `users` instead, the same way `teachers` is merged above, so a local
-    // edit that hasn't round-tripped to Firestore yet always survives.
-    //
-    // BUT only while usersUnsavedChanges is actually true (a real edit on THIS device still
-    // in flight) — mergeArrayById prefers the LOCAL copy for any username present on both
-    // sides, so once that condition is no longer true, merging would instead permanently trap
-    // this device on its own stale cache: e.g. a Parent/Student account that gains a second
-    // linked child on another device would never pick that up here, even after logging out and
-    // back in, because this device's own (older) copy of that same username keeps winning the
-    // merge forever. With nothing genuinely unsaved locally, the server's copy is strictly at
-    // least as fresh as ours, so trust it outright instead.
-    users = usersUnsavedChanges
-      ? mergeArrayById(payload.users, users, 'username').filter(u=> !deletedUsernames.includes(u.username))
-      : payload.users.filter(u=> !deletedUsernames.includes(u.username));
-    saveUsersLocalOnly();
-  }
   if(Array.isArray(payload.activityLog) && payload.activityLog.length){
     const map = {};
     activityLog.forEach(e=> map[e.id]=e);
@@ -14810,90 +15109,129 @@ function applyRemotePayload(payload){
     examScheduleReleases = payload.examScheduleReleases;
     saveExamScheduleReleasesLocalOnly();
   }
+  refreshUIAfterRemoteChange();
+  fbApplyingRemote = false;
+  // gbUnsavedChanges is deliberately left untouched here: if this device had
+  // pending local edits, the merge above kept them in memory and they still
+  // need their own Save press; if it didn't, it was already false.
+}
+
+// ---- applyTeachersPayload(): the document written by pushTeachersDoc(). No longer
+// touches students/scores/attendance/users at all.
+function applyTeachersPayload(payload){
+  if(!payload) return;
+  fbApplyingRemote = true;
+  const currentTeacherIdsAtApply = new Set(teachers.map(t=>t.id));
+  deletedTeacherIds = Array.from(new Set([...(payload.deletedTeacherIds||[]), ...deletedTeacherIds]))
+    .filter(id => !currentTeacherIdsAtApply.has(id));
+  // SAFETY GUARD (mirrors the one in pushTeachersDoc): if the incoming snapshot's teachers
+  // is an empty array while THIS device already holds a real, non-empty local copy, don't
+  // trust it "outright" — keep the local copy and warn instead of silently wiping the screen.
+  const incomingTeachersEmpty = Array.isArray(payload.teachers) && payload.teachers.length===0;
+  if(incomingTeachersEmpty && teachers.length>0 && !pendingTeachersPush){
+    console.warn('applyTeachersPayload: incoming teachers is empty but this device has '+teachers.length+' locally — ignoring the incoming empty list to avoid wiping the screen.');
+  }else{
+    teachers = pendingTeachersPush
+      ? mergeArrayById(payload.teachers, teachers, 'id')
+      : (Array.isArray(payload.teachers) ? payload.teachers : teachers);
+  }
+  teacherIdCounter = Math.max(payload.teacherIdCounter || 1, teacherIdCounter || 1);
+  teachers = teachers.filter(t=> !deletedTeacherIds.includes(t.id));
+  try{
+    localStorage.setItem(LS_KEY, JSON.stringify(Object.assign(
+      JSON.parse(localStorage.getItem(LS_KEY)||'{}'),
+      { teachers, teacherIdCounter, deletedTeacherIds, savedAt: new Date().toISOString() }
+    )));
+  }catch(err){ /* localStorage full أو محظور - لا مشكلة */ }
+  knownTeachersVersion = Math.max(knownTeachersVersion, payload.dataVersion || 0);
   // A Teacher/HOD who was already logged in before this snapshot arrived (e.g. right after
   // page load, before the very first Firestore pull completes) had their Class/Subject scope
   // computed with an empty/stale `teachers` list. Now that `teachers` has just been merged
   // in above, re-sync that scope from it and refresh the stepper so the Teacher immediately
   // sees the Classes/Subjects actually assigned to them in the database, instead of only
   // picking them up on next login.
-  //
-  // A Parent/Student account has the exact same staleness problem, just via `users` instead
-  // of `teachers`: currentUser.effective (specifically .studentScope) is only ever computed
-  // once, at login — see loginAs(). If that account was already open in a browser tab when
-  // an Admin links it to a student (or adds a sibling) from another device, this Firestore
-  // snapshot merges the new studentIds into `users` above, but without the block below the
-  // already-open tab kept using its original (unlinked, or missing-a-sibling) effective
-  // permissions for the rest of the session — silently showing the full generic Section/
-  // Stage/Grade/Class stepper instead of the simplified linked-parent view, with no error and
-  // no indication anything was wrong, until the parent happened to log out and back in.
-  if(currentUser && (currentUser.role==='teacher' || currentUser.role==='hod' || currentUser.role==='parent')){
-    if(currentUser.role==='teacher' || currentUser.role==='hod') syncTeacherScopeFromDb(currentUser);
+  if(currentUser && (currentUser.role==='teacher' || currentUser.role==='hod')){
+    syncTeacherScopeFromDb(currentUser);
     currentUser.effective = getEffectivePermissions(currentUser);
     sanitizeScopedState();
     if(typeof renderStepper==='function') renderStepper();
     if(typeof renderAttendanceStepper==='function') renderAttendanceStepper();
-    if(currentUser.role==='parent'){
-      if(typeof autoSelectDashboardChildForParent==='function') autoSelectDashboardChildForParent();
-      if(typeof renderDashboard==='function') renderDashboard();
-      if(typeof renderCertReportsStepper==='function') renderCertReportsStepper();
-      if(typeof renderCertReportsWorkspace==='function') renderCertReportsWorkspace();
-    }
   }
-  saveStateLocalOnly();
-  renderDatabaseNow();
-  if(typeof renderTeachersDatabase==='function') renderTeachersDatabase();
-  if(typeof renderTable==='function') renderTable();
-  if(typeof renderAttendanceWorkspace==='function') renderAttendanceWorkspace();
-  // Re-render the Certificates tab live if a Parent/Student (or Admin) currently has it open,
-  // so a newly-released Report Card appears immediately without needing a manual refresh.
-  if(currentView==='certReports' && typeof renderCertReportsWorkspace==='function'){
-    if(typeof renderCertReportsStepper==='function') renderCertReportsStepper();
-    renderCertReportsWorkspace();
-  }
-  if(document.getElementById('reportCardReleaseOverlay') && document.getElementById('reportCardReleaseOverlay').classList.contains('show')){
-    renderReportCardReleaseTable();
-  }
-  if(document.getElementById('examScheduleReleaseOverlay') && document.getElementById('examScheduleReleaseOverlay').classList.contains('show')){
-    renderExamScheduleReleaseTable();
-  }
-  if(currentUser){
-    if(isViewerAccountBlocked()){
-      showAccountBlockedScreen();
-    } else if(document.getElementById('accountBlockedPanel') && document.getElementById('accountBlockedPanel').style.display==='flex'){
-      // was blocked, just got unblocked remotely — restore normal navigation
-      document.getElementById('mainNav').style.display = '';
-      document.getElementById('accountBlockedPanel').style.display = 'none';
-      const allowed = firstAllowedTab();
-      if(allowed) switchView(allowed);
-      else document.getElementById('noAccessPanel').style.display = 'flex';
-    }
-  }
-  
-  // ✅ إعادة تصيير Manage Users إذا كانت البيانات قد تحديثت من Firestore
-  // هذا يضمن ظهور المدرسين الجدد على الفور في Manage Users tab على جميع المتصفحات
+  refreshUIAfterRemoteChange();
+  // إعادة تصيير Manage Users فورًا إذا كانت الشاشة الحالية هي Teachers، عشان يظهر أي
+  // مدرس جديد فورًا بدل ما يستنى الرندر العادي.
   if(Array.isArray(payload.teachers) && payload.teachers.length > 0 && currentView === 'teachers'){
-    setTimeout(() => {
-      if(typeof renderTeachersDatabase === 'function'){
-        renderTeachersDatabase();
-      }
-    }, 50);
+    setTimeout(() => { if(typeof renderTeachersDatabase === 'function') renderTeachersDatabase(); }, 50);
   }
-  
   fbApplyingRemote = false;
-  // gbUnsavedChanges is deliberately left untouched here: if this device had
-  // pending local edits, the merge above kept them in memory and they still
-  // need their own Save press; if it didn't, it was already false.
-  updateGradeBookSaveUI();
+}
+
+// ---- applyUsersPayload(): the two documents written by pushUsersDocs() (Staff + Parents),
+// merged back into the single in-memory `users` array. No longer touches
+// students/scores/attendance/teachers at all.
+function applyUsersPayload(staffPayload, parentPayload){
+  staffPayload = staffPayload || {};
+  parentPayload = parentPayload || {};
+  const incomingUsers = [...(Array.isArray(staffPayload.users)?staffPayload.users:[]), ...(Array.isArray(parentPayload.users)?parentPayload.users:[])];
+  const incomingDeletedUsernames = Array.from(new Set([...(staffPayload.deletedUsernames||[]), ...(parentPayload.deletedUsernames||[])]));
+  if(!incomingUsers.length && !incomingDeletedUsernames.length) return;
+  fbApplyingRemote = true;
+  // Same fix as deletedTeacherIds above, and the direct cause of the reported bug: a
+  // username currently present in our own in-memory `users` (just added/re-imported on this
+  // device) is excluded from the merged tombstone list instead of being unioned in from the
+  // server's copy. Otherwise a tombstone from ANY earlier, unrelated deletion would keep
+  // silently stripping a freshly re-added username back out forever.
+  const currentUsernamesAtApply = new Set(users.map(u=>u.username));
+  deletedUsernames = Array.from(new Set([...incomingDeletedUsernames, ...deletedUsernames]))
+    .filter(u => !currentUsernamesAtApply.has(u));
+  // SAFETY GUARD, same as teachers above: an empty incoming combined list while this
+  // device already has real local users is far more likely a corrupted write than 200
+  // legitimate deletions at once — keep the local copy and warn instead of wiping it.
+  if(incomingUsers.length===0 && users.length>0 && !pendingUsersPush){
+    console.warn('applyUsersPayload: incoming users is empty but this device has '+users.length+' locally — ignoring the incoming empty list to avoid wiping the screen.');
+  }else if(incomingUsers.length){
+    users = usersUnsavedChanges
+      ? mergeArrayById(incomingUsers, users, 'username').filter(u=> !deletedUsernames.includes(u.username))
+      : incomingUsers.filter(u=> !deletedUsernames.includes(u.username));
+    saveUsersLocalOnly();
+  }
+  knownStaffUsersVersion = Math.max(knownStaffUsersVersion, staffPayload.dataVersion || 0);
+  knownParentUsersVersion = Math.max(knownParentUsersVersion, parentPayload.dataVersion || 0);
+  // A Parent/Student account has the same staleness problem as Teacher/HOD above, just via
+  // `users` instead of `teachers`: currentUser.effective (specifically .studentScope) is only
+  // ever computed once, at login — see loginAs(). If that account was already open in a
+  // browser tab when an Admin links it to a student (or adds a sibling) from another device,
+  // this snapshot merges the new studentIds into `users` above, but without the block below
+  // the already-open tab kept using its original effective permissions for the rest of the
+  // session, with no error and no indication anything was wrong.
+  if(currentUser && currentUser.role==='parent'){
+    currentUser.effective = getEffectivePermissions(currentUser);
+    sanitizeScopedState();
+    if(typeof renderStepper==='function') renderStepper();
+    if(typeof renderAttendanceStepper==='function') renderAttendanceStepper();
+    if(typeof autoSelectDashboardChildForParent==='function') autoSelectDashboardChildForParent();
+    if(typeof renderDashboard==='function') renderDashboard();
+    if(typeof renderCertReportsStepper==='function') renderCertReportsStepper();
+    if(typeof renderCertReportsWorkspace==='function') renderCertReportsWorkspace();
+  }
+  refreshUIAfterRemoteChange();
+  fbApplyingRemote = false;
 }
 
 /* One-off pull — used for the manual "Pull Latest" button and the initial
-   load before the live listener takes over. */
+   load before the live listener takes over. Fetches all three documents. */
 async function pullFromGithub(silent){
   setSyncStatus('syncing');
   try{
-    const snap = await FB_DOC_REF.get();
-    if(!snap.exists){ setSyncStatus('idle'); return false; }
-    applyRemotePayload(snap.data());
+    const [mainSnap, teachersSnap, staffSnap, parentSnap] = await Promise.all([
+      FB_DOC_REF.get(), FB_TEACHERS_DOC_REF.get(), FB_STAFF_USERS_DOC_REF.get(), FB_PARENT_USERS_DOC_REF.get()
+    ]);
+    if(mainSnap.exists) applyMainPayload(mainSnap.data());
+    if(teachersSnap.exists) applyTeachersPayload(teachersSnap.data());
+    if(staffSnap.exists || parentSnap.exists){
+      applyUsersPayload(staffSnap.exists ? staffSnap.data() : null, parentSnap.exists ? parentSnap.data() : null);
+    }
+    if(!mainSnap.exists && !teachersSnap.exists && !staffSnap.exists && !parentSnap.exists){ setSyncStatus('idle'); return false; }
     setSyncStatus('synced');
     return true;
   }catch(err){
@@ -14904,57 +15242,76 @@ async function pullFromGithub(silent){
   }
 }
 
-/* Live listener: any browser's write shows up here within moments, with no
-   manual pull needed. */
+/* Live listeners: any browser's write to any of the three documents shows up here within
+   moments, with no manual pull needed. One independent listener per document — a Teacher
+   edit only ever fires the teachers listener, never touching Students/Users in memory. */
 function startFirebaseLiveSync(){
   if(fbUnsubscribe) return;
-  fbUnsubscribe = FB_DOC_REF.onSnapshot(snap=>{
+  const unsubMain = FB_DOC_REF.onSnapshot(snap=>{
     if(!snap.exists) return;
     const data = snap.data();
-    // Ignore our own push's echo — recognized by version, not just elapsed time, so a slow
-    // round-trip can't slip past the guard and stomp on grades entered in the meantime.
     const incomingVersion = data.dataVersion || 0;
     if(incomingVersion>0 && incomingVersion<=knownDataVersion) return;
     if(Date.now() - fbLastPushedAt < 1500) return;
-    
-    // ✅ تتبع عدد المدرسين قبل تطبيق البيانات
+    applyMainPayload(data);
+    setSyncStatus('synced');
+  }, err=>{ console.warn('Firebase live sync error (main)', err); setSyncStatus('error'); });
+
+  const unsubTeachers = FB_TEACHERS_DOC_REF.onSnapshot(snap=>{
+    if(!snap.exists) return;
+    const data = snap.data();
+    const incomingVersion = data.dataVersion || 0;
+    if(incomingVersion>0 && incomingVersion<=knownTeachersVersion) return;
+    if(Date.now() - fbLastPushedAt < 1500) return;
     const teachersCountBefore = teachers.length;
-    
-    applyRemotePayload(data);
-    
-    // ✅ إذا تغير عدد المدرسين وكنا على Manage Users tab
+    applyTeachersPayload(data);
     const teachersCountAfter = teachers.length;
     if(currentView === 'teachers' && teachersCountBefore !== teachersCountAfter){
-      setTimeout(() => {
-        if(typeof renderTeachersDatabase === 'function'){
-          renderTeachersDatabase();
-        }
-      }, 100);
+      setTimeout(() => { if(typeof renderTeachersDatabase === 'function') renderTeachersDatabase(); }, 100);
     }
-    
     setSyncStatus('synced');
-  }, err=>{
-    console.warn('Firebase live sync error', err);
-    setSyncStatus('error');
-  });
+  }, err=>{ console.warn('Firebase live sync error (teachers)', err); setSyncStatus('error'); });
+
+  let latestStaffData = null, latestParentData = null;
+  const applyUsersIfReady = ()=>{
+    if(latestStaffData===null && latestParentData===null) return;
+    applyUsersPayload(latestStaffData, latestParentData);
+    setSyncStatus('synced');
+  };
+  const unsubStaff = FB_STAFF_USERS_DOC_REF.onSnapshot(snap=>{
+    if(!snap.exists) return;
+    const data = snap.data();
+    const incomingVersion = data.dataVersion || 0;
+    if(incomingVersion>0 && incomingVersion<=knownStaffUsersVersion) return;
+    if(Date.now() - fbLastPushedAt < 1500) return;
+    latestStaffData = data;
+    applyUsersIfReady();
+  }, err=>{ console.warn('Firebase live sync error (staff users)', err); setSyncStatus('error'); });
+  const unsubParent = FB_PARENT_USERS_DOC_REF.onSnapshot(snap=>{
+    if(!snap.exists) return;
+    const data = snap.data();
+    const incomingVersion = data.dataVersion || 0;
+    if(incomingVersion>0 && incomingVersion<=knownParentUsersVersion) return;
+    if(Date.now() - fbLastPushedAt < 1500) return;
+    latestParentData = data;
+    applyUsersIfReady();
+  }, err=>{ console.warn('Firebase live sync error (parent users)', err); setSyncStatus('error'); });
+
+  fbUnsubscribe = ()=>{ unsubMain(); unsubTeachers(); unsubStaff(); unsubParent(); };
 }
 function stopFirebaseLiveSync(){
   if(fbUnsubscribe){ fbUnsubscribe(); fbUnsubscribe = null; }
 }
 
+// Pushes the main document only (Bell Times, Admin Structure, Exam Schedules, Blocked
+// Students, Releases, activity log, etc.) — Teachers and Users each have their own push
+// path below and never go through this function.
 async function pushToGithub(){
   if(!githubReady()) return false;
   setSyncStatus('syncing');
-  const ok = await pushMergedToFirestoreWithRetry();
+  const ok = await pushMainDocWithRetry();
   setSyncStatus(ok ? 'synced' : 'error');
-  // A successful push means whatever local `users` edit triggered it (see saveUsers()) has now
-  // actually reached Firestore — from this point on, the next incoming snapshot's copy of
-  // `users` is at least as fresh as ours, so it's safe to trust it fully again instead of
-  // defensively preferring our local copy.
-  if(ok){
-    usersUnsavedChanges = false;
-    pendingFirestorePush = false; // this device's memory now matches the server — safe to close/reload
-  }
+  if(ok) pendingFirestorePush = false; // this device's memory now matches the server — safe to close/reload
   return ok;
 }
 
@@ -14965,10 +15322,41 @@ function scheduleGithubPush(){
   clearTimeout(githubPushTimer);
   githubPushTimer = setTimeout(()=>{
     pushToGithub().then(ok=>{
-      // This is the ONLY place most saves (Users/Parent accounts, Teachers, Bell Times, Admin
-      // Structure, Exam Schedules, Blocked Students, Releases, etc.) ever get a visible
-      // confirmation that the edit truly reached the server — closing the form/modal earlier
-      // only meant the edit was accepted locally, not that it was safe to close the tab yet.
+      showGbToast(ok ? 'success' : 'error', ok ? '✓ Saved' : '✕ Save failed — check your internet connection');
+    });
+  }, 1000);
+}
+
+// Teachers Database's own debounced push — completely independent of the main doc/users
+// pushes above and below. Adding/editing/deleting a Teacher only ever goes through this path.
+let teachersPushTimer = null;
+function scheduleTeachersPush(){
+  if(!githubReady() || fbApplyingRemote) return;
+  pendingTeachersPush = true;
+  clearTimeout(teachersPushTimer);
+  teachersPushTimer = setTimeout(()=>{
+    pushTeachersDocWithRetry().then(ok=>{
+      pendingTeachersPush = !ok;
+      showGbToast(ok ? 'success' : 'error', ok ? '✓ Saved' : '✕ Save failed — check your internet connection');
+    });
+  }, 1000);
+}
+
+// Manage Users' own debounced push (Staff + Parents/Students documents together, split by
+// role — see pushUsersDocs) — completely independent of the main doc/teachers pushes above.
+let usersPushTimer = null;
+function scheduleUsersPush(){
+  if(!githubReady() || fbApplyingRemote) return;
+  pendingUsersPush = true;
+  clearTimeout(usersPushTimer);
+  usersPushTimer = setTimeout(()=>{
+    pushUsersDocsWithRetry().then(ok=>{
+      // A successful push means whatever local `users` edit triggered it (see saveUsers())
+      // has now actually reached Firestore — from this point on, the next incoming
+      // snapshot's copy of `users` is at least as fresh as ours, so it's safe to trust it
+      // fully again instead of defensively preferring our local copy.
+      if(ok) usersUnsavedChanges = false;
+      pendingUsersPush = !ok;
       showGbToast(ok ? 'success' : 'error', ok ? '✓ Saved' : '✕ Save failed — check your internet connection');
     });
   }, 1000);
