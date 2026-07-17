@@ -17,7 +17,7 @@
 <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Aref+Ruqaa:wght@400;700&family=Tajawal:wght@300;400;500;700;800&family=Dancing+Script:wght@400;500;700&family=Forte&family=Style+Script&family=Great+Vibes&family=Satisfy&family=Alex+Brush&family=Cinzel:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Aref+Ruqaa:wght@400;700&family=Tajawal:wght@300;400;500;700;800&family=Dancing+Script:wght@400;500;700&family=Forte&family=Style+Script&family=Great+Vibes&family=Satisfy&family=Cinzel:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.7/gsap.min.js"></script>
@@ -304,9 +304,10 @@
 
       <div class="field" id="ufScopeField" style="min-width:100%;flex-basis:100%;">
         <p class="uf-section-title" id="ufScopeTitle">Teacher access scope</p>
-
+        <label id="ufSubjectsLabel">Assigned Subjects (leave all unchecked = no subjects yet)</label>
+        <div class="perm-grid" id="ufSubjectsWrap"></div>
         <div id="ufClassroomsField">
-          <label style="display:block;">Assigned Classes <span style="color:#B8B2A0;font-weight:500;">(pick from the classes already entered in Student Database)</span></label>
+          <label style="margin-top:10px;display:block;">Assigned Classes <span style="color:#B8B2A0;font-weight:500;">(pick from the classes already entered in Student Database)</span></label>
           <div class="uf-classdd-wrap" id="ufClassroomsDD">
             <button type="button" class="uf-classdd-btn" onclick="toggleUfClassroomsDD(event)">
               <span id="ufClassroomsBtnText">Select classes…</span>
@@ -314,20 +315,6 @@
             </button>
             <div class="step-options uf-classdd-panel" id="ufClassroomsPanel"></div>
           </div>
-        </div>
-
-        <!-- HOD only: a single flat subject list (HOD is scoped by subject+stage, not by classroom). -->
-        <div id="ufHodSubjectsField">
-          <label style="margin-top:10px;display:block;">Subject (leave unchecked = no subject yet)</label>
-          <div class="perm-grid" id="ufSubjectsWrap"></div>
-        </div>
-
-        <!-- Teacher only: subjects are picked PER assigned class above, so the same Teacher
-             can teach a different subject in each class (e.g. Math in 5A, Science in 5B) —
-             this used to be one flat subject list shared across every class they were assigned. -->
-        <div id="ufClassroomSubjectsField" style="margin-top:10px;">
-          <label style="display:block;">Subjects taught per class <span style="color:#B8B2A0;font-weight:500;">(pick a Class above first)</span></label>
-          <div id="ufClassroomSubjectsWrap"></div>
         </div>
       </div>
 
@@ -965,14 +952,6 @@
 
 <div class="wrap" id="appWrap" style="display:none;">
 
-  <div class="gb-save-fab" id="gbSaveWrap" style="display:none;">
-    <span class="gb-save-status" id="gbSaveStatusText">All changes saved to Firestore</span>
-    <button type="button" class="gb-save-btn" id="gbSaveBtn" onclick="saveGradeBookNow()">
-      <span class="gb-save-spinner" id="gbSaveSpinner"></span>
-      <span id="gbSaveBtnLabel">💾 Save</span>
-    </button>
-  </div>
-
   <div class="birthday-topbar" id="birthdayTopBar" style="display:none;">
     <span class="birthday-topbar-icon">🎉🎂</span>
     <span class="birthday-topbar-text" id="birthdayTopBarText"></span>
@@ -1169,6 +1148,13 @@
       </div>
     </div>
     <span class="nav-row-tick" aria-hidden="true"></span>
+    <div class="gb-save-fab" id="gbSaveWrap" style="display:none;">
+      <span class="gb-save-status" id="gbSaveStatusText">All changes saved to Firestore</span>
+      <button type="button" class="gb-save-btn" id="gbSaveBtn" onclick="saveGradeBookNow()">
+        <span class="gb-save-spinner" id="gbSaveSpinner"></span>
+        <span id="gbSaveBtnLabel">💾 Save</span>
+      </button>
+    </div>
     <div class="nav-dropdown nav-row-config" id="configDropdownWrap">
       <button class="nav-tab" data-view="config" id="navTabConfig" title="Configuration" onclick="toggleConfigMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg> Configuration ▾</button>
       <div class="nav-dropdown-menu" id="configMenu">
