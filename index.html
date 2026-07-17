@@ -983,7 +983,7 @@
       <div class="masthead-right-row">
         <button class="dark-toggle-btn" id="infoToggleBtn" onclick="toggleHeaderInfo()" title="Show clock, weather &amp; online users" style="display:none;">ⓘ</button>
         <button class="dark-toggle-btn" id="darkToggleBtn" onclick="toggleDarkMode()" title="Toggle dark mode">🌙</button>
-        <div class="birthday-widget" id="birthdayWidget" onclick="toggleBirthdayDropdown(event)" title="Students celebrating a birthday today">
+        <div class="birthday-widget" id="birthdayWidget" onclick="toggleBirthdayDropdown(event)" title="Students celebrating a birthday today" style="margin-inline-end:2px;">
           <span class="birthday-icon">🎂</span>
           <span id="birthdayCount">0</span>
           <span class="birthday-label">Birthdays Today</span>
@@ -1303,6 +1303,7 @@
     <div class="workspace show" id="markEntryWorkspace" style="display:none;">
       <div class="classbar">
         <div class="classbar-crumbs" id="markEntryCrumbs"></div>
+        <button class="btn btn-outline" id="markEntryRefreshBtn" onclick="refreshMarkEntryReport()" title="Recalculate this report from the latest saved marks"><span class="me-refresh-icon">🔄</span> Refresh</button>
         <button class="btn btn-outline" onclick="window.print()">🖨 Print</button>
       </div>
       <div class="table-card">
