@@ -375,7 +375,9 @@ function findSubjectTeacherName(section, subject, classroom){
     const classList = (t.classes||'').split(',').map(c=>c.trim()).filter(Boolean);
     return classList.includes(classroom);
   });
-  return t ? t.name : null;
+  // ✅ FIXED: Clean teacher name - remove newlines, normalize whitespace
+  const name = t ? ((t.name||'').replace(/[\n\r\t]/g, ' ').replace(/\s+/g, ' ').trim()) : null;
+  return name;
 }
 
 // Looks up the Head of Department for a subject + stage within a section, from the Manage
@@ -8748,7 +8750,11 @@ function renderTeachersAndClasses(){
     const teacherSubjects = (t.subject||'').split(/[,;]/).map(s=>s.trim()).filter(Boolean);
     const teacherClasses = (t.classes||'').split(',').map(c=>c.trim()).filter(Boolean);
     return teacherSubjects.includes(subject) && teacherClasses.includes(classroom);
-  }).map(t=>t.name||t.displayId||'—');
+  }).map(t => {
+    // ✅ FIXED: Clean teacher name - remove newlines, tabs, normalize spaces
+    const name = ((t.name||'').replace(/[\n\r\t]/g, ' ').replace(/\s+/g, ' ').trim()) || t.displayId || '—';
+    return name;
+  });
 
   const rows = subjects.map(subject=>{
     const cells = classrooms.map(classroom=>{
@@ -8827,20 +8833,24 @@ function importTeachersExcel(file){
         const classes = getField(row, ['Classes','Class']);
 
         if(!name){ problems.push(`Row ${idx+2}: missing teacher name`); return; }
+        
+        // ✅ FIXED: Clean teacher name - remove newlines, tabs, normalize spaces
+        const cleanName = name.replace(/[\n\r\t]/g, ' ').replace(/\s+/g, ' ').trim();
+        
         const section = findTeacherSection(sectionLabel);
-        if(!section){ problems.push(`${name}: unrecognized "Section" value ("${sectionLabel}") — must be English, French or Both`); return; }
+        if(!section){ problems.push(`${cleanName}: unrecognized "Section" value ("${sectionLabel}") — must be English, French or Both`); return; }
 
-        const key = dupKey(name, section);
+        const key = dupKey(cleanName, section);
         if(existingKeys.has(key)){
           skippedDuplicates++;
-          problems.push(`${name} (${section}): already exists — skipped to avoid a duplicate`);
+          problems.push(`${cleanName} (${section}): already exists — skipped to avoid a duplicate`);
           return;
         }
         existingKeys.add(key);
 
-        if(!subject){ problems.push(`${name}: no "Subject" value found in this row — added with Subject left blank, please fill it in manually`); }
+        if(!subject){ problems.push(`${cleanName}: no "Subject" value found in this row — added with Subject left blank, please fill it in manually`); }
 
-        teachers.push({ id: uid(), displayId: providedId || nextTeacherDisplayId(), name, section, subject, classes });
+        teachers.push({ id: uid(), displayId: providedId || nextTeacherDisplayId(), name: cleanName, section, subject, classes });
         added++;
       });
 
