@@ -13710,7 +13710,10 @@ function openUsersModal(){
   if(!currentUser || !currentUser.effective || !currentUser.effective.settings){ alert('You do not have permission to manage users.'); return; }
   populateUfSectionOptions();
   resetUserForm();
-  buildSubjectCheckboxes();
+  buildSubjectCheckboxes([]);        // ✅ FIXED: Explicitly pass empty array
+  buildClassroomOptions([]);         // ✅ FIXED: Clear classroom selections
+  setUfSelectedStages([]);           // ✅ FIXED: Clear stage selections (for HOS/HOD)
+  ufClassroomSubjects = {};          // ✅ FIXED: Clear per-classroom subject mappings
   const isHod = currentUser.role==='hod';
   const hodSectionLabel = currentUser.section ? SECTIONS[currentUser.section].label : 'English & French';
   document.getElementById('usersModalSub').textContent = isHod
