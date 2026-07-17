@@ -7522,8 +7522,6 @@ function formatBirthdayNameWithClass(b){
    person taps "+N more" on the condensed top bar. */
 function openBirthdayDetailsFromTopBar(e){
   if(e) e.stopPropagation();
-  const infoRow = document.getElementById('mastheadInfo');
-  if(infoRow && !infoRow.classList.contains('open')) toggleHeaderInfo();
   const dd = document.getElementById('birthdayDropdown');
   const widget = document.getElementById('birthdayWidget');
   if(dd){ dd.classList.add('open'); renderBirthdayWidget(); }
