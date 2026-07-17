@@ -4745,7 +4745,7 @@ function avgEntered(vals){
 // لحساب Q. Av من درجات مختلفة النهايات العظمى
 // مثال: 4/5 = 80% => 4.0/5, و 8/12 = 66.67% => 3.33/5
 function convertScoreTo5(score, maxScore){
-  if(!score || score==='' || !maxScore || maxScore===0) return 0;
+  if(score===null || score===undefined || score==='' || !maxScore || maxScore===0) return 0;
   const percentage = parseFloat(score) / parseFloat(maxScore);
   return percentage * 5;
 }
@@ -4758,15 +4758,17 @@ function calculateGrade3QAv(e1, e2, e3, e4, isMonth2 = false){
   const e2Max = m[`${prefix}E2Max`];
   const e3Max = m[`${prefix}E3Max`];
   const e4Max = m[`${prefix}E4Max`];
-  
-  // تحويل كل درجة إلى نسبة من 5
+
+  // Only a cell that was genuinely left blank should be excluded — a real "0" entry must
+  // still count towards the average. Filtering must happen on the RAW score (was it typed
+  // in at all?), never on the converted result, otherwise a legitimate 0/5 gets treated the
+  // same as an empty cell and silently disappears from Q. Av.
+  const isEntered = v => v!==null && v!==undefined && v!=='' && !isNaN(parseFloat(v));
   const scores = [
-    convertScoreTo5(e1, e1Max),
-    convertScoreTo5(e2, e2Max),
-    convertScoreTo5(e3, e3Max),
-    convertScoreTo5(e4, e4Max)
-  ].filter(s=> s > 0);
-  
+    [e1, e1Max], [e2, e2Max], [e3, e3Max], [e4, e4Max]
+  ].filter(([score, max]) => isEntered(score) && max)
+   .map(([score, max]) => convertScoreTo5(score, max));
+
   if(scores.length === 0) return 0;
   return scores.reduce((a,b)=> a+b, 0) / scores.length;
 }
@@ -13988,9 +13990,10 @@ function toggleUfClassroom(c, checked){
 }
 
 // Renders one subject checklist per currently-selected Assigned Class, each independently
-// checkable — this is what actually lets a Teacher's subjects differ from one class to
-// the next. Shown only for the Teacher role (see onRoleFormChange); HOD keeps the old
-// single flat list (#ufSubjectsWrap) since HOD access isn't scoped by classroom at all.
+// checkable — this is what actually lets a Teacher (or a teaching HOD) have a different
+// subject in one class vs. another. Shown for Teacher and HOD (see onRoleFormChange); HOD
+// additionally keeps the old single flat list (#ufSubjectsWrap) for its department-wide
+// oversight scope, which is separate from what it personally teaches here.
 function renderUfClassroomSubjectPanels(){
   const wrap = document.getElementById('ufClassroomSubjectsWrap');
   if(!wrap) return;
@@ -14050,7 +14053,10 @@ function onRoleFormChange(){
   const needsSection = role==='teacher' || role==='hod' || role==='hos';
   const needsStages = role==='hos' || role==='hod';
   const needsScope = role==='teacher' || role==='hod';
-  const needsClassrooms = role==='teacher'; // HOD is scoped by subject+stage, not by classroom
+  // An HOD's *oversight* scope is subject+stage (see ufHodSubjectsField/ufScopeField above),
+  // but an HOD may also personally teach specific classes alongside that oversight — so the
+  // same Assigned Classes / per-class subjects picker used for Teacher is shown for HOD too.
+  const needsClassrooms = role==='teacher' || role==='hod';
   const needsStudents = role==='parent';
   document.getElementById('ufSectionField').style.display = needsSection ? '' : 'none';
   document.getElementById('ufStagesField').style.display = needsStages ? '' : 'none';
@@ -14059,6 +14065,14 @@ function onRoleFormChange(){
   document.getElementById('ufHodSubjectsField').style.display = (role==='hod') ? '' : 'none';
   document.getElementById('ufClassroomSubjectsField').style.display = needsClassrooms ? '' : 'none';
   document.getElementById('ufScopeTitle').textContent = role==='hod' ? 'Head of Department access scope' : 'Teacher access scope';
+  const classroomsLabel = document.getElementById('ufClassroomsLabelText');
+  const classroomSubjectsLabel = document.getElementById('ufClassroomSubjectsLabelText');
+  if(classroomsLabel){
+    classroomsLabel.textContent = role==='hod' ? 'Classes taught (optional)' : 'Assigned Classes';
+  }
+  if(classroomSubjectsLabel){
+    classroomSubjectsLabel.textContent = role==='hod' ? 'Subjects taught per class (optional, in addition to oversight above)' : 'Subjects taught per class';
+  }
   document.getElementById('ufStudentsField').style.display = needsStudents ? '' : 'none';
   if(needsStudents) renderUfStudentPicker();
 }
@@ -14172,18 +14186,29 @@ function saveUserFromForm(){
   const userObj = { username, displayName, password, role };
   if(role==='teacher' || role==='hod' || role==='hos') userObj.section = section;
   if(role==='hos'){ userObj.stages = stages; }
+  // `subjects` here is the flat department-oversight list (who this HOD oversees) — kept
+  // separate from what the HOD may personally teach, computed just below.
   if(role==='hod'){ userObj.stages = stages; userObj.subjects = subjects; }
-  if(role==='teacher'){
-    // classroomSubjects is the real source of truth now — a Teacher can teach a
-    // different subject in each of their assigned classes (e.g. Math in 5A, Science in
-    // 5B). `subjects` is kept as a flat union purely for backward compatibility with any
-    // older code path (e.g. the Teachers Database catch-up sync) still reading it directly.
-    const classroomSubjects = {};
+  // Classes + per-class subjects: available to Teacher AND Head of Department. An HOD may
+  // teach alongside their general department oversight, so they get the same Assigned
+  // Classes / per-class subject picker a Teacher uses. `classroomSubjects` is the real
+  // source of truth for what's actually taught in each class; it's kept distinct from an
+  // HOD's flat `subjects` (oversight) list above so the two meanings never get confused.
+  let classroomSubjects = {};
+  if(role==='teacher' || role==='hod'){
     classrooms.forEach(c=>{ classroomSubjects[c] = (ufClassroomSubjects[c]||[]).slice(); });
     userObj.classrooms = classrooms;
     userObj.classroomSubjects = classroomSubjects;
-    userObj.subjects = [...new Set(Object.values(classroomSubjects).flat())];
+    if(role==='teacher'){
+      // For a Teacher, "subjects" IS the union of what they teach across their classes.
+      userObj.subjects = [...new Set(Object.values(classroomSubjects).flat())];
+    }
   }
+  // What this account actually teaches in a classroom (used for the Teachers Database
+  // "who teaches this" lookup). For a Teacher this is the same as userObj.subjects; for an
+  // HOD it's unioned with their oversight subjects, since either can be true for a class.
+  const teachingSubjects = [...new Set(Object.values(classroomSubjects).flat())];
+  const dbSubjects = role==='hod' ? [...new Set([...subjects, ...teachingSubjects])] : teachingSubjects;
   if(role==='parent'){ userObj.studentIds = ufSelectedStudentIds.slice(); }
 
   if(editing){
@@ -14207,10 +14232,10 @@ function saveUserFromForm(){
       teacher.username = username;
       teacher.name = displayName || username;
       teacher.section = sectionLabelFromCode(section);
-      teacher.subject = (userObj.subjects||[]).join(', ');
+      teacher.subject = dbSubjects.join(', ');
       // Classes stay whatever was picked in Manage Users; admins can also add/adjust
-      // them later directly from the Teachers Database "Classes" column. HOD accounts
-      // don't collect classrooms in Manage Users, so this simply leaves Classes as-is for them.
+      // them later directly from the Teachers Database "Classes" column. This now applies
+      // to Teacher and HOD alike, since an HOD can also be assigned classes it teaches.
       teacher.classes = classrooms.length ? classrooms.join(', ') : (teacher.classes || '');
     } else if(previousRole === 'teacher' || previousRole === 'hod'){
       // Role changed away from Teacher/HOD: drop the linked Teachers Database row.
@@ -14255,7 +14280,7 @@ function saveUserFromForm(){
         name: displayName || username,
         username: username,
         section: sectionLabelFromCode(section),
-        subject: subjects.join(', '),
+        subject: dbSubjects.join(', '),
         classes: classrooms.join(', ')
       };
       teachers.push(teacherEntry);

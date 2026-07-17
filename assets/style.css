@@ -945,44 +945,47 @@ body.dark-mode .exam-analysis-table th, body.dark-mode .exam-analysis-table td{ 
   }
 }
 
-/* ---------- Global manual Save (Firestore) — floating, visible on every tab ---------- */
+/* ---------- Global manual Save (Firestore) — docked in the fixed left sidebar, above Configuration ---------- */
 .gb-save-fab{
-  position:fixed;right:26px;bottom:26px;z-index:400;
-  display:flex;flex-direction:column;align-items:flex-end;gap:6px;
+  margin-top:auto!important; width:100%;
+  display:flex;flex-direction:column;align-items:stretch;gap:6px;
+  padding-top:10px;margin-bottom:8px;border-top:1px solid var(--border);
   animation:gbFabIn .25s ease;
 }
-@keyframes gbFabIn{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
+@keyframes gbFabIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
 .gb-save-status{
-  font-family:'Tajawal',sans-serif;font-size:12px;font-weight:800;
-  color:var(--ink);background:var(--paper);padding:5px 12px;border-radius:20px;
-  box-shadow:0 4px 14px rgba(0,0,0,.16);border:1px solid rgba(201,162,39,0.3);
+  font-family:'Tajawal',sans-serif;font-size:10.5px;font-weight:800;text-align:center;
+  color:var(--ink-soft);background:var(--paper-2);padding:4px 6px;border-radius:8px;
+  border:1px solid var(--border);line-height:1.3;
 }
 .gb-save-status.unsaved{color:#fff;background:var(--amber);border-color:var(--amber);}
 .gb-save-btn{
-  font-family:'Tajawal',sans-serif;font-weight:800;font-size:15px;
+  font-family:'Tajawal',sans-serif;font-weight:800;font-size:12.5px;
   color:var(--ink);background:linear-gradient(180deg,var(--gold) 0%,var(--gold-deep) 100%);
-  border:none;border-radius:50px;padding:14px 26px;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;gap:9px;
-  box-shadow:0 10px 26px rgba(156,124,21,.4),0 2px 6px rgba(0,0,0,.15);
+  border:none;border-radius:9px;height:38px;padding:0 8px;cursor:pointer;width:100%;
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  box-shadow:0 4px 12px rgba(156,124,21,.35);
   transition:transform .15s ease, box-shadow .15s ease;
 }
 .gb-save-spinner{
-  display:none;width:15px;height:15px;flex-shrink:0;border-radius:50%;
+  display:none;width:14px;height:14px;flex-shrink:0;border-radius:50%;
   border:2.5px solid rgba(27,42,74,0.25);border-top-color:var(--ink);
   animation:gbSpin .7s linear infinite;
 }
 .gb-save-btn.saving .gb-save-spinner{display:inline-block;}
 @keyframes gbSpin{to{transform:rotate(360deg);}}
-.gb-save-btn:hover{transform:translateY(-2px);box-shadow:0 14px 30px rgba(156,124,21,.5),0 2px 6px rgba(0,0,0,.18);}
+.gb-save-btn:hover{transform:translateY(-2px);box-shadow:0 8px 18px rgba(156,124,21,.45);}
 .gb-save-btn:disabled{opacity:.75;cursor:wait;transform:none;}
 .gb-save-btn.unsaved{animation:gbPulse 1.6s ease-in-out infinite;}
 @keyframes gbPulse{
-  0%,100%{box-shadow:0 10px 26px rgba(156,124,21,.4),0 0 0 0 rgba(212,175,55,.55);}
-  50%{box-shadow:0 10px 26px rgba(156,124,21,.4),0 0 0 10px rgba(212,175,55,0);}
+  0%,100%{box-shadow:0 4px 12px rgba(156,124,21,.35),0 0 0 0 rgba(212,175,55,.55);}
+  50%{box-shadow:0 4px 12px rgba(156,124,21,.35),0 0 0 6px rgba(212,175,55,0);}
 }
-@media (max-width:760px){
-  .gb-save-fab{right:14px;bottom:14px;}
-  .gb-save-btn{padding:12px 20px;font-size:14px;}
+@media (max-width:900px){
+  .gb-save-status{ display:none; }
+  .gb-save-btn{ padding:0; gap:0; }
+  .gb-save-btn span:not(.gb-save-spinner){ font-size:0; }
+  .gb-save-btn span:not(.gb-save-spinner)::before{ content:'💾'; font-size:16px; }
 }
 .gb-toast{
   position:fixed;top:18px;left:50%;transform:translateX(-50%) translateY(-14px);
@@ -1307,13 +1310,9 @@ td:has(> .score-input){background:var(--bg);}
   font-size:13px;color:var(--ink);min-width:80px;background:var(--paper);
 }
 .db-edit-input:focus, .db-edit-select:focus{outline:none;border-color:var(--gold);}
-/* Blue on purpose (not the same green used for "Firestore saved") — this pill fires on
-   every keystroke as an instant local/localStorage save, which is a much lower-stakes
-   confirmation than a real Firestore round-trip; using a different color stops the two
-   from being confused as meaning the same thing. */
 .save-indicator{
   display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;
-  background:var(--blue-bg);color:var(--blue);font-size:12.5px;font-weight:700;
+  background:var(--green-bg);color:var(--green);font-size:12.5px;font-weight:700;
   opacity:0;transform:translateY(-4px);transition:opacity .25s ease, transform .25s ease;pointer-events:none;
 }
 .save-indicator.show{opacity:1;transform:translateY(0);}
@@ -1347,25 +1346,9 @@ td:has(> .score-input){background:var(--bg);}
   padding:60px 20px;text-align:center;color:var(--ink-soft);
 }
 .empty-state .seal-lg{
-  width:70px;height:70px;border-radius:50%;margin:0 auto 16px;position:relative;
+  width:70px;height:70px;border-radius:50%;margin:0 auto 16px;
+  background:radial-gradient(circle at 35% 30%, var(--gold-light), var(--gold) 60%, var(--gold-deep) 100%);
   display:flex;align-items:center;justify-content:center;font-family:'Aref Ruqaa';font-size:30px;color:var(--ink);
-  /* Medallion look: a flatter gold face (not a glossy sphere) framed by a thin
-     recessed ring, with a soft outer glow instead of a heavy 3D highlight. */
-  background:radial-gradient(circle at 50% 42%, var(--gold-light) 0%, var(--gold) 65%, var(--gold-deep) 100%);
-  box-shadow:
-    0 0 0 1px rgba(156,124,21,.35),                 /* thin outer hairline */
-    0 0 0 5px var(--paper),                          /* breathing-room ring */
-    0 0 0 6px rgba(201,162,39,.28),                  /* soft outer halo */
-    inset 0 1px 2px rgba(255,255,255,.55),            /* subtle top highlight */
-    inset 0 -3px 6px rgba(114,88,10,.28),             /* subtle bottom depth */
-    0 8px 18px rgba(156,124,21,.22);                 /* gentle lift off the page */
-}
-/* Thin dashed inner ring, like a wax-seal impression — reinforces the "seal" idea
-   the class name already implies, and gives the number something to sit inside
-   instead of floating alone on a flat gradient. */
-.empty-state .seal-lg::before{
-  content:'';position:absolute;inset:7px;border-radius:50%;
-  border:1.5px dashed rgba(114,88,10,.35);pointer-events:none;
 }
 .empty-state h3{font-family:'Aref Ruqaa',serif;font-size:22px;margin:0 0 6px;color:var(--ink);}
 .db-empty-state{ background:var(--paper); border-radius:18px; box-shadow:0 4px 18px rgba(22,42,74,.06); border:1px solid var(--border); }
@@ -1898,12 +1881,7 @@ body.dark-mode .att-table tbody tr:hover .att-name-col{ background:var(--paper-2
 .cert-subjects .teacher-signature-th,.cert2-table .teacher-signature-th{min-width:96px;position:sticky;right:0;z-index:6;box-shadow:-3px 0 8px rgba(27,42,74,.16);}
 .cert-subjects .teacher-signature-cell,.cert2-table .teacher-signature-cell{min-width:96px;padding:6px 7px!important;text-align:center!important;vertical-align:middle;position:sticky;right:0;z-index:3;background:#FBFAF6;box-shadow:-3px 0 8px rgba(27,42,74,.12);}
 .cert-subjects tbody tr:nth-child(even) .teacher-signature-cell,.cert2-table tbody tr:nth-child(even) .teacher-signature-cell{background:#F7F5EE;}
-/* 'Alex Brush' is the classic Google Fonts pick that most reads as an actual pen
-   signature (connected brush strokes, natural variation) rather than decorative
-   lettering. Maroon (var(--cert-maroon), already used elsewhere on the certificate
-   for accents) instead of the neutral ink color makes it read distinctly as a
-   signed mark rather than printed text. It only ships one weight, so no bold. */
-.teacher-signature-name{display:inline-block;font-family:'Alex Brush','Dancing Script','Style Script','Segoe Script',cursive;font-size:19px;font-weight:400;line-height:1.15;color:var(--cert-maroon);white-space:normal;overflow-wrap:anywhere;transform:rotate(-2deg);}
+.teacher-signature-name{display:inline-block;font-family:'Dancing Script','Style Script','Segoe Script',cursive;font-size:18px;font-weight:700;line-height:1.04;color:var(--ink-2);white-space:normal;overflow-wrap:anywhere;transform:rotate(-2deg);}
 .teacher-signature-empty{color:var(--ink-soft);font-size:15px;}
 .cert2-signrow{
   display:flex; justify-content:space-between; align-items:center;
@@ -2727,8 +2705,8 @@ body.dark-mode .login-quote{ background:rgba(0,0,0,0.18); }
 }
 .nav-tab::after{display:none;}
 .nav-row-config{
-  margin-inline-start:0!important;margin-top:auto!important;padding-inline-start:0!important;
-  border-inline-start:none!important;border-top:1px solid var(--border);padding-top:10px!important;
+  margin-inline-start:0!important;margin-top:0!important;padding-inline-start:0!important;
+  border-inline-start:none!important;border-top:none;padding-top:0!important;
   width:100%;display:flex;justify-content:stretch;
 }
 .nav-row-config::before{content:none!important;}
