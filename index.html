@@ -304,10 +304,14 @@
 
       <div class="field" id="ufScopeField" style="min-width:100%;flex-basis:100%;">
         <p class="uf-section-title" id="ufScopeTitle">Teacher access scope</p>
-        <label id="ufSubjectsLabel">Assigned Subjects (leave all unchecked = no subjects yet)</label>
-        <div class="perm-grid" id="ufSubjectsWrap"></div>
+
+        <div id="ufHodSubjectsField" style="display:none;">
+          <label id="ufSubjectsLabel">Subjects Overseen <span style="color:#B8B2A0;font-weight:500;">(department-wide oversight — leave all unchecked = none yet)</span></label>
+          <div class="perm-grid" id="ufSubjectsWrap"></div>
+        </div>
+
         <div id="ufClassroomsField">
-          <label style="margin-top:10px;display:block;">Assigned Classes <span style="color:#B8B2A0;font-weight:500;">(pick from the classes already entered in Student Database)</span></label>
+          <label style="margin-top:10px;display:block;"><span id="ufClassroomsLabelText">Assigned Classes</span> <span style="color:#B8B2A0;font-weight:500;">(pick from the classes already entered in Student Database)</span></label>
           <div class="uf-classdd-wrap" id="ufClassroomsDD">
             <button type="button" class="uf-classdd-btn" onclick="toggleUfClassroomsDD(event)">
               <span id="ufClassroomsBtnText">Select classes…</span>
@@ -315,6 +319,11 @@
             </button>
             <div class="step-options uf-classdd-panel" id="ufClassroomsPanel"></div>
           </div>
+        </div>
+
+        <div id="ufClassroomSubjectsField" style="margin-top:14px;">
+          <label id="ufClassroomSubjectsLabelText" style="display:block;margin-bottom:8px;">Subjects taught per class</label>
+          <div id="ufClassroomSubjectsWrap"></div>
         </div>
       </div>
 
