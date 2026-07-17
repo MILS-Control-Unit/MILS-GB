@@ -619,7 +619,7 @@ function makeStepConfig(st, sectionsData, stagesData){
     },
     requires:['termPeriod','section','stage','grade','term'] };
   const subjectStep = { key:'subject', title:'Subject', state: st, getLabel:()=> st.subject ? subjectWithIcon(st.subject) : null,
-    options: ()=> st.stage ? getSubjectsForStageAndSection(st.stage, st.section).filter(s=>scopeSubjectAllowed(s)).map(s=>({id:s,label:subjectWithIcon(s)})) : [], requires:['termPeriod','section','stage','grade','term','academicTerm'] };
+    options: ()=> st.stage ? getSubjectsForStageAndSection(st.stage, st.section).filter(s=>scopeSubjectAllowedForClassroom(s, st.term)).map(s=>({id:s,label:subjectWithIcon(s)})) : [], requires:['termPeriod','section','stage','grade','term','academicTerm'] };
 
   // Teachers only ever have one Section, and a fixed, pre-assigned set of Classes/Subjects —
   // making them click through Stage and Grade first (even though those dropdowns only ever
@@ -673,7 +673,7 @@ function attStepConfig(){
   const subjectStep = {
     key:'subject', title:'Subject', state: attState,
     getLabel:()=> attState.subject ? subjectWithIcon(attState.subject) : null,
-    options: ()=> attState.stage ? getSubjectsForStageAndSection(attState.stage, attState.section).filter(s=>scopeSubjectAllowed(s)).map(s=>({id:s,label:subjectWithIcon(s)})) : [],
+    options: ()=> attState.stage ? getSubjectsForStageAndSection(attState.stage, attState.section).filter(s=>scopeSubjectAllowedForClassroom(s, attState.term)).map(s=>({id:s,label:subjectWithIcon(s)})) : [],
     requires:['termPeriod','section','stage','grade','term']
   };
   const monthStep = {
@@ -12924,7 +12924,11 @@ function getEffectivePermissions(user){
     // absence is restricted to Admin and HOS/Deputy only.
     const scope = computeTeacherGradeScope(user);
     return { database:false, grades:true, attendance:true, approvedLeave:false, reports:false, dashboard:false, examsAnalysis:false, examSchedule:false, perfAlerts:false, classLists:false, settings:false, edit:true,
-      sectionScope:user.section||null, stageScope:scope.stages, gradeScope:scope.grades, classroomScope:user.classrooms||[], subjectScope:user.subjects||[] };
+      sectionScope:user.section||null, stageScope:scope.stages, gradeScope:scope.grades, classroomScope:user.classrooms||[], subjectScope:user.subjects||[],
+      // Per-classroom subject map (e.g. Math in 5A, Science in 5B) — see scopeSubjectAllowedForClassroom()
+      // below, which is what actually enforces this; subjectScope above stays a flat union for any
+      // older code path that only ever checked subject in isolation, without a classroom.
+      classroomSubjects: user.classroomSubjects || null };
   }
   // Parent/Student: Can View ONLY Certificates, Dashboard and the Exams Schedule
   const hasStudentLink = Array.isArray(user.studentIds);
@@ -12963,6 +12967,19 @@ function scopeSubjectAllowed(name){
   const sc = currentUser.effective.subjectScope;
   return !sc || sc.includes(name);
 }
+// Same idea as scopeSubjectAllowed(), but also checks WHICH classroom the subject is
+// being requested for — a Teacher assigned Math in 5A and Science in 5B must not be
+// allowed to open Science in 5A just because Science is somewhere in their flat subject
+// list. Falls back to the flat, classroom-independent check for roles/accounts that
+// don't have a classroomSubjects map (HOD, or a legacy Teacher account not yet re-saved).
+function scopeSubjectAllowedForClassroom(name, classroom){
+  if(!currentUser || !currentUser.effective) return true;
+  const cs = currentUser.effective.classroomSubjects;
+  if(cs && classroom && Object.prototype.hasOwnProperty.call(cs, classroom)){
+    return (cs[classroom]||[]).includes(name);
+  }
+  return scopeSubjectAllowed(name);
+}
 function scopeClassroomAllowed(name){
   if(!currentUser || !currentUser.effective) return true;
   const sc = currentUser.effective.classroomScope;
@@ -12995,7 +13012,7 @@ function sanitizeScopedState(){
   } else if(state.term && !scopeClassroomAllowed(state.term)){
     state.term = null;
   }
-  if(state.subject && !scopeSubjectAllowed(state.subject)) state.subject = null;
+  if(state.subject && !scopeSubjectAllowedForClassroom(state.subject, state.term)) state.subject = null;
 
   // Attendance tab's own independent stepper state
   if(attState.section && !scopeSectionAllowed(attState.section)){
@@ -13005,7 +13022,7 @@ function sanitizeScopedState(){
   } else if(attState.term && !scopeClassroomAllowed(attState.term)){
     attState.term = null;
   }
-  if(attState.subject && !scopeSubjectAllowed(attState.subject)) attState.subject = null;
+  if(attState.subject && !scopeSubjectAllowedForClassroom(attState.subject, attState.term)) attState.subject = null;
 
   // Cycle Dashboard filters
   if(state.dashboardSection && !scopeSectionAllowed(state.dashboardSection)){
@@ -13866,9 +13883,17 @@ function getAllClassroomsInDb(){
 }
 
 let ufSelectedClassrooms = [];
+// { [classroomName]: [subject, subject, ...] } — lets the same Teacher teach a different
+// subject in each of their assigned classes, instead of one flat subject list shared
+// across every class (which had no way to express "Math in 5A, Science in 5B").
+let ufClassroomSubjects = {};
 
-function buildClassroomOptions(selected){
+function buildClassroomOptions(selected, classroomSubjectsData){
   ufSelectedClassrooms = (selected||[]).slice();
+  ufClassroomSubjects = {};
+  ufSelectedClassrooms.forEach(c=>{
+    ufClassroomSubjects[c] = (classroomSubjectsData && classroomSubjectsData[c]) ? classroomSubjectsData[c].slice() : [];
+  });
   const panel = document.getElementById('ufClassroomsPanel');
   const all = getAllClassroomsInDb();
   if(!all.length){
@@ -13880,12 +13905,66 @@ function buildClassroomOptions(selected){
     }).join('');
   }
   updateUfClassroomsBtnText();
+  renderUfClassroomSubjectPanels();
 }
 
 function toggleUfClassroom(c, checked){
-  if(checked){ if(!ufSelectedClassrooms.includes(c)) ufSelectedClassrooms.push(c); }
-  else { ufSelectedClassrooms = ufSelectedClassrooms.filter(x=> x!==c); }
+  if(checked){
+    if(!ufSelectedClassrooms.includes(c)) ufSelectedClassrooms.push(c);
+    if(!ufClassroomSubjects[c]) ufClassroomSubjects[c] = [];
+  } else {
+    ufSelectedClassrooms = ufSelectedClassrooms.filter(x=> x!==c);
+    delete ufClassroomSubjects[c];
+  }
   updateUfClassroomsBtnText();
+  renderUfClassroomSubjectPanels();
+}
+
+// Renders one subject checklist per currently-selected Assigned Class, each independently
+// checkable — this is what actually lets a Teacher's subjects differ from one class to
+// the next. Shown only for the Teacher role (see onRoleFormChange); HOD keeps the old
+// single flat list (#ufSubjectsWrap) since HOD access isn't scoped by classroom at all.
+function renderUfClassroomSubjectPanels(){
+  const wrap = document.getElementById('ufClassroomSubjectsWrap');
+  if(!wrap) return;
+  if(!ufSelectedClassrooms.length){
+    wrap.innerHTML = `<p class="foot-note" style="margin:6px 0;">Pick at least one Assigned Class above to choose its subjects.</p>`;
+    return;
+  }
+  const groups = subjectGroupsForChecklist();
+  wrap.innerHTML = ufSelectedClassrooms.map(c=>{
+    const selected = ufClassroomSubjects[c] || [];
+    const cSafe = c.replace(/'/g,"\\'");
+    const groupsHtml = groups.map(g=>{
+      const itemsHtml = g.subjects.map(s=>{
+        const id = 'ufClassSubj_' + c.replace(/[^a-zA-Z0-9]/g,'_') + '_' + s.replace(/[^a-zA-Z0-9]/g,'_');
+        const checked = selected.includes(s) ? 'checked' : '';
+        return `<label class="perm-check"><input type="checkbox" id="${id}" ${checked} onchange="toggleUfClassroomSubject('${cSafe}','${s.replace(/'/g,"\\'")}',this.checked)"> ${subjectWithIcon(s)}</label>`;
+      }).join('');
+      return `<div class="subj-group">${g.title ? `<div class="subj-group-title">${g.title}</div>` : ''}<div class="subj-grid">${itemsHtml}</div></div>`;
+    }).join('');
+    return `<div class="uf-class-subj-block" style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px;">
+        <b style="font-size:13px;">${escapeHtml(c)}</b>
+        <span>
+          <a onclick="setAllUfClassroomSubjects('${cSafe}', true)" style="cursor:pointer;font-size:11.5px;margin-inline-end:10px;">Select all</a>
+          <a onclick="setAllUfClassroomSubjects('${cSafe}', false)" style="cursor:pointer;font-size:11.5px;">Clear all</a>
+        </span>
+      </div>
+      <div class="subj-groups-wrap">${groupsHtml}</div>
+    </div>`;
+  }).join('');
+}
+function toggleUfClassroomSubject(classroom, subject, checked){
+  if(!ufClassroomSubjects[classroom]) ufClassroomSubjects[classroom] = [];
+  const list = ufClassroomSubjects[classroom];
+  if(checked){ if(!list.includes(subject)) list.push(subject); }
+  else { ufClassroomSubjects[classroom] = list.filter(s=> s!==subject); }
+}
+function setAllUfClassroomSubjects(classroom, checked){
+  const allSubjects = subjectGroupsForChecklist().flatMap(g=>g.subjects);
+  ufClassroomSubjects[classroom] = checked ? allSubjects.slice() : [];
+  renderUfClassroomSubjectPanels();
 }
 
 function updateUfClassroomsBtnText(){
@@ -13910,8 +13989,9 @@ function onRoleFormChange(){
   document.getElementById('ufStagesField').style.display = needsStages ? '' : 'none';
   document.getElementById('ufScopeField').style.display = needsScope ? '' : 'none';
   document.getElementById('ufClassroomsField').style.display = needsClassrooms ? '' : 'none';
+  document.getElementById('ufHodSubjectsField').style.display = (role==='hod') ? '' : 'none';
+  document.getElementById('ufClassroomSubjectsField').style.display = needsClassrooms ? '' : 'none';
   document.getElementById('ufScopeTitle').textContent = role==='hod' ? 'Head of Department access scope' : 'Teacher access scope';
-  document.getElementById('ufSubjectsLabel').textContent = role==='hod' ? 'Subject (leave unchecked = no subject yet)' : 'Assigned Subjects (leave all unchecked = no subjects yet)';
   document.getElementById('ufStudentsField').style.display = needsStudents ? '' : 'none';
   if(needsStudents) renderUfStudentPicker();
 }
@@ -13961,7 +14041,14 @@ function editUser(username){
   document.getElementById('ufPassword').value = user.password || '';
   document.getElementById('ufRole').value = user.role;
   document.getElementById('ufSection').value = user.section !== undefined ? user.section : 'en';
-  buildClassroomOptions(user.classrooms||[]);
+  // Legacy fallback: an account saved before classroomSubjects existed only has the old
+  // flat `subjects` array shared across all classrooms — seed each of its classes with
+  // that same flat list so editing an old account doesn't look like it lost its subjects.
+  const classroomSubjectsForEdit = user.classroomSubjects
+    || ((user.classrooms && user.classrooms.length && user.subjects && user.subjects.length)
+        ? Object.fromEntries(user.classrooms.map(c=> [c, user.subjects.slice()]))
+        : null);
+  buildClassroomOptions(user.classrooms||[], classroomSubjectsForEdit);
   buildSubjectCheckboxes(user.subjects||[]);
   setUfSelectedStages(user.stages||[]);
   ufSelectedStudentIds = (user.studentIds||[]).slice();
@@ -14019,7 +14106,17 @@ function saveUserFromForm(){
   if(role==='teacher' || role==='hod' || role==='hos') userObj.section = section;
   if(role==='hos'){ userObj.stages = stages; }
   if(role==='hod'){ userObj.stages = stages; userObj.subjects = subjects; }
-  if(role==='teacher'){ userObj.subjects = subjects; userObj.classrooms = classrooms; }
+  if(role==='teacher'){
+    // classroomSubjects is the real source of truth now — a Teacher can teach a
+    // different subject in each of their assigned classes (e.g. Math in 5A, Science in
+    // 5B). `subjects` is kept as a flat union purely for backward compatibility with any
+    // older code path (e.g. the Teachers Database catch-up sync) still reading it directly.
+    const classroomSubjects = {};
+    classrooms.forEach(c=>{ classroomSubjects[c] = (ufClassroomSubjects[c]||[]).slice(); });
+    userObj.classrooms = classrooms;
+    userObj.classroomSubjects = classroomSubjects;
+    userObj.subjects = [...new Set(Object.values(classroomSubjects).flat())];
+  }
   if(role==='parent'){ userObj.studentIds = ufSelectedStudentIds.slice(); }
 
   if(editing){
@@ -14043,7 +14140,7 @@ function saveUserFromForm(){
       teacher.username = username;
       teacher.name = displayName || username;
       teacher.section = sectionLabelFromCode(section);
-      teacher.subject = subjects.join(', ');
+      teacher.subject = (userObj.subjects||[]).join(', ');
       // Classes stay whatever was picked in Manage Users; admins can also add/adjust
       // them later directly from the Teachers Database "Classes" column. HOD accounts
       // don't collect classrooms in Manage Users, so this simply leaves Classes as-is for them.
