@@ -1898,12 +1898,12 @@ body.dark-mode .att-table tbody tr:hover .att-name-col{ background:var(--paper-2
 .cert-subjects .teacher-signature-th,.cert2-table .teacher-signature-th{min-width:96px;position:sticky;right:0;z-index:6;box-shadow:-3px 0 8px rgba(27,42,74,.16);}
 .cert-subjects .teacher-signature-cell,.cert2-table .teacher-signature-cell{min-width:96px;padding:6px 7px!important;text-align:center!important;vertical-align:middle;position:sticky;right:0;z-index:3;background:#FBFAF6;box-shadow:-3px 0 8px rgba(27,42,74,.12);}
 .cert-subjects tbody tr:nth-child(even) .teacher-signature-cell,.cert2-table tbody tr:nth-child(even) .teacher-signature-cell{background:#F7F5EE;}
-/* 'Meddon' is drawn to look like an actual pen signature (connected, slightly
-   irregular strokes) rather than a decorative script — reads better at this small
-   size than 'Dancing Script' did, which could blur into an illegible blob at 18px.
-   It only ships a single (regular) weight, so font-weight is left at normal instead
-   of faking a bold that would distort the letterforms. */
-.teacher-signature-name{display:inline-block;font-family:'Meddon','Dancing Script','Style Script','Segoe Script',cursive;font-size:21px;font-weight:400;line-height:1.15;color:var(--ink-2);white-space:normal;overflow-wrap:anywhere;transform:rotate(-2deg);}
+/* 'Alex Brush' is the classic Google Fonts pick that most reads as an actual pen
+   signature (connected brush strokes, natural variation) rather than decorative
+   lettering. Maroon (var(--cert-maroon), already used elsewhere on the certificate
+   for accents) instead of the neutral ink color makes it read distinctly as a
+   signed mark rather than printed text. It only ships one weight, so no bold. */
+.teacher-signature-name{display:inline-block;font-family:'Alex Brush','Dancing Script','Style Script','Segoe Script',cursive;font-size:19px;font-weight:400;line-height:1.15;color:var(--cert-maroon);white-space:normal;overflow-wrap:anywhere;transform:rotate(-2deg);}
 .teacher-signature-empty{color:var(--ink-soft);font-size:15px;}
 .cert2-signrow{
   display:flex; justify-content:space-between; align-items:center;
