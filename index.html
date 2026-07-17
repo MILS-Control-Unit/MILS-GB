@@ -983,6 +983,15 @@
       <div class="masthead-right-row">
         <button class="dark-toggle-btn" id="infoToggleBtn" onclick="toggleHeaderInfo()" title="Show clock, weather &amp; online users" style="display:none;">ⓘ</button>
         <button class="dark-toggle-btn" id="darkToggleBtn" onclick="toggleDarkMode()" title="Toggle dark mode">🌙</button>
+        <div class="birthday-widget" id="birthdayWidget" onclick="toggleBirthdayDropdown(event)" title="Students celebrating a birthday today">
+          <span class="birthday-icon">🎂</span>
+          <span id="birthdayCount">0</span>
+          <span class="birthday-label">Birthdays Today</span>
+          <div class="birthday-dropdown" id="birthdayDropdown">
+            <div class="birthday-dropdown-title">🎉 Birthdays Today</div>
+            <div id="birthdayList"><span class="birthday-chip-empty">Loading…</span></div>
+          </div>
+        </div>
         <div class="user-badge" id="userBadge">
           <span id="userBadgeName">—</span>
           <span class="u-role" id="userBadgeRole">—</span>
@@ -1012,15 +1021,6 @@
           <div class="visitors-dropdown" id="visitorsDropdown">
             <div class="visitors-dropdown-title">Active now</div>
             <div id="activeVisitorsList"><span class="visitor-chip-empty">Loading…</span></div>
-          </div>
-        </div>
-        <div class="birthday-widget" id="birthdayWidget" onclick="toggleBirthdayDropdown(event)" title="Students celebrating a birthday today">
-          <span class="birthday-icon">🎂</span>
-          <span id="birthdayCount">0</span>
-          <span class="birthday-label">Birthdays Today</span>
-          <div class="birthday-dropdown" id="birthdayDropdown">
-            <div class="birthday-dropdown-title">🎉 Birthdays Today</div>
-            <div id="birthdayList"><span class="birthday-chip-empty">Loading…</span></div>
           </div>
         </div>
       </div>
