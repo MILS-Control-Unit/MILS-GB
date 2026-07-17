@@ -6917,7 +6917,7 @@ function updateGradeBookSaveUI(){
   }
   if(statusEl){
     statusEl.classList.toggle('unsaved', gbUnsavedChanges);
-    statusEl.textContent = gbUnsavedChanges ? 'You have unsaved changes' : 'All changes saved to Firestore';
+    statusEl.textContent = gbUnsavedChanges ? 'You have unsaved changes' : 'Saved to MILS Grade Book — Thank You';
   }
 }
 
@@ -6931,12 +6931,12 @@ async function saveGradeBookNow(){
     btn.classList.add('saving');
     if(label) label.textContent = 'Saving…';
   }
-  showGbToast('saving', 'Saving to Firestore…');
+  showGbToast('saving', 'Saving to MILS Grade Book…');
   const ok = await pushGradeBookToFirestore();
   if(ok){
     gbUnsavedChanges = false;
     stopGbUnsavedReminder();
-    showGbToast('success', '✓ Saved to Firestore');
+    showGbToast('success', '✓ Saved to MILS Grade Book — Thank You');
   }else{
     gbUnsavedChanges = true;
     showGbToast('error', '✕ Save failed — check your internet connection');
@@ -12816,7 +12816,15 @@ function submitChangePassword(e){
   return false;
 }
 
-const ALL_SUBJECTS = [...new Set(Object.values(STAGES).flatMap(s=>s.subjects))].sort((a,b)=>a.localeCompare(b));
+// Union of every subject taught anywhere in the school — both the base (English Section)
+// curriculum in STAGES and the French Section-specific subjects in FRENCH_SECTION_SUBJECTS
+// (currently just "English", the French Section's second-language subject). Without this,
+// "English" never appeared in Manage Users' subject checklist, the Teachers Database, Grade
+// Entry Control, or any Excel template, even though French Section students are taught it.
+const ALL_SUBJECTS = [...new Set([
+  ...Object.values(STAGES).flatMap(s=>s.subjects),
+  ...Object.values(FRENCH_SECTION_SUBJECTS).flatMap(s=>s.subjects)
+])].sort((a,b)=>a.localeCompare(b));
 
 function loadUsers(){
   try{
@@ -13894,7 +13902,7 @@ function toggleUfStudent(id, checked){
 // long alphabetical list. Any subject not explicitly grouped falls into "Core & Other Subjects"
 // automatically, so newly-added subjects never silently disappear from the checklist.
 const SUBJECT_GROUPS = [
-  { title:'Languages', subjects:['Arabic','English O.L.','English A.L.','French','French O.L.','French A.L.','German','German O.L.','German A.L.'] },
+  { title:'Languages', subjects:['Arabic','English','English O.L.','English A.L.','French','French O.L.','French A.L.','German','German O.L.','German A.L.'] },
   { title:'Religious Education', subjects:['Religion','Ch-Religion'] },
   { title:'Core & Other Subjects', subjects:['Mathematics','Science','Integrated Sciences','Social Studies','History','Philosophy','Art','ICT'] }
 ];
