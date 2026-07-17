@@ -304,10 +304,9 @@
 
       <div class="field" id="ufScopeField" style="min-width:100%;flex-basis:100%;">
         <p class="uf-section-title" id="ufScopeTitle">Teacher access scope</p>
-        <label id="ufSubjectsLabel">Assigned Subjects (leave all unchecked = no subjects yet)</label>
-        <div class="perm-grid" id="ufSubjectsWrap"></div>
+
         <div id="ufClassroomsField">
-          <label style="margin-top:10px;display:block;">Assigned Classes <span style="color:#B8B2A0;font-weight:500;">(pick from the classes already entered in Student Database)</span></label>
+          <label style="display:block;">Assigned Classes <span style="color:#B8B2A0;font-weight:500;">(pick from the classes already entered in Student Database)</span></label>
           <div class="uf-classdd-wrap" id="ufClassroomsDD">
             <button type="button" class="uf-classdd-btn" onclick="toggleUfClassroomsDD(event)">
               <span id="ufClassroomsBtnText">Select classes…</span>
@@ -315,6 +314,20 @@
             </button>
             <div class="step-options uf-classdd-panel" id="ufClassroomsPanel"></div>
           </div>
+        </div>
+
+        <!-- HOD only: a single flat subject list (HOD is scoped by subject+stage, not by classroom). -->
+        <div id="ufHodSubjectsField">
+          <label style="margin-top:10px;display:block;">Subject (leave unchecked = no subject yet)</label>
+          <div class="perm-grid" id="ufSubjectsWrap"></div>
+        </div>
+
+        <!-- Teacher only: subjects are picked PER assigned class above, so the same Teacher
+             can teach a different subject in each class (e.g. Math in 5A, Science in 5B) —
+             this used to be one flat subject list shared across every class they were assigned. -->
+        <div id="ufClassroomSubjectsField" style="margin-top:10px;">
+          <label style="display:block;">Subjects taught per class <span style="color:#B8B2A0;font-weight:500;">(pick a Class above first)</span></label>
+          <div id="ufClassroomSubjectsWrap"></div>
         </div>
       </div>
 
