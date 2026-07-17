@@ -243,6 +243,11 @@ body.dark-mode .masthead-text h1{
 }
 .birthday-label{font-weight:700;color:#fff;opacity:.95;}
 #birthdayCount{font-size:16px;}
+/* Now living in the always-visible top masthead row alongside the dark-mode toggle and
+   user badge, which is a tighter row than where this widget used to sit — collapse the
+   text label first on medium screens (keeping the icon+count meaningful and clickable),
+   same pattern already used for .qs-label / .quick-stats above. */
+@media (max-width:1600px){ #birthdayWidget .birthday-label{display:none;} #birthdayWidget{padding:5px 9px;} }
 
 /* ---------- Birthday Top Bar (auto-shown banner above the header) ---------- */
 .birthday-topbar{
@@ -974,6 +979,11 @@ body.dark-mode .exam-analysis-table th, body.dark-mode .exam-analysis-table td{ 
 }
 .gb-save-btn.saving .gb-save-spinner{display:inline-block;}
 @keyframes gbSpin{to{transform:rotate(360deg);}}
+/* Mark Entry Report refresh icon — spins briefly on click for feedback */
+#markEntryRefreshBtn.is-spinning{ pointer-events:none; opacity:.85; }
+#markEntryRefreshBtn.is-spinning .me-refresh-icon{
+  display:inline-block; animation:gbSpin .5s linear infinite;
+}
 .gb-save-btn:hover{transform:translateY(-2px);box-shadow:0 8px 18px rgba(156,124,21,.45);}
 .gb-save-btn:disabled{opacity:.75;cursor:wait;transform:none;}
 .gb-save-btn.unsaved{animation:gbPulse 1.6s ease-in-out infinite;}

@@ -2752,6 +2752,19 @@ function renderMarkEntryWorkspace(){
   renderMarkEntryReport();
 }
 
+// Manually recalculates the Mark Entry Report from whatever is currently in `scores` —
+// a safety net alongside the automatic live-refresh in refreshUIAfterRemoteChange(), for
+// cases like a sync that just landed a moment ago, or simply wanting to confirm the
+// counts on screen match the latest saved marks.
+function refreshMarkEntryReport(){
+  const btn = document.getElementById('markEntryRefreshBtn');
+  if(btn){
+    btn.classList.add('is-spinning');
+    setTimeout(()=> btn.classList.remove('is-spinning'), 500);
+  }
+  renderMarkEntryWorkspace();
+}
+
 function reportMetric(sc, type){
   if(isPrimary()){
     const t = computePrimaryTotals(sc);
@@ -15015,6 +15028,12 @@ function refreshUIAfterRemoteChange(){
   if(currentView==='certReports' && typeof renderCertReportsWorkspace==='function'){
     if(typeof renderCertReportsStepper==='function') renderCertReportsStepper();
     renderCertReportsWorkspace();
+  }
+  // Mark Entry Report shows live "entered / total" counts pulled straight from `scores` —
+  // if it's left open while another device pushes new marks, it needs the same live
+  // re-render as Certificates above, or its counts silently go stale.
+  if(currentView==='markEntryReport' && typeof renderMarkEntryWorkspace==='function'){
+    renderMarkEntryWorkspace();
   }
   if(document.getElementById('reportCardReleaseOverlay') && document.getElementById('reportCardReleaseOverlay').classList.contains('show')){
     renderReportCardReleaseTable();
