@@ -1307,9 +1307,13 @@ td:has(> .score-input){background:var(--bg);}
   font-size:13px;color:var(--ink);min-width:80px;background:var(--paper);
 }
 .db-edit-input:focus, .db-edit-select:focus{outline:none;border-color:var(--gold);}
+/* Blue on purpose (not the same green used for "Firestore saved") — this pill fires on
+   every keystroke as an instant local/localStorage save, which is a much lower-stakes
+   confirmation than a real Firestore round-trip; using a different color stops the two
+   from being confused as meaning the same thing. */
 .save-indicator{
   display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;
-  background:var(--green-bg);color:var(--green);font-size:12.5px;font-weight:700;
+  background:var(--blue-bg);color:var(--blue);font-size:12.5px;font-weight:700;
   opacity:0;transform:translateY(-4px);transition:opacity .25s ease, transform .25s ease;pointer-events:none;
 }
 .save-indicator.show{opacity:1;transform:translateY(0);}
@@ -1343,9 +1347,25 @@ td:has(> .score-input){background:var(--bg);}
   padding:60px 20px;text-align:center;color:var(--ink-soft);
 }
 .empty-state .seal-lg{
-  width:70px;height:70px;border-radius:50%;margin:0 auto 16px;
-  background:radial-gradient(circle at 35% 30%, var(--gold-light), var(--gold) 60%, var(--gold-deep) 100%);
+  width:70px;height:70px;border-radius:50%;margin:0 auto 16px;position:relative;
   display:flex;align-items:center;justify-content:center;font-family:'Aref Ruqaa';font-size:30px;color:var(--ink);
+  /* Medallion look: a flatter gold face (not a glossy sphere) framed by a thin
+     recessed ring, with a soft outer glow instead of a heavy 3D highlight. */
+  background:radial-gradient(circle at 50% 42%, var(--gold-light) 0%, var(--gold) 65%, var(--gold-deep) 100%);
+  box-shadow:
+    0 0 0 1px rgba(156,124,21,.35),                 /* thin outer hairline */
+    0 0 0 5px var(--paper),                          /* breathing-room ring */
+    0 0 0 6px rgba(201,162,39,.28),                  /* soft outer halo */
+    inset 0 1px 2px rgba(255,255,255,.55),            /* subtle top highlight */
+    inset 0 -3px 6px rgba(114,88,10,.28),             /* subtle bottom depth */
+    0 8px 18px rgba(156,124,21,.22);                 /* gentle lift off the page */
+}
+/* Thin dashed inner ring, like a wax-seal impression — reinforces the "seal" idea
+   the class name already implies, and gives the number something to sit inside
+   instead of floating alone on a flat gradient. */
+.empty-state .seal-lg::before{
+  content:'';position:absolute;inset:7px;border-radius:50%;
+  border:1.5px dashed rgba(114,88,10,.35);pointer-events:none;
 }
 .empty-state h3{font-family:'Aref Ruqaa',serif;font-size:22px;margin:0 0 6px;color:var(--ink);}
 .db-empty-state{ background:var(--paper); border-radius:18px; box-shadow:0 4px 18px rgba(22,42,74,.06); border:1px solid var(--border); }
@@ -1878,7 +1898,12 @@ body.dark-mode .att-table tbody tr:hover .att-name-col{ background:var(--paper-2
 .cert-subjects .teacher-signature-th,.cert2-table .teacher-signature-th{min-width:96px;position:sticky;right:0;z-index:6;box-shadow:-3px 0 8px rgba(27,42,74,.16);}
 .cert-subjects .teacher-signature-cell,.cert2-table .teacher-signature-cell{min-width:96px;padding:6px 7px!important;text-align:center!important;vertical-align:middle;position:sticky;right:0;z-index:3;background:#FBFAF6;box-shadow:-3px 0 8px rgba(27,42,74,.12);}
 .cert-subjects tbody tr:nth-child(even) .teacher-signature-cell,.cert2-table tbody tr:nth-child(even) .teacher-signature-cell{background:#F7F5EE;}
-.teacher-signature-name{display:inline-block;font-family:'Dancing Script','Style Script','Segoe Script',cursive;font-size:18px;font-weight:700;line-height:1.04;color:var(--ink-2);white-space:normal;overflow-wrap:anywhere;transform:rotate(-2deg);}
+/* 'Meddon' is drawn to look like an actual pen signature (connected, slightly
+   irregular strokes) rather than a decorative script — reads better at this small
+   size than 'Dancing Script' did, which could blur into an illegible blob at 18px.
+   It only ships a single (regular) weight, so font-weight is left at normal instead
+   of faking a bold that would distort the letterforms. */
+.teacher-signature-name{display:inline-block;font-family:'Meddon','Dancing Script','Style Script','Segoe Script',cursive;font-size:21px;font-weight:400;line-height:1.15;color:var(--ink-2);white-space:normal;overflow-wrap:anywhere;transform:rotate(-2deg);}
 .teacher-signature-empty{color:var(--ink-soft);font-size:15px;}
 .cert2-signrow{
   display:flex; justify-content:space-between; align-items:center;
