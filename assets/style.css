@@ -1712,11 +1712,6 @@ body.dark-mode .att-table tbody tr:hover .att-name-col{ background:var(--paper-2
 .cert2-corner.bl{ bottom:8px; left:119px; transform:scaleY(-1); }
 .cert2-corner.br{ bottom:8px; right:12px; transform:scale(-1,-1); }
 /* Decorative navy/gold corner triangle, bottom-right — echoes the approved certificate design */
-.cert2-card::after{
-  content:""; position:absolute; width:180px; height:180px; bottom:-76px; right:-76px;
-  background:linear-gradient(135deg, transparent 44%, var(--gold) 44%, var(--gold) 50%, var(--ink) 50%, var(--ink) 100%);
-  transform:rotate(180deg); z-index:0; opacity:.9;
-}
 /* Decorative gold dot-grid, top-right — echoes the approved certificate design */
 .cert2-dots{
   position:absolute; top:18px; right:22px; width:96px; height:64px; z-index:0;
