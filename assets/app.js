@@ -191,6 +191,7 @@ let attSubView = 'absence';
     .att-subtab-btn:hover{ background:#eef1f5; }
     .att-subtab-btn.active{ background:#2563eb; border-color:#2563eb; color:#fff; }
     td.att-leave-cell{ text-align:center; font-weight:800; color:#b54708; background:#fffaeb; }
+    td.att-na-cell{ text-align:center; color:#98a2b3; background:#f8f9fb; }
   `;
   const style = document.createElement('style');
   style.textContent = css;
@@ -6480,7 +6481,7 @@ function ensureAttSubTabsBar(){
   const intro = document.getElementById('attendanceIntroState');
   if(!intro || !intro.parentNode) return;
   const canLeave = canUseApprovedLeave();
-  if(!canLeave && attSubView==='leave') attSubView = 'absence';
+  if(!canLeave && (attSubView==='leave' || attSubView==='summary')) attSubView = 'absence';
   let bar = document.getElementById('attSubTabsBar');
   if(!canLeave){
     if(bar) bar.remove();
@@ -6495,6 +6496,7 @@ function ensureAttSubTabsBar(){
   bar.innerHTML = `
     <button type="button" class="att-subtab-btn" data-subview="absence" onclick="switchAttSubView('absence')">Absence</button>
     <button type="button" class="att-subtab-btn" data-subview="leave" onclick="switchAttSubView('leave')">Approved Leave</button>
+    <button type="button" class="att-subtab-btn" data-subview="summary" onclick="switchAttSubView('summary')">Summary</button>
   `;
   updateAttSubTabsActive();
 }
@@ -6504,7 +6506,7 @@ function updateAttSubTabsActive(){
   });
 }
 function switchAttSubView(view){
-  if(view==='leave' && !canUseApprovedLeave()) return;
+  if((view==='leave' || view==='summary') && !canUseApprovedLeave()) return;
   attSubView = view;
   updateAttSubTabsActive();
   renderAttendanceTable();
@@ -6512,11 +6514,12 @@ function switchAttSubView(view){
 
 // Dispatcher — kept under the original name since it's called from many places (workspace
 // render, the Grade Entry Lock alert, etc.). Renders whichever sub-tab is currently active,
-// falling back to Absence if the current user isn't allowed to see Approved Leave.
+// falling back to Absence if the current user isn't allowed to see Approved Leave / Summary.
 function renderAttendanceTable(){
-  if(attSubView==='leave' && !canUseApprovedLeave()) attSubView = 'absence';
+  if((attSubView==='leave' || attSubView==='summary') && !canUseApprovedLeave()) attSubView = 'absence';
   updateAttSubTabsActive();
   if(attSubView==='leave') renderApprovedLeaveTable();
+  else if(attSubView==='summary') renderAbsenceSummaryTable();
   else renderAbsenceTable();
 }
 
@@ -6689,6 +6692,92 @@ function renderApprovedLeaveTable(){
             <th>#</th><th class="name-col att-name-col">Name</th>
             ${headerCols}
             <th class="att-total-col">Total</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+// Summary sub-tab — one table per Class/Term/Month showing, for EVERY student, how many
+// Absence days have been recorded in EACH subject taught to that Grade/Section (rows =
+// students, columns = subjects, a Grand Total column on the right). Pulls each subject's own
+// attendance[...] table independently (subject is not part of attState here) and excludes any
+// day already closed off as Approved Leave at the class level, exactly like the per-subject
+// Absence table's own Total column does. A student who doesn't take a given subject (e.g. the
+// "wrong" Second Language, or the other Religion) shows "—" for that subject instead of 0, same
+// eligibility rules as getAttRoster()/applyAttendanceDateRangeToClass().
+// Gated behind canUseApprovedLeave() like the Approved Leave sub-tab: Teachers are normally
+// scoped to only their own assigned subject, and this table intentionally shows every subject
+// for the class side by side.
+function renderAbsenceSummaryTable(){
+  const holder = document.getElementById('attTableHolder');
+  if(!holder) return;
+  if(!canUseApprovedLeave()){ renderAbsenceTable(); return; }
+
+  const roster = getAttClassRosterFull();
+  if(roster.length===0){
+    holder.innerHTML = `
+      <div class="empty-state">
+        <div class="seal-lg">?</div>
+        <h3>No students in this class yet</h3>
+        <p>Add students from the "Grade Book" tab first.</p>
+      </div>`;
+    return;
+  }
+
+  const subjects = getSubjectsForStageAndSection(attState.stage, attState.section);
+  const leaveRecords = (approvedLeave[attClassLevelKey()] && approvedLeave[attClassLevelKey()].records) || {};
+
+  function studentTakesSubject(s, subject){
+    if(isLanguageSubject(subject)){
+      const expectedLang = getExpectedLang2ForSubject(subject, attState.section);
+      return !expectedLang || s.lang2 === expectedLang;
+    }
+    if(subject === 'Ch-Religion') return s.religion === 'Christian';
+    if(subject === 'Religion') return s.religion === 'Muslim';
+    return true;
+  }
+
+  function absenceCountFor(studentId, subject){
+    const ck = `${attState.section}|${attState.stage}|${attState.grade}|${attState.termPeriod}|${attState.term}|${subject}|${attState.academicTerm}`;
+    const month = attendance[ck];
+    if(!month || !month.records || !month.records[studentId]) return 0;
+    const leaveDays = leaveRecords[studentId] || {};
+    return Object.keys(month.records[studentId]).filter(d=> month.records[studentId][d] && !leaveDays[d]).length;
+  }
+
+  const headerCols = subjects.map(subj=>
+    `<th class="att-day-col" title="${escapeHtml(subj)}">${subjectWithIcon(subj)}</th>`
+  ).join('');
+
+  const rows = roster.map((s,i)=>{
+    let grandTotal = 0;
+    const cells = subjects.map(subj=>{
+      if(!studentTakesSubject(s, subj)) return `<td class="att-day-col att-na-cell" title="Not taken">—</td>`;
+      const count = absenceCountFor(s.id, subj);
+      grandTotal += count;
+      return `<td class="att-day-col">${count}</td>`;
+    }).join('');
+    const fullName = escapeHtml(s.name);
+    return `
+      <tr>
+        <td>${i+1}</td>
+        <td class="name-col att-name-col" title="${fullName}">${fullName}</td>
+        ${cells}
+        <td class="total-cell att-total-col">${grandTotal}</td>
+      </tr>`;
+  }).join('');
+
+  holder.innerHTML = `
+    <div class="table-container">
+      <p style="margin:0 0 10px;font-size:12.5px;font-weight:600;color:#667085;">Total Absence days recorded so far for this Term's Month, per subject — Approved Leave days are excluded.</p>
+      <table class="att-table">
+        <thead>
+          <tr>
+            <th>#</th><th class="name-col att-name-col">Name</th>
+            ${headerCols}
+            <th class="att-total-col">Grand Total</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
