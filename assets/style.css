@@ -771,8 +771,33 @@ body.dark-mode .exam-analysis-table th, body.dark-mode .exam-analysis-table td{ 
 .mark-entry-table td.me-item-cell{ text-align:left; padding-left:14px; }
 .db-student-banner{
   display:flex; align-items:center; gap:12px; background:var(--paper); border-radius:12px;
-  padding:14px 18px; box-shadow:var(--shadow); margin-bottom:16px;
+  padding:14px 18px; box-shadow:var(--shadow);
 }
+.db-student-banner-wrap{ display:flex; flex-direction:column; gap:10px; margin-bottom:16px; }
+.ai-action-row{ display:flex; gap:10px; flex-wrap:wrap; }
+.ai-action-btn{
+  flex:1; min-width:180px; display:flex; align-items:center; gap:10px;
+  padding:10px 14px; border-radius:var(--radius); cursor:pointer;
+  background:var(--paper); box-shadow:var(--shadow); border:1.5px solid transparent;
+  transition:transform .12s ease, filter .12s ease; text-align:start;
+}
+.ai-action-btn:hover{ transform:translateY(-1px); filter:brightness(0.98); }
+.ai-action-btn:active{ transform:scale(0.98); }
+.ai-action-btn__icon{ font-size:20px; line-height:1; flex-shrink:0; }
+.ai-action-btn__text{ display:flex; flex-direction:column; }
+.ai-action-btn__title{ font-size:13px; font-weight:800; }
+.ai-action-btn__sub{ font-size:11px; opacity:0.85; margin-top:1px; }
+.ai-action-btn--accent{ background:var(--blue-bg); border-color:var(--blue); color:var(--blue); }
+.ai-action-btn--accent .ai-action-btn__title,
+.ai-action-btn--accent .ai-action-btn__sub{ color:var(--blue); }
+.ai-action-btn--pro{ background:var(--purple-bg); border-color:var(--purple); color:var(--purple); }
+.ai-action-btn--pro .ai-action-btn__title,
+.ai-action-btn--pro .ai-action-btn__sub{ color:var(--purple); }
+.ai-action-btn--mini{
+  flex:none; min-width:0; padding:5px 10px; gap:5px; border-radius:8px; box-shadow:none;
+}
+.ai-action-btn--mini .ai-action-btn__icon{ font-size:14px; }
+@media (max-width:520px){ .ai-action-row{ flex-direction:column; } }
 .db-student-name{ font-weight:800; font-size:15.5px; color:var(--ink); }
 .db-student-meta{ font-size:12px; color:var(--ink-soft); margin-top:2px; }
 .db-motivation-badge{

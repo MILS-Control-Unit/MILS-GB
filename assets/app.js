@@ -1312,7 +1312,7 @@ function renderPerfAlerts(){
       <td>${escapeXml(r.classroom || '—')}</td>
       <td>${subjectsHtml}</td>
       <td class="perf-count-cell">${r.count}</td>
-      <td><button type="button" class="btn btn-outline" style="font-size:12px;padding:4px 8px;" onclick="openAIStudentAnalysisFromPerf(${stashIdx})">🤖 AI</button></td>
+      <td><button type="button" class="ai-action-btn ai-action-btn--mini ai-action-btn--accent" onclick="openAIStudentAnalysisFromPerf(${stashIdx})"><span class="ai-action-btn__icon">🤖</span> AI</button></td>
     </tr>`;
   }).join('');
   area.innerHTML = `
@@ -2318,7 +2318,7 @@ function renderDashboardCharts(){
     subjectRows: aiSubjectRows,
     maxScore: CYCLE_MAX
   };
-  const aiBtnHtml = `<button type="button" class="btn btn-outline" style="font-size:12px;padding:5px 10px;margin-inline-start:auto;" onclick="openAIStudentAnalysis(window.__aiDashboardCtx.name, window.__aiDashboardCtx.meta, window.__aiDashboardCtx.subjectRows, window.__aiDashboardCtx.maxScore)">🤖 AI Analysis</button>`;
+  const aiBtnHtml = `<button type="button" class="ai-action-btn ai-action-btn--accent" onclick="openAIStudentAnalysis(window.__aiDashboardCtx.name, window.__aiDashboardCtx.meta, window.__aiDashboardCtx.subjectRows, window.__aiDashboardCtx.maxScore)"><span class="ai-action-btn__icon">🤖</span><span class="ai-action-btn__text"><span class="ai-action-btn__title">AI Analysis</span><span class="ai-action-btn__sub">Insights for this student</span></span></button>`;
 
   // Class-wide averages (per subject, across the whole roster of this Section/Stage/Grade/Class)
   // — already computed by computeCycleStats() alongside the selected student's own scores, so no
@@ -2334,9 +2334,9 @@ function renderDashboardCharts(){
       subjectRows: classSubjectRows,
       maxScore: CYCLE_MAX
     };
-    classBtnHtml = `<button type="button" class="btn btn-outline" style="font-size:12px;padding:5px 10px;${withData.length? '':'margin-inline-start:auto;'}" onclick="openAIClassAnalysis(window.__aiDashboardClassCtx.meta, window.__aiDashboardClassCtx.subjectRows, window.__aiDashboardClassCtx.maxScore)">📊 Class Analysis</button>`;
+    classBtnHtml = `<button type="button" class="ai-action-btn ai-action-btn--pro" onclick="openAIClassAnalysis(window.__aiDashboardClassCtx.meta, window.__aiDashboardClassCtx.subjectRows, window.__aiDashboardClassCtx.maxScore)"><span class="ai-action-btn__icon">📊</span><span class="ai-action-btn__text"><span class="ai-action-btn__title">Class Analysis</span><span class="ai-action-btn__sub">Compare across the class</span></span></button>`;
   }
-  const nameBanner = `<div class="db-student-banner"><span class="seal-lg" style="width:38px;height:38px;font-size:16px;">🎓</span><div><div class="db-student-name">${escapeXml(stats.student.name)}</div><div class="db-student-meta">${STAGES[stage].grades.find(g=>g.id===grade).label} • ${SECTIONS[section].label}${stats.student.classroom?' • '+escapeXml(stats.student.classroom):''}</div></div>${badgeHtml}${aiBtnHtml}${classBtnHtml}</div>`;
+  const nameBanner = `<div class="db-student-banner-wrap"><div class="db-student-banner"><span class="seal-lg" style="width:38px;height:38px;font-size:16px;">🎓</span><div><div class="db-student-name">${escapeXml(stats.student.name)}</div><div class="db-student-meta">${STAGES[stage].grades.find(g=>g.id===grade).label} • ${SECTIONS[section].label}${stats.student.classroom?' • '+escapeXml(stats.student.classroom):''}</div></div>${badgeHtml}</div><div class="ai-action-row">${aiBtnHtml}${classBtnHtml}</div></div>`;
 
   let motivationHtml = '';
   if(isParent){
