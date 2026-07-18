@@ -3297,7 +3297,7 @@ function renderExamsFilters(){
   }
 
   const subjectOpts = state.examsStage
-    ? getSubjectsForStageAndSection(state.examsStage, state.examsSection).filter(s=>scopeSubjectAllowed(s)).map(s=>`<option value="${escapeXml(s)}" ${state.examsSubject===s?'selected':''}>${escapeHtml(s)}</option>`).join('')
+    ? getSubjectsForGrade(state.examsStage, state.examsGrade, state.examsSection).filter(s=>scopeSubjectAllowed(s)).map(s=>`<option value="${escapeXml(s)}" ${state.examsSubject===s?'selected':''}>${escapeHtml(s)}</option>`).join('')
     : '';
 
   wrap.innerHTML = `
@@ -3336,7 +3336,7 @@ function renderExamsFilters(){
 function setExamsFilter(kind, value){
   if(kind==='section') state.examsSection = value || null;
   if(kind==='stage'){ state.examsStage = value || null; state.examsGrade = null; state.examsClassroom = null; state.examsSubject = null; }
-  if(kind==='grade'){ state.examsGrade = value || null; state.examsClassroom = null; }
+  if(kind==='grade'){ state.examsGrade = value || null; state.examsClassroom = null; state.examsSubject = null; }
   if(kind==='classroom') state.examsClassroom = value || null;
   if(kind==='subject') state.examsSubject = value || null;
   renderExamsFilters();
@@ -3362,14 +3362,20 @@ function computeExamsAnalysis(section, stage, grade, classroom, term, mode, subj
   if(!roster.length){
     return { invalid:true, reason:'There are no students registered for this class yet.' };
   }
-  const allSubjects = getSubjectsForStageAndSection(stage, section);
+  const isG12 = (stage==='secondary' && grade==='g12');
+  const allSubjects = getSubjectsForGrade(stage, grade, section);
   const subjects = subjectFilter ? allSubjects.filter(s=>s===subjectFilter) : allSubjects;
 
   // Term Total (Coursework + Exam Paper, out of 100 — same figure shown on Report
   // Certificates) covers every Stage/Grade including Grade 1 & 2 Primary (whose Term Total
   // is the Total Coursework alone, since their exam is a Pass/Fail badge, not numeric), so it
   // has no appliesToStage/junior restriction unlike the raw Cycle/Exam Paper fields below.
+  // EXCEPT Grade 12: it has no Month/Coursework Mark Entry at all — its only screen is the
+  // End-of-Year Exam Paper (see EXAM_FIELD_INFO.finalexam below) — so "Term Total" doesn't apply.
   if(mode==='termtotal'){
+    if(isG12){
+      return { invalid:true, reason:'Grade 12 has no Term Total — its only Mark Entry screen is the End-of-Year Exam Paper. Choose "End-of-Year Exam Paper" instead.' };
+    }
     const junior = stage==='primary' && (grade==='g1' || grade==='g2');
     const columns = [];
     subjects.forEach(subject=>{
@@ -3389,7 +3395,7 @@ function computeExamsAnalysis(section, stage, grade, classroom, term, mode, subj
       if(!vals.length) return;
       const bandCounts = SCORE_BANDS.map(()=>0);
       vals.forEach(v=> bandCounts[bandIndexForPct(v)]++); // Term Total is already out of 100, so the value IS the percentage.
-      columns.push({ subject, total: vals.length, bandCounts });
+      columns.push({ subject, total: vals.length, bandCounts, max:100 });
     });
     return { invalid:false, columns, max:100 };
   }
@@ -3405,10 +3411,15 @@ function computeExamsAnalysis(section, stage, grade, classroom, term, mode, subj
   if(junior){
     return { invalid:true, reason:'Cycle scores are not recorded for Grade 1 & Grade 2 Primary.' };
   }
-  const max = typeof info.max === 'function' ? info.max(stage) : info.max;
+  const stageMax = typeof info.max === 'function' ? info.max(stage) : info.max;
 
   const columns = [];
   subjects.forEach(subject=>{
+    // Grade 12's End-of-Year Exam Paper has its OWN maximum mark per subject (Arabic 80,
+    // English/French/Physics/Chemistry/Biology/History/Geography/Statistics 60, Pure/Applied
+    // Mathematics 30 each) — see the Grade 12 Mark Entry table — instead of the flat 30 every
+    // other Prep/Secondary subject uses.
+    const max = (isG12 && mode==='finalexam') ? g12SubjectMax(subject) : stageMax;
     const sk = `${ck}|${term}|${subject}`;
     const subjScores = scores[sk] || {};
     const vals = [];
@@ -3425,12 +3436,15 @@ function computeExamsAnalysis(section, stage, grade, classroom, term, mode, subj
     if(!vals.length) return;
     const bandCounts = SCORE_BANDS.map(()=>0);
     vals.forEach(v=>{
-      const pct = (v/max)*100;
+      const pct = max ? (v/max)*100 : 0;
       bandCounts[bandIndexForPct(pct)]++;
     });
-    columns.push({ subject, total:vals.length, bandCounts });
+    columns.push({ subject, total:vals.length, bandCounts, max });
   });
-  return { invalid:false, columns, max };
+  // `max` at the top level is only meaningful when every column shares the same maximum
+  // (true everywhere except Grade 12's End-of-Year Exam Paper, where it varies per subject —
+  // renderExamsTable() shows each column's own max in that case instead of one shared figure).
+  return { invalid:false, columns, max:stageMax };
 }
 
 function renderExamsTable(){
@@ -3462,7 +3476,7 @@ function renderExamsTable(){
       ? findSubjectTeacherName(section, c.subject, classroom)
       : findHodName(section, stage, c.subject);
     const staffLine = staffName ? `<div class="exam-staff-name">${escapeHtml(staffName)}</div>` : '';
-    return `<th colspan="2">${escapeHtml(c.subject)}${staffLine}</th>`;
+    return `<th colspan="2">${escapeHtml(c.subject)}<br><small>(Max. ${c.max})</small>${staffLine}</th>`;
   }).join('');
   const subHeaderCells = result.columns.map(()=>`<th>Count</th><th>%</th>`).join('');
   const bodyRows = SCORE_BANDS.map((band,i)=>{
@@ -3475,6 +3489,11 @@ function renderExamsTable(){
   }).join('');
   const totalCells = result.columns.map(c=>`<td>${c.total}</td><td>100.0%</td>`).join('');
   const totalRow = `<tr class="total-row"><td class="range-cell">TOTAL</td>${totalCells}</tr>`;
+
+  const sharedMax = result.columns.every(c=> c.max === result.columns[0].max) ? result.columns[0].max : null;
+  const maxNote = sharedMax!=null
+    ? `Percentages are calculated against this column's own maximum grade (Max. ${sharedMax}) as shown in the mark-entry tables.`
+    : `Percentages are calculated against each subject's own maximum grade — shown next to its name above — as shown in the Grade 12 Mark Entry table.`;
 
   area.innerHTML = `
     <div class="table-card">
@@ -3489,7 +3508,7 @@ function renderExamsTable(){
       </div>
     </div>
     <p class="foot-note">
-      Percentages are calculated against this column's own maximum grade (Max. ${result.max}) as shown in the mark-entry tables.
+      ${maxNote}
       Only subjects with at least one recorded ${escapeHtml(getExamModeLabel(term, mode))} score for this class are included.
     </p>`;
 }
