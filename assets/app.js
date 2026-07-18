@@ -41,11 +41,16 @@ const STAGES = {
   },
   secondary:{ label: "Secondary Stage", grades: [
       {id:'g10', label:'Grade 10'},
-      {id:'g11', label:'Grade 11'}
+      {id:'g11', label:'Grade 11'},
+      {id:'g12', label:'Grade 12'}
     ],
     subjects: ["Arabic","English O.L.","Mathematics","Integrated Sciences","History","Philosophy","English A.L.","Religion","Ch-Religion","French O.L.","German O.L.","French A.L.","German A.L.","ICT"]
   }
 };
+
+// Grade 12 (3rd Secondary) uses simplified subject list for class-level mark entry
+const G12_SUBJECTS_EN = ["Arabic","English","Physics","Chemistry","Pure Mathematics","Applied Mathematics","Biology","History","Geography","Statistics"];
+const G12_SUBJECTS_FR = ["Arabic","French","Physics","Chemistry","Pure Mathematics","Applied Mathematics","Biology","History","Geography","Statistics"];
 
 // French Section-specific subject mappings
 const FRENCH_SECTION_SUBJECTS = {
@@ -66,6 +71,14 @@ function getSubjectsForStageAndSection(stageKey, sectionId){
     return FRENCH_SECTION_SUBJECTS[stageKey] ? FRENCH_SECTION_SUBJECTS[stageKey].subjects : STAGES[stageKey].subjects;
   }
   return STAGES[stageKey].subjects;
+}
+
+// Get subjects for a specific grade (handles Grade 12 separately)
+function getSubjectsForGrade(stageKey, gradeId, sectionId){
+  if(stageKey === 'secondary' && gradeId === 'g12'){
+    return sectionId === 'fr' ? G12_SUBJECTS_FR : G12_SUBJECTS_EN;
+  }
+  return getSubjectsForStageAndSection(stageKey, sectionId);
 }
 
 // Used to order the Student Database list: English Section before French Section,
@@ -4171,16 +4184,19 @@ function renderCertReportsCards(){
     // but swaps in the Secondary-specific Max./Min. Actual Mark scale (SEC_ACTUAL_MARK_MAP) and
     // core-subject list (Arabic → Philosophy) instead of the Prep ones.
     const isSecG1011ReportCardCert = certState.stage==='secondary' && ['g10','g11'].includes(certState.grade) && (type==='reportcard' || type==='endyear');
-    const isPrepG78ReportCardCert = (certState.stage==='prep' && ['g7','g8'].includes(certState.grade) && (type==='reportcard' || type==='endyear')) || isG9ReportCardCert || isSecG1011ReportCardCert;
+    const isG12ReportCardCert = certState.stage==='secondary' && certState.grade==='g12' && (type==='reportcard' || type==='endyear');
+    const isPrepG78ReportCardCert = (certState.stage==='prep' && ['g7','g8'].includes(certState.grade) && (type==='reportcard' || type==='endyear')) || isG9ReportCardCert || isSecG1011ReportCardCert || isG12ReportCardCert;
     // Grade 10 & 11 Secondary (1st & 2nd Secondary) First/Second Month Report certificate —
     // uses its own header, matching the approved Grade 10/11 header exactly:
     // Q.1-Q.4 (flexible max each), Q. Av. (Max.15), C.W. (Max.15), Beh. & Attend. (Max.10),
     // Total (Max.40), Cycle (Max.15). No H.W./Oral columns for this stage (mirrors the
     // Grade 7 & 8 Prep template/computations, but with the Secondary-specific maxima).
     const isSecG1011MonthCert = certState.stage==='secondary' && ['g10','g11'].includes(certState.grade) && (type==='month1' || type==='month2');
+    const isG12MonthCert = certState.stage==='secondary' && certState.grade==='g12' && (type==='month1' || type==='month2');
     // Grade 10 & 11 Secondary Total Coursework certificate — uses its own header:
     // Two Months Av. (Max.40), Two Cycles (Max.30), Total Coursework (Max.70) — no Activity/Per. Tasks.
     const isSecG1011CourseworkCert = certState.stage==='secondary' && ['g10','g11'].includes(certState.grade) && type==='coursework';
+    const isG12CourseworkCert = certState.stage==='secondary' && certState.grade==='g12' && type==='coursework';
     let sumVal=0, sumMax=0;
     let tableHeadHtml, tableBodyHtml, showGradingKey = true;
 
@@ -4722,8 +4738,9 @@ function renderCertReportsCards(){
         let subjectCount = 0;
         // Secondary G10/G11 uses its own Max./Min. Actual Mark scale & core-subject list
         // (Arabic → Philosophy) instead of the Prep ones (Arabic → Social Studies).
-        const actualMarkMap = isSecG1011ReportCardCert ? SEC_ACTUAL_MARK_MAP : PREP_ACTUAL_MARK_MAP;
-        const actualMarkCoreSubjects = isSecG1011ReportCardCert ? SEC_ACTUAL_MARK_CORE_SUBJECTS : PREP_ACTUAL_MARK_CORE_SUBJECTS;
+        // Grade 12 uses its own G12_ACTUAL_MARK_MAP scale.
+        const actualMarkMap = isG12ReportCardCert ? G12_ACTUAL_MARK_MAP : (isSecG1011ReportCardCert ? SEC_ACTUAL_MARK_MAP : PREP_ACTUAL_MARK_MAP);
+        const actualMarkCoreSubjects = isG12ReportCardCert ? G12_ACTUAL_MARK_CORE_SUBJECTS : (isSecG1011ReportCardCert ? SEC_ACTUAL_MARK_CORE_SUBJECTS : PREP_ACTUAL_MARK_CORE_SUBJECTS);
         const lastCoreSubject = actualMarkCoreSubjects[actualMarkCoreSubjects.length-1];
         subjects.forEach(sub=>{
           subjectCount++;
@@ -5127,7 +5144,7 @@ function renderMarkEntryReport(){
   const stage = state.stage;
   const junior = isJuniorPrimary();
   const fields = markEntryFields(stage, junior);
-  const subjects = getSubjectsForStageAndSection(stage, state.section);
+  const subjects = getSubjectsForGrade(stage, state.grade, state.section);
   const term = state.termPeriod || 'term1';
   const ck = classKey();
 
@@ -5456,6 +5473,23 @@ const SEC_ACTUAL_MARK_MAP = {
 };
 // Subjects summed into the "Total" subtotal row (Arabic → Philosophy): Max. 600 / Min. 300.
 const SEC_ACTUAL_MARK_CORE_SUBJECTS = ['Arabic','English O.L.','Mathematics','Integrated Sciences','History','Philosophy'];
+
+// Grade 12 Secondary (3rd Secondary) First/End of Year Term Report Card certificate —
+// uses simplified subjects list with class-level mark entry and Total (Max. 320).
+const G12_ACTUAL_MARK_MAP = {
+  'Arabic':             { max: 80,  min: 40 },
+  'English':            { max: 60,  min: 30 },
+  'Physics':            { max: 60,  min: 30 },
+  'Chemistry':          { max: 60,  min: 30 },
+  'Pure Mathematics':   { max: 30,  min: 15 },
+  'Applied Mathematics':{ max: 30,  min: 15 },
+  'Biology':            { max: 60,  min: 30 },
+  'History':            { max: 60,  min: 30 },
+  'Geography':          { max: 60,  min: 30 },
+  'Statistics':         { max: 60,  min: 30 }
+};
+// Subjects summed into the "Total" subtotal row: Max. 320
+const G12_ACTUAL_MARK_CORE_SUBJECTS = ['Arabic','English','Physics','Chemistry','Pure Mathematics','Applied Mathematics','Biology','History','Geography','Statistics'];
 
 // Grade for a subject's Actual Mark: Fail if below that subject's Min.; otherwise Pass/Good/Very
 // Good/Excellent using the normal percentage-of-Max. bands (50/65/75/85%).
@@ -6919,7 +6953,7 @@ function applyAttendanceToGrades(section, stage, grade, termPeriod, monthKey, st
   const stageData = STAGES[stage];
   if(!stageData) return;
   const primaryStage = stage==='primary';
-  const extendedStage = (stage==='prep' && ['g7','g8'].includes(grade)) || (stage==='secondary' && ['g10','g11'].includes(grade));
+  const extendedStage = (stage==='prep' && ['g7','g8'].includes(grade)) || (stage==='secondary' && ['g10','g11','g12'].includes(grade));
   if(!primaryStage && !extendedStage) return; // this grade has no Beh. & Attend. field to link
 
   const max = primaryStage ? 5 : 10;
@@ -7303,7 +7337,7 @@ const PRIMARY_ID_HEADERS = `
           <th>2nd Language</th>`;
 
 function isG7G8Prep(){ return !isPrimary() && state.stage === 'prep' && ['g7','g8'].includes(state.grade); }
-function isG10G11Secondary(){ return !isPrimary() && state.stage === 'secondary' && ['g10','g11'].includes(state.grade); }
+function isG10G11Secondary(){ return !isPrimary() && state.stage === 'secondary' && ['g10','g11','g12'].includes(state.grade); }
 function isExtendedGradingStage(){ return isG7G8Prep() || isG10G11Secondary(); }
 // Grade 9 Prep (both English & Arabic sections) uses simplified single-item "Cycle 1" / "Cycle 2"
 // mark-entry screens (Max. 15 each) instead of the standard Month 1/Month 2/Mid-Year/Final Exam
