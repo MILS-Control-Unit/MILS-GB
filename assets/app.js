@@ -1294,15 +1294,25 @@ function renderPerfAlerts(){
     area.innerHTML = `<div class="empty-state"><div class="seal-lg">${icon}</div><h3>No students found</h3><p>No students in ${scopeLabel} currently meet the ${escapeXml(catLabel)} criteria for ${escapeXml(termLabel)} • ${escapeXml(cycleLabel)}.</p></div>`;
     return;
   }
+  const rowMax = perfRowMaxScore(cycle, filter.stage, filter.grade);
+  perfAIRowStash = [];
   const rows = list.map(r=>{
     const dup = otherIds.has(r.id);
     const subjectsHtml = r.subjects.map(su=> `${escapeXml(subjectWithIcon(su.subject))} (${Math.round(su.score*10)/10})`).join(', ');
+    const stashIdx = perfAIRowStash.length;
+    perfAIRowStash.push({
+      name: r.name,
+      meta: `${r.classroom || ''} • ${catLabel}`.trim(),
+      subjectRows: r.subjects,
+      maxScore: rowMax
+    });
     return `<tr${dup?' class="perf-dup-row"':''}>
       <td>${escapeXml(r.displayId)}</td>
       <td>${escapeXml(r.name)}</td>
       <td>${escapeXml(r.classroom || '—')}</td>
       <td>${subjectsHtml}</td>
       <td class="perf-count-cell">${r.count}</td>
+      <td><button type="button" class="btn btn-outline" style="font-size:12px;padding:4px 8px;" onclick="openAIStudentAnalysisFromPerf(${stashIdx})">🤖 AI</button></td>
     </tr>`;
   }).join('');
   area.innerHTML = `
@@ -1312,11 +1322,158 @@ function renderPerfAlerts(){
     </div>
     <div class="table-card">
       <table>
-        <thead><tr><th>ID</th><th>Student Name</th><th>Class</th><th>Subject(s)</th><th>Count</th></tr></thead>
+        <thead><tr><th>ID</th><th>Student Name</th><th>Class</th><th>Subject(s)</th><th>Count</th><th>AI</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
     ${otherCycle ? `<p style="font-size:12px;color:var(--ink-soft);margin-top:8px;">Rows shaded red mark students who also appear in the ${escapeXml(catLabel)} list for the other Cycle in ${escapeXml(termLabel)}, within this same scope.</p>` : ''}`;
+}
+
+/* ================== AI TEACHING ASSISTANT (Groq) ==================
+   Generates a short teacher-facing "Insight" and a ready parent-facing "Parent
+   Comment" for one student, from their recorded subject scores, using Groq's
+   free OpenAI-compatible Chat Completions API (console.groq.com — no credit
+   card required). Same "fetch → parse JSON" shape as the Claude Vision exam-
+   schedule reader above, just pointed at a different provider/model.
+
+   SECURITY NOTE: the Groq API key no longer lives in this file. It is held
+   server-side by a small Cloudflare Worker (see worker.js) that proxies the
+   chat-completions request to Groq and returns the result. The browser only
+   ever talks to WORKER_URL below — never to api.groq.com directly — so the
+   key can't be read from DevTools or this file on GitHub.
+     - Set WORKER_URL to your deployed Worker's URL (e.g.
+       https://mils-ai-proxy.<your-subdomain>.workers.dev).
+     - The Worker enforces which models are allowed; keep GROQ_MODEL /
+       GROQ_VISION_MODEL below in sync with the Worker's allow-list. */
+const WORKER_URL = 'https://REPLACE_WITH_YOUR_WORKER_URL.workers.dev';
+// llama-3.3-70b-versatile was deprecated by Groq on 2026-06-17 (full shutdown ~Aug 2026);
+// openai/gpt-oss-120b is Groq's recommended free-tier replacement — see console.groq.com/docs/deprecations.
+const GROQ_MODEL = 'openai/gpt-oss-120b';
+// Vision-capable model used by the exam-schedule image reader below. Groq's multimodal lineup
+// changes often (llama-4-scout was itself deprecated 2026-06-17) — qwen/qwen3.6-27b is the
+// current recommended vision model, but Groq still serves it as PREVIEW (evaluate, don't rely
+// on it for anything critical). If image reads start failing/erroring, check
+// console.groq.com/docs/vision for the current model name and swap it in here.
+const GROQ_VISION_MODEL = 'qwen/qwen3.6-27b';
+
+function aiTeacherAssistantAvailable(){
+  return !!(WORKER_URL && WORKER_URL.indexOf('REPLACE_WITH') !== 0);
+}
+
+// Max score for one row's subject list — Cycle rows use the stage/grade's Cycle
+// scale (Max. 5, or Max. 15 for Grade 7/8 Prep & Grade 10/11 Secondary), Exam
+// rows are always out of the Term Total (100). Mirrors computePerfAlertList's
+// own `max` calculation so the AI sees the same scale the table used.
+function perfRowMaxScore(cycle, stage, grade){
+  return cycle==='exam' ? 100 : perfCycleMaxFor(stage, grade);
+}
+
+// Plain-text summary of one student's recorded scores, shared by the AI prompt below.
+function buildStudentAIContext(name, meta, subjectRows, maxScore){
+  const lines = subjectRows.map(su=> `- ${su.subject}: ${Math.round(su.score*10)/10} / ${maxScore}`);
+  return `Student: ${name}\nClass: ${meta || ''}\nRecorded scores (out of ${maxScore} each):\n${lines.join('\n')}`;
+}
+
+async function callGroqChat(prompt){
+  const response = await fetch(WORKER_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      temperature: 0.4,
+      max_tokens: 500,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+  if(!response.ok){
+    const errText = await response.text().catch(()=> '');
+    throw new Error('AI proxy request failed (' + response.status + '): ' + errText.slice(0,200));
+  }
+  const data = await response.json();
+  const text = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+  return text.trim();
+}
+
+// Shows a loading → result modal, asks Groq for BOTH an Insight (teacher-facing)
+// and a Parent Comment (parent-facing) in one call as strict JSON, and lets the
+// teacher copy either block. Reuses the app's existing .overlay/.modal styling.
+async function openAIStudentAnalysis(name, meta, subjectRows, maxScore){
+  if(!aiTeacherAssistantAvailable()){
+    alert('AI analysis isn\'t configured yet. Deploy the Cloudflare Worker (worker.js) and paste its URL into WORKER_URL near the top of app.js.');
+    return;
+  }
+  if(!subjectRows || !subjectRows.length){
+    alert('No recorded scores to analyze for this student yet.');
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay show';
+  overlay.innerHTML = `
+    <div class="modal" role="dialog" aria-modal="true" aria-label="AI Analysis">
+      <h3>🤖 AI Analysis — ${escapeHtml(name)}</h3>
+      <div id="aiAnalysisBody" style="min-height:80px;">
+        <p style="color:var(--ink-soft);">⏳ Analyzing with AI — this can take a few seconds…</p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" id="aiAnalysisClose">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  function close(){ overlay.remove(); }
+  overlay.querySelector('#aiAnalysisClose').addEventListener('click', close);
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) close(); });
+
+  const context = buildStudentAIContext(name, meta, subjectRows, maxScore);
+  const prompt = `You are a supportive school teaching assistant. Based ONLY on the data below, return STRICT JSON (no markdown fences, no commentary) with exactly two keys:
+"insight": a concise 2-3 sentence analytical note for the teacher about this student's performance (strengths, weak subjects, any risk pattern).
+"parentComment": a warm, constructive 2-3 sentence comment ready to send to the parent, in simple clear language — encouraging without being alarming, mentioning at most one area to work on.
+
+${context}`;
+
+  try{
+    const raw = await callGroqChat(prompt);
+    const cleaned = raw.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'').trim();
+    let parsed;
+    try{ parsed = JSON.parse(cleaned); }
+    catch(e){ parsed = { insight: raw, parentComment: '' }; }
+    const body = overlay.querySelector('#aiAnalysisBody');
+    if(body){
+      body.innerHTML = `
+        <div style="margin-bottom:14px;">
+          <div style="font-weight:600;margin-bottom:4px;">📊 Insight</div>
+          <p style="white-space:pre-line;margin:0 0 6px;">${escapeHtml(parsed.insight||'—')}</p>
+          <button type="button" class="btn btn-outline" style="font-size:12px;padding:4px 10px;" data-copy-text="${escapeHtml(parsed.insight||'')}">Copy</button>
+        </div>
+        ${parsed.parentComment ? `
+        <div>
+          <div style="font-weight:600;margin-bottom:4px;">💬 Parent Comment</div>
+          <p style="white-space:pre-line;margin:0 0 6px;">${escapeHtml(parsed.parentComment)}</p>
+          <button type="button" class="btn btn-outline" style="font-size:12px;padding:4px 10px;" data-copy-text="${escapeHtml(parsed.parentComment)}">Copy</button>
+        </div>` : ''}
+        <p style="font-size:11px;color:var(--ink-soft);margin-top:12px;">⚠ AI-generated — please review before sharing with a parent.</p>`;
+      body.querySelectorAll('[data-copy-text]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          navigator.clipboard.writeText(btn.getAttribute('data-copy-text')||'');
+          const old = btn.textContent; btn.textContent = 'Copied ✓';
+          setTimeout(()=>{ btn.textContent = old; }, 1200);
+        });
+      });
+    }
+  }catch(err){
+    console.error(err);
+    const body = overlay.querySelector('#aiAnalysisBody');
+    if(body) body.innerHTML = `<p style="color:var(--red);">Could not get an AI analysis right now (${escapeHtml(err.message||'network error')}). Please try again in a moment.</p>`;
+  }
+}
+
+// Stash used by the Top & At-Risk table so each row's "🤖 AI" button can hand its
+// student data to openAIStudentAnalysis() without embedding JSON in onclick="" HTML
+// (student names/subjects could contain quotes that would break an inline attribute).
+let perfAIRowStash = [];
+function openAIStudentAnalysisFromPerf(idx){
+  const row = perfAIRowStash[idx];
+  if(!row) return;
+  openAIStudentAnalysis(row.name, row.meta, row.subjectRows, row.maxScore);
 }
 
 // Adds a "First Term Exam" item under Term 1 and a "Second Term Exam" item under Term 2 of the
@@ -1368,6 +1525,153 @@ function injectPerfExamMenuItems(){
 }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', injectPerfExamMenuItems);
 else injectPerfExamMenuItems();
+
+/* ================== IN-APP HELP ASSISTANT (Groq via Cloudflare Worker) ==================
+   Floating chat widget so any logged-in user can ask "how do I do X in this app?" and get
+   an answer from your Groq-backed help assistant. Talks ONLY to HELP_ASSISTANT_WORKER_URL
+   below — never to Groq directly — so no API key ever ships to the browser. Matches your
+   Worker's contract: POST { message, history } -> { reply }.
+
+   Set HELP_ASSISTANT_WORKER_URL to your deployed Worker's URL, e.g.
+   https://mils-ai-proxy.<your-subdomain>.workers.dev */
+const HELP_ASSISTANT_WORKER_URL = 'https://mils-ai-proxy.mils-e75.workers.dev/';
+
+let helpAssistantHistory = []; // [{role:'user'|'assistant', content:'...'}, ...] — last 6 kept
+let helpAssistantBusy = false;
+
+function helpAssistantAvailable(){
+  return !!(HELP_ASSISTANT_WORKER_URL && HELP_ASSISTANT_WORKER_URL.indexOf('REPLACE_WITH') !== 0);
+}
+
+function buildHelpAssistantWidget(){
+  if(document.getElementById('helpAssistantFab')) return; // already built
+
+  const fab = document.createElement('button');
+  fab.id = 'helpAssistantFab';
+  fab.type = 'button';
+  fab.setAttribute('aria-label', 'AI Help Assistant');
+  fab.textContent = '💬';
+  Object.assign(fab.style, {
+    position:'fixed', bottom:'22px', insetInlineEnd:'22px', zIndex:'9998',
+    width:'56px', height:'56px', borderRadius:'50%', border:'none',
+    background:'linear-gradient(135deg,#4f46e5,#7c3aed)', color:'#fff',
+    fontSize:'26px', cursor:'pointer', boxShadow:'0 6px 18px rgba(0,0,0,.25)',
+    display:'none', alignItems:'center', justifyContent:'center' // hidden until showHelpAssistantWidget() runs (post-login)
+  });
+
+  const panel = document.createElement('div');
+  panel.id = 'helpAssistantPanel';
+  Object.assign(panel.style, {
+    position:'fixed', bottom:'90px', insetInlineEnd:'22px', zIndex:'9998',
+    width:'340px', maxWidth:'92vw', height:'440px', maxHeight:'75vh',
+    background:'#fff', borderRadius:'14px', boxShadow:'0 10px 40px rgba(0,0,0,.3)',
+    display:'none', flexDirection:'column', overflow:'hidden', fontFamily:'inherit'
+  });
+  panel.innerHTML = `
+    <div style="padding:12px 14px;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;display:flex;align-items:center;justify-content:space-between;">
+      <strong style="font-size:14px;">🤖 المساعد الذكي</strong>
+      <button type="button" id="helpAssistantClose" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;line-height:1;">×</button>
+    </div>
+    <div id="helpAssistantMessages" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;background:#f8f9fb;"></div>
+    <div style="padding:10px;border-top:1px solid #eee;display:flex;gap:8px;background:#fff;">
+      <input id="helpAssistantInput" type="text" placeholder="اسأل عن أي حاجة في التطبيق..." style="flex:1;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;" />
+      <button type="button" id="helpAssistantSend" style="background:#4f46e5;color:#fff;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;">إرسال</button>
+    </div>`;
+
+  document.body.appendChild(fab);
+  document.body.appendChild(panel);
+
+  function appendBubble(text, role){
+    const list = document.getElementById('helpAssistantMessages');
+    if(!list) return null;
+    const bubble = document.createElement('div');
+    const isUser = role === 'user';
+    Object.assign(bubble.style, {
+      alignSelf: isUser ? 'flex-end' : 'flex-start',
+      background: isUser ? '#4f46e5' : '#fff',
+      color: isUser ? '#fff' : '#222',
+      border: isUser ? 'none' : '1px solid #e3e3e8',
+      padding:'8px 12px', borderRadius:'12px', maxWidth:'85%',
+      fontSize:'13px', lineHeight:'1.5', whiteSpace:'pre-line', wordBreak:'break-word'
+    });
+    bubble.textContent = text;
+    list.appendChild(bubble);
+    list.scrollTop = list.scrollHeight;
+    return bubble;
+  }
+
+  async function sendHelpAssistantMessage(){
+    if(helpAssistantBusy) return;
+    const input = document.getElementById('helpAssistantInput');
+    const text = (input.value || '').trim();
+    if(!text) return;
+    if(!helpAssistantAvailable()){
+      appendBubble('المساعد لسه مش متظبط — لازم تحط رابط الـ Worker في HELP_ASSISTANT_WORKER_URL جوه app.js.', 'assistant');
+      return;
+    }
+    input.value = '';
+    appendBubble(text, 'user');
+    const thinking = appendBubble('...جاري الكتابة', 'assistant');
+    helpAssistantBusy = true;
+    const sendBtn = document.getElementById('helpAssistantSend');
+    if(sendBtn) sendBtn.disabled = true;
+    try{
+      const response = await fetch(HELP_ASSISTANT_WORKER_URL, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ message: text, history: helpAssistantHistory })
+      });
+      if(!response.ok){
+        const errText = await response.text().catch(()=> '');
+        throw new Error('status ' + response.status + (errText ? ': ' + errText.slice(0,150) : ''));
+      }
+      const data = await response.json();
+      const reply = (data && data.reply) || 'معنديش رد دلوقتي، جرب تاني.';
+      if(thinking) thinking.textContent = reply;
+      helpAssistantHistory.push({ role:'user', content:text });
+      helpAssistantHistory.push({ role:'assistant', content:reply });
+      helpAssistantHistory = helpAssistantHistory.slice(-6);
+    }catch(err){
+      if(thinking) thinking.textContent = 'حصلت مشكلة في الاتصال بالمساعد (' + (err.message||'error') + '). جرب تاني كمان شوية.';
+    }finally{
+      helpAssistantBusy = false;
+      if(sendBtn) sendBtn.disabled = false;
+    }
+  }
+
+  fab.addEventListener('click', ()=>{
+    const isOpen = panel.style.display === 'flex';
+    panel.style.display = isOpen ? 'none' : 'flex';
+    if(!isOpen){
+      const list = document.getElementById('helpAssistantMessages');
+      if(list && !list.children.length){
+        appendBubble('أهلاً! أنا المساعد الذكي بتاع التطبيق — اسألني عن أي قسم أو خطوة وهساعدك.', 'assistant');
+      }
+      const input = document.getElementById('helpAssistantInput');
+      if(input) input.focus();
+    }
+  });
+  panel.querySelector('#helpAssistantClose').addEventListener('click', ()=>{ panel.style.display = 'none'; });
+  panel.querySelector('#helpAssistantSend').addEventListener('click', sendHelpAssistantMessage);
+  panel.querySelector('#helpAssistantInput').addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter'){ e.preventDefault(); sendHelpAssistantMessage(); }
+  });
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', buildHelpAssistantWidget);
+else buildHelpAssistantWidget();
+
+// Only visible to logged-in Teacher/Admin/etc. accounts — called from loginAs()/logoutUser().
+function showHelpAssistantWidget(){
+  buildHelpAssistantWidget(); // no-op if already built
+  const fab = document.getElementById('helpAssistantFab');
+  if(fab) fab.style.display = 'flex';
+}
+function hideHelpAssistantWidget(){
+  const fab = document.getElementById('helpAssistantFab');
+  const panel = document.getElementById('helpAssistantPanel');
+  if(fab) fab.style.display = 'none';
+  if(panel) panel.style.display = 'none';
+}
 
 const DASHBOARD_MODE_LABELS = { cycle1:'Cycle 1', cycle1vs2:'Cycle 1 Vs Cycle 2' };
 
@@ -1937,7 +2241,19 @@ function renderDashboardCharts(){
   const isParent = isParentDashboardViewer();
   const badge = isParent ? getMotivationBadge(mode, withData) : null;
   const badgeHtml = badge ? `<span class="db-motivation-badge">${badge.icon} ${badge.label}</span>` : '';
-  const nameBanner = `<div class="db-student-banner"><span class="seal-lg" style="width:38px;height:38px;font-size:16px;">🎓</span><div><div class="db-student-name">${escapeXml(stats.student.name)}</div><div class="db-student-meta">${STAGES[stage].grades.find(g=>g.id===grade).label} • ${SECTIONS[section].label}${stats.student.classroom?' • '+escapeXml(stats.student.classroom):''}</div></div>${badgeHtml}</div>`;
+  // Same scores the current view (Cycle 1, or Cycle 1 vs 2's latest recorded cycle)
+  // already charts — reused for the "🤖 AI Analysis" button instead of re-querying.
+  const aiSubjectRows = withData
+    .map(p=>({ subject:p.subject, score: mode==='cycle1vs2' ? (p.hasV2?p.v2:p.v1) : p.v1 }))
+    .filter(r=> r.score!==null && r.score!==undefined && !isNaN(r.score));
+  window.__aiDashboardCtx = {
+    name: stats.student.name,
+    meta: `${STAGES[stage].grades.find(g=>g.id===grade).label}${stats.student.classroom?' • '+stats.student.classroom:''}`,
+    subjectRows: aiSubjectRows,
+    maxScore: CYCLE_MAX
+  };
+  const aiBtnHtml = `<button type="button" class="btn btn-outline" style="font-size:12px;padding:5px 10px;margin-inline-start:auto;" onclick="openAIStudentAnalysis(window.__aiDashboardCtx.name, window.__aiDashboardCtx.meta, window.__aiDashboardCtx.subjectRows, window.__aiDashboardCtx.maxScore)">🤖 AI Analysis</button>`;
+  const nameBanner = `<div class="db-student-banner"><span class="seal-lg" style="width:38px;height:38px;font-size:16px;">🎓</span><div><div class="db-student-name">${escapeXml(stats.student.name)}</div><div class="db-student-meta">${STAGES[stage].grades.find(g=>g.id===grade).label} • ${SECTIONS[section].label}${stats.student.classroom?' • '+escapeXml(stats.student.classroom):''}</div></div>${badgeHtml}${aiBtnHtml}</div>`;
 
   let motivationHtml = '';
   if(isParent){
@@ -10609,24 +10925,27 @@ Extract every exam row you can clearly read and return ONLY a raw JSON array (no
 "duration" ("" if not shown — it will be auto-derived from the times when possible),
 "room" (room number, hall name, or any other note in that column; "" if none).
 If the image is not an exam schedule or no rows can be read, return [].`;
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch(WORKER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: GROQ_VISION_MODEL,
         max_tokens: 2000,
         messages: [{
           role: 'user',
           content: [
-            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
-            { type: 'text', text: prompt }
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64Data}` } }
           ]
         }]
       })
     });
-    if(!response.ok) throw new Error('API request failed with status ' + response.status);
+    if(!response.ok){
+      const errText = await response.text().catch(()=> '');
+      throw new Error('API request failed with status ' + response.status + ': ' + errText.slice(0,200));
+    }
     const data = await response.json();
-    const textBlock = (data.content || []).map(b=> b.text || '').join('\n').trim();
+    const textBlock = ((data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '').trim();
     const cleaned = textBlock.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'').trim();
     let extracted;
     try{ extracted = JSON.parse(cleaned); }
@@ -13754,6 +14073,7 @@ function loginAs(user, remember, showWelcome){
   refreshHeaderQuickWidgets();
   refreshBirthdayWidgets();
   showBirthdayToastIfNeeded();
+  showHelpAssistantWidget();
 }
 
 function logoutUser(){
@@ -13767,6 +14087,7 @@ function logoutUser(){
   }catch(err){}
   document.getElementById('appWrap').style.display = 'none';
   document.getElementById('loginOverlay').style.display = 'flex';
+  hideHelpAssistantWidget();
   closeUsersModal();
 }
 
