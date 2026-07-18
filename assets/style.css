@@ -540,6 +540,17 @@ body.dark-mode .masthead-text h1{
   display:none; flex-direction:column; padding-left:12px; border-left:2px solid var(--gold-light);
   margin:2px 0 6px 10px;
 }
+/* Exams Analysis menu: Term 1 / Term 2 options are shown flat (no click-to-expand
+   needed) — one fewer step to reach Cycle 1/2, Term Total, or the Exam Paper analysis
+   than the Dashboard/Top & At-Risk menus, which still use the expandable .term-group. */
+.term-section-heading{
+  font-weight:800;font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;
+  padding:8px 10px 2px;
+}
+.term-group-static{
+  display:flex;flex-direction:column;padding-left:12px;border-left:2px solid var(--gold-light);
+  margin:2px 0 8px 10px;
+}
 .term-group.open{ display:flex; }
 .term-group .opt-btn{ font-size:13px; font-weight:500; padding:7px 10px; }
 .perf-dup-row td{ background:var(--red-bg) !important; }

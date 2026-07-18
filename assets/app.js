@@ -3005,7 +3005,7 @@ function legendHtml(items){
 }
 
 /* ================== EXAMS ANALYSIS (Score Range) ================== */
-const EXAMS_MODE_LABELS = { cycle1:'Cycle 1', cycle2:'Cycle 2', finalexam:'First Term Exam Paper' };
+const EXAMS_MODE_LABELS = { cycle1:'Cycle 1', cycle2:'Cycle 2', finalexam:'First Term Exam Paper', termtotal:'Term Total' };
 // Term 2's "Final Exam" column is labelled "End-of-Year Exam Paper" instead of "First Term Exam Paper".
 function getExamModeLabel(term, mode){
   if(mode==='finalexam') return term==='term2' ? 'End-of-Year Exam Paper' : 'First Term Exam Paper';
@@ -3120,8 +3120,57 @@ function setExamsFilter(kind, value){
   renderExamsTable();
 }
 
+// Same pattern as withCertState (used by Report Certificates): temporarily points the
+// shared grade-book `state` at the Exams Analysis filters so computePrimaryTotals() — and
+// everything it depends on (isJuniorPrimary/isG7G8Prep/isG10G11Secondary/subjKey) — can be
+// reused unmodified for the "Term Total" exam mode below. Restores the real state after.
+function withExamsAnalysisState(section, stage, grade, term, subject, fn){
+  const backup = { section:state.section, stage:state.stage, grade:state.grade, term:state.term, termPeriod:state.termPeriod, subject:state.subject };
+  state.section = section; state.stage = stage; state.grade = grade;
+  state.term = term; state.termPeriod = term; state.subject = subject;
+  try{ return fn(); } finally { Object.assign(state, backup); }
+}
+
 /* ---------- Exams Analysis: data ---------- */
 function computeExamsAnalysis(section, stage, grade, classroom, term, mode, subjectFilter){
+  const ck = `${section}|${stage}|${grade}`;
+  let roster = visibleRoster(students[ck]);
+  if(classroom) roster = roster.filter(s=> (s.classroom||'').trim() === classroom);
+  if(!roster.length){
+    return { invalid:true, reason:'There are no students registered for this class yet.' };
+  }
+  const allSubjects = getSubjectsForStageAndSection(stage, section);
+  const subjects = subjectFilter ? allSubjects.filter(s=>s===subjectFilter) : allSubjects;
+
+  // Term Total (Coursework + Exam Paper, out of 100 — same figure shown on Report
+  // Certificates) covers every Stage/Grade including Grade 1 & 2 Primary (whose Term Total
+  // is the Total Coursework alone, since their exam is a Pass/Fail badge, not numeric), so it
+  // has no appliesToStage/junior restriction unlike the raw Cycle/Exam Paper fields below.
+  if(mode==='termtotal'){
+    const junior = stage==='primary' && (grade==='g1' || grade==='g2');
+    const columns = [];
+    subjects.forEach(subject=>{
+      const vals = withExamsAnalysisState(section, stage, grade, term, subject, ()=>{
+        const scoresForSubj = scores[subjKey()] || {};
+        const out = [];
+        roster.forEach(s=>{
+          const sc = scoresForSubj[s.id];
+          if(!sc) return;
+          const t = computePrimaryTotals(sc);
+          const examVal = (sc.examPaper===null||sc.examPaper===undefined||sc.examPaper==='') ? 0 : (parseFloat(sc.examPaper)||0);
+          const termTotal = junior ? t.totalCoursework : (t.totalCoursework + examVal);
+          out.push(termTotal);
+        });
+        return out;
+      });
+      if(!vals.length) return;
+      const bandCounts = SCORE_BANDS.map(()=>0);
+      vals.forEach(v=> bandCounts[bandIndexForPct(v)]++); // Term Total is already out of 100, so the value IS the percentage.
+      columns.push({ subject, total: vals.length, bandCounts });
+    });
+    return { invalid:false, columns, max:100 };
+  }
+
   const info = EXAM_FIELD_INFO[mode];
   if(!info) return { invalid:true, reason:'Unknown exam type.' };
   if(!info.appliesToStage(stage)){
@@ -3134,15 +3183,7 @@ function computeExamsAnalysis(section, stage, grade, classroom, term, mode, subj
     return { invalid:true, reason:'Cycle scores are not recorded for Grade 1 & Grade 2 Primary.' };
   }
   const max = typeof info.max === 'function' ? info.max(stage) : info.max;
-  const ck = `${section}|${stage}|${grade}`;
-  let roster = visibleRoster(students[ck]);
-  if(classroom) roster = roster.filter(s=> (s.classroom||'').trim() === classroom);
-  if(!roster.length){
-    return { invalid:true, reason:'There are no students registered for this class yet.' };
-  }
 
-  const allSubjects = getSubjectsForStageAndSection(stage, section);
-  const subjects = subjectFilter ? allSubjects.filter(s=>s===subjectFilter) : allSubjects;
   const columns = [];
   subjects.forEach(subject=>{
     const sk = `${ck}|${term}|${subject}`;
@@ -3175,7 +3216,7 @@ function renderExamsTable(){
   const { examsSection:section, examsStage:stage, examsGrade:grade, examsClassroom:classroom, examsTerm:term, examsMode:mode, examsSubject:subject } = state;
 
   if(!term || !mode){
-    area.innerHTML = `<div class="empty-state"><div class="seal-lg">🧮</div><h3>Choose an exam</h3><p>Use the "Exams Analysis" menu above to choose a Term, then Cycle 1, Cycle 2, or First Term / End-of-Year Exam Paper.</p></div>`;
+    area.innerHTML = `<div class="empty-state"><div class="seal-lg">🧮</div><h3>Choose an exam</h3><p>Use the "Exams Analysis" menu above to choose a Term, then Cycle 1, Cycle 2, Term Total, or First Term / End-of-Year Exam Paper.</p></div>`;
     return;
   }
   if(!section || !stage || !grade){
