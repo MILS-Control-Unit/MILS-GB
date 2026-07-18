@@ -738,6 +738,18 @@ function stepConfig(){
 // picks out one independent attendance table, the same way Mark Entry does for the Grade Book.
 function attStepConfig(){
   const base = stepConfigThroughClass(makeStepConfig(attState, ATT_SECTIONS, ATT_STAGES));
+  // The Absence & Approved Leave tab's Class list must always be sorted A→Z (unlike the Grade
+  // Book's own Class step, which keeps insertion order) — wrap the shared 'term' step's options
+  // in an alphabetical sort here, without touching makeStepConfig() itself so no other tab that
+  // reuses it is affected.
+  const classStepIdx = base.findIndex(c=>c.key==='term');
+  if(classStepIdx>-1){
+    const origOptions = base[classStepIdx].options;
+    base[classStepIdx] = { ...base[classStepIdx], options: ()=>{
+      const opts = typeof origOptions==='function' ? origOptions() : origOptions;
+      return [...opts].sort((a,b)=> String(a.label).localeCompare(String(b.label), undefined, {numeric:true, sensitivity:'base'}));
+    }};
+  }
   // Absence is recorded per Subject (each subject has its own sessions/schedule), so the
   // Attendance tab picks a Subject right after Class, before the Month step.
   const subjectStep = {
@@ -6473,16 +6485,17 @@ function pushAttendanceChangeNow(){
 function canUseApprovedLeave(){
   return !!(currentUser && currentUser.effective && currentUser.effective.approvedLeave);
 }
-// Creates (or refreshes) the "Absence" / "Approved Leave" sub-tab bar, anchored right above the
-// intro (stepper) element so it's visible whether or not the stepper has been completed yet —
-// it is NOT inside #attendanceWorkspace, which is hidden via display:none until every step is
-// picked. Rebuilt on every call (cheap) so a role switch (e.g. re-login as a Teacher) removes
-// the "Approved Leave" button immediately rather than leaving a stale one in the DOM.
+// Creates (or refreshes) the "Absence" / "Approved Leave" / "Summary" sub-tab dropdown,
+// anchored right above the breadcrumb/stepper bar (#attendanceStepper) — i.e. directly under
+// the "Absence & Approved Leave" tab itself — so it's visible whether or not the stepper has
+// been completed yet; it is NOT inside #attendanceWorkspace, which is hidden via display:none
+// until every step is picked. Rebuilt on every call (cheap) so a role switch (e.g. re-login as
+// a Teacher) removes the dropdown immediately rather than leaving a stale one in the DOM.
 // Recording Approved Leave is restricted to Admin and HOS/Deputy — Teachers, Heads of
 // Department, and Parent/Student accounts only ever see the plain Absence table, no sub-tabs.
 function ensureAttSubTabsBar(){
-  const intro = document.getElementById('attendanceIntroState');
-  if(!intro || !intro.parentNode) return;
+  const stepperHolder = document.getElementById('attendanceStepper');
+  if(!stepperHolder || !stepperHolder.parentNode) return;
   const canLeave = canUseApprovedLeave();
   if(!canLeave && (attSubView==='leave' || attSubView==='summary')) attSubView = 'absence';
   let bar = document.getElementById('attSubTabsBar');
@@ -6494,7 +6507,11 @@ function ensureAttSubTabsBar(){
     bar = document.createElement('div');
     bar.id = 'attSubTabsBar';
     bar.className = 'att-subtabs';
-    intro.parentNode.insertBefore(bar, intro);
+    stepperHolder.parentNode.insertBefore(bar, stepperHolder);
+  } else if(bar.nextSibling !== stepperHolder){
+    // Bar exists but sits in the old position from a previous render — move it back to
+    // directly above the breadcrumb/stepper bar.
+    stepperHolder.parentNode.insertBefore(bar, stepperHolder);
   }
   bar.innerHTML = `
     <select id="attSubTabsSelect" class="att-subtab-select" onchange="switchAttSubView(this.value)">
