@@ -1697,16 +1697,19 @@ body.dark-mode .att-table tbody tr:hover .att-name-col{ background:var(--paper-2
   background:#fff; padding:18px; border-radius:16px; box-shadow:var(--shadow); overflow:hidden;
 }
 .cert2-card{
-  position:relative; background:#FBFAF6; border:5px double var(--gold); border-radius:8px;
-  padding:32px 64px 28px 130px; font-family:'Tajawal', sans-serif; overflow:hidden;
-  box-shadow:0 0 0 1px var(--gold-light), inset 0 0 0 8px rgba(255,255,255,.5);
+  position:relative; background:#FBFAF6; border:3px solid var(--gold); border-radius:8px;
+  padding:32px 64px 28px 142px; font-family:'Tajawal', sans-serif; overflow:hidden;
+  box-shadow:inset 0 0 0 6px rgba(255,255,255,.5);
 }
-/* Ornate gold corner flourishes — the "luxury medal" touch */
-.cert2-corner{ position:absolute; z-index:1; opacity:.85; line-height:1; color:var(--gold-deep); filter:drop-shadow(0 1px 1px rgba(255,255,255,.5)); }
-.cert2-corner svg{ display:block; width:26px; height:26px; }
-.cert2-corner.tl{ top:10px; left:106px; }
+/* Ornate gold corner flourishes — the "luxury medal" touch. Kept clear of the ribbon
+   (96px wide + 3px border = 99px) with a deliberate 20px gap so the flourish never
+   reads as crowding the sidebar, and stacked below the ribbon (z-index 0) so any
+   remaining overlap tucks behind it instead of drawing on top. */
+.cert2-corner{ position:absolute; z-index:0; opacity:.85; line-height:1; color:var(--gold-deep); filter:drop-shadow(0 1px 1px rgba(255,255,255,.5)); }
+.cert2-corner svg{ display:block; width:24px; height:24px; }
+.cert2-corner.tl{ top:10px; left:119px; }
 .cert2-corner.tr{ top:10px; right:12px; transform:scaleX(-1); }
-.cert2-corner.bl{ bottom:8px; left:106px; transform:scaleY(-1); }
+.cert2-corner.bl{ bottom:8px; left:119px; transform:scaleY(-1); }
 .cert2-corner.br{ bottom:8px; right:12px; transform:scale(-1,-1); }
 /* Decorative navy/gold corner triangle, bottom-right — echoes the approved certificate design */
 .cert2-card::after{
@@ -1760,13 +1763,27 @@ body.dark-mode .att-table tbody tr:hover .att-name-col{ background:var(--paper-2
   transform:rotate(-10deg);
 }
 .cert2-head{ display:flex; align-items:center; justify-content:center; gap:16px; margin-bottom:6px; }
-.cert2-head img{ height:78px; width:auto; object-fit:contain; flex-shrink:0; }
+/* Matching circular frame for both logos so MILS and EEP read as a balanced pair
+   regardless of the underlying artwork's own shape/whitespace. */
+.cert2-logo-frame{
+  width:78px; height:78px; border-radius:50%; background:#fff; flex-shrink:0;
+  border:1.5px solid var(--gold-light); box-shadow:0 2px 6px rgba(156,124,21,.12);
+  display:flex; align-items:center; justify-content:center; padding:8px;
+  -webkit-print-color-adjust:exact; print-color-adjust:exact; color-adjust:exact;
+}
+.cert2-head img{ height:100%; width:100%; object-fit:contain; flex-shrink:0; }
 .cert2-head .titles{ text-align:center; flex:1; }
 .cert2-head .titles h1{
-  font-family:'Segoe UI', 'Tahoma', sans-serif; font-weight:700; color:var(--ink);
-  font-size:30px; letter-spacing:1.2px; margin:0 0 4px;
+  font-family:'Segoe UI', 'Tahoma', sans-serif; font-weight:800; color:var(--ink);
+  font-size:29px; letter-spacing:1.4px; margin:0 0 8px;
 }
-.cert2-head .titles .sub{ color:var(--gold-deep); font-size:14px; font-weight:700; letter-spacing:2.5px; margin:0; font-family:'Segoe UI', sans-serif; }
+/* Report-type subtitle set apart as a distinct pill rather than a plain caption line,
+   so it reads as a clearly lower tier under the school name instead of competing with it. */
+.cert2-head .titles .sub{
+  display:inline-block; color:var(--gold-deep); background:var(--gold-light);
+  font-size:12px; font-weight:700; letter-spacing:2.5px; margin:0; padding:4px 16px;
+  border-radius:20px; font-family:'Segoe UI', sans-serif; text-transform:uppercase;
+}
 .cert2-divider{ display:flex; align-items:center; justify-content:center; gap:10px; margin:8px 0 14px; color:var(--gold-deep); }
 .cert2-divider .line{ flex:1; max-width:160px; height:1px; background:var(--gold); }
 .cert2-divider .ornament{ display:flex; align-items:center; }
@@ -1910,7 +1927,23 @@ body.dark-mode .att-table tbody tr:hover .att-name-col{ background:var(--paper-2
 .cert2-signrow .box.date-box .sig-name{
   font-family:'Dancing Script','Style Script','Segoe Script',cursive; font-style:italic; font-weight:700; font-size:25px; color:var(--gold-light); letter-spacing:.3px;
 }
+/* A real signature line under HOS / Principal names (not just floating cursive text),
+   and a dashed placeholder look when a name hasn't been entered yet so an empty slot
+   reads as "not signed" rather than a rendering gap. */
+.cert2-signrow .box:not(.date-box) .sig-name{
+  display:inline-block; min-width:130px; border-bottom:1px solid rgba(255,255,255,.4); padding-bottom:5px;
+}
+.cert2-signrow .box:not(.date-box) .sig-name:empty,
+.cert2-signrow .box:not(.date-box) .sig-name.is-placeholder{
+  border-bottom-style:dashed; opacity:.5; font-size:16px; font-family:'Tajawal', sans-serif;
+}
 .cert2-signrow .stamp{ display:flex; flex-direction:column; align-items:center; gap:6px; }
+/* Certificate reference number — small authenticity marker in the top corner of the card. */
+.cert2-refno{
+  position:absolute; top:14px; right:20px; z-index:2; font-size:10.5px; font-weight:700;
+  color:var(--gold-deep); letter-spacing:.5px; font-family:'Segoe UI', sans-serif;
+  background:rgba(255,255,255,.7); padding:2px 9px; border-radius:10px;
+}
 /* Performance Indicator Styles */
 .performance-indicator-section{
   display:flex; justify-content:center; align-items:center; gap:24px; margin:28px 0; flex-wrap:wrap;

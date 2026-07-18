@@ -3189,8 +3189,14 @@ function renderCertReportsCards(){
   const principalName = principalSignatory && principalSignatory.name ? principalSignatory.name : PRINCIPAL_NAME;
   const dateStr = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'});
 
+  // Compact reference number printed on each certificate (school + academic year +
+  // report type + student ID) so a printed copy can be looked up/verified later.
+  const certYearParts = ACADEMIC_YEAR_LABEL.match(/\d{4}/g) || [];
+  const certYearShort = certYearParts.length===2 ? certYearParts[0].slice(2) + '-' + certYearParts[1].slice(2) : '';
+
   holder.innerHTML = roster.map(student=>{
     const subjects = certApplicableSubjects(certState.stage, student, certState.section);
+    const certRefNo = `MILS-${certYearShort}-${(type||'').toUpperCase()}-${escapeHtml(student.displayId||student.id||'')}`;
     // Cycle scores are out of 5 for most grades, but Grade 7-8 Prep and Grade 10-11
     // Secondary use an extended Max.15 Cycle scale (see perfCycleMaxFor) — the subject
     // cell's colored band must be computed against the correct max for this grade, not
@@ -3957,6 +3963,7 @@ function renderCertReportsCards(){
     return `
     <div class="cert2-outer cert2-print-page">
       <div class="cert2-card">
+        <div class="cert2-refno">CERT NO. ${certRefNo}</div>
         <div class="cert2-ribbon">
           <div class="star">${CERT_SEAL_STAR_SVG}</div>
           <div class="div"></div>
@@ -3969,12 +3976,12 @@ function renderCertReportsCards(){
         <span class="cert2-corner br">${CERT_CORNER_SVG}</span>
         <div class="cert2-inner">
         <div class="cert2-head">
-          <img src="${MILS_LOGO_B64}" alt="MILS logo">
+          <span class="cert2-logo-frame"><img src="${MILS_LOGO_B64}" alt="MILS logo"></span>
           <div class="titles">
             <h1>MADINATY INTEGRATED LANGUAGE SCHOOLS</h1>
             <p class="sub">${escapeHtml(cardTitle)}</p>
           </div>
-          <img src="${EEP_LOGO_B64}" alt="Egypt Education Platform logo">
+          <span class="cert2-logo-frame"><img src="${EEP_LOGO_B64}" alt="Egypt Education Platform logo"></span>
         </div>
         <div class="cert2-divider"><span class="line"></span><span class="ornament">${CERT_DIVIDER_ORNAMENT_SVG}</span><span class="line"></span></div>
 
@@ -4016,7 +4023,7 @@ function renderCertReportsCards(){
         <div class="cert2-signrow">
           <div class="box">
             <div class="sig-line">HOS</div>
-            <div class="sig-name">${hosName ? escapeHtml(hosName) : '&nbsp;'}</div>
+            <div class="sig-name${hosName ? '' : ' is-placeholder'}">${hosName ? escapeHtml(hosName) : 'Not yet signed'}</div>
           </div>
           <div class="divider"></div>
           <div class="box date-box">
@@ -4026,7 +4033,7 @@ function renderCertReportsCards(){
           <div class="divider"></div>
           <div class="box">
             <div class="sig-line">${escapeHtml(principalTitle)}</div>
-            <div class="sig-name">${escapeHtml(principalName)}</div>
+            <div class="sig-name${principalName ? '' : ' is-placeholder'}">${principalName ? escapeHtml(principalName) : 'Not yet signed'}</div>
           </div>
         </div>
         </div>
