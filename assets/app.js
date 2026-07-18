@@ -52,6 +52,22 @@ const STAGES = {
 const G12_SUBJECTS_EN = ["Arabic","English","Physics","Chemistry","Pure Mathematics","Applied Mathematics","Biology","History","Geography","Statistics"];
 const G12_SUBJECTS_FR = ["Arabic","French","Physics","Chemistry","Pure Mathematics","Applied Mathematics","Biology","History","Geography","Statistics"];
 
+// Grade 12 End-of-Year Mark Entry is recorded for the WHOLE GRADE in a single table (one row
+// per student, one column per subject) instead of picking one subject at a time. Each subject
+// has its own maximum full mark:
+const G12_SUBJECT_MAX = {
+  'Arabic': 80, 'English': 60, 'French': 60, 'Physics': 60, 'Chemistry': 60,
+  'Pure Mathematics': 30, 'Applied Mathematics': 30,
+  'Biology': 60, 'History': 60, 'Geography': 60, 'Statistics': 60
+};
+function g12SubjectMax(subject){ return G12_SUBJECT_MAX[subject] || 0; }
+// "Math Total" column = Pure Mathematics + Applied Mathematics (computed, not directly editable).
+// The overall "Total" column (Max. 320) is Arabic + English/French + Physics + Chemistry + Math
+// Total (80+60+60+60+60=320) — Biology, History, Geography and Statistics are recorded in the
+// table but are NOT counted toward this Total (they're extra/elective subjects per student track).
+const G12_CORE_TOTAL_SUBJECTS = ['Arabic','English','French','Physics','Chemistry','Pure Mathematics','Applied Mathematics'];
+const G12_TOTAL_MAX = 320;
+
 // French Section-specific subject mappings
 const FRENCH_SECTION_SUBJECTS = {
   primary:  { label: "Primary Stage",
@@ -490,7 +506,10 @@ function academicSubMode(){
 // on which Academic Term it belongs to: "Term 1 (Total)" for Term 1, "Term 2 (Total)" for Term 2.
 function markEntryLabel(termPeriod, academicTerm){
   if(!academicTerm) return null;
-  if(academicTerm==='examPaper') return termPeriod==='term2' ? 'Term 2 (Total)' : 'Term 1 (Total)';
+  if(academicTerm==='examPaper'){
+    if(state.stage === 'secondary' && state.grade === 'g12') return 'End-of-Year';
+    return termPeriod==='term2' ? 'Term 2 (Total)' : 'Term 1 (Total)';
+  }
   const labels = { month1:'First Month Mark Entry', month2:'Second Month Mark Entry', coursework:'Total Coursework Mark Entry' };
   return labels[academicTerm] || null;
 }
@@ -722,6 +741,12 @@ function makeStepConfig(st, sectionsData, stagesData){
   const subjectStep = { key:'subject', title:'Subject', state: st, getLabel:()=> st.subject ? subjectWithIcon(st.subject) : null,
     options: ()=> st.stage ? getSubjectsForStageAndSection(st.stage, st.section).filter(s=>scopeSubjectAllowedForClassroom(s, st.term)).map(s=>({id:s,label:subjectWithIcon(s)})) : [], requires:['termPeriod','section','stage','grade','term','academicTerm'] };
 
+  // Grade 12 End-of-Year Mark Entry records EVERY subject at once, in one class-level table
+  // (see renderG12AllSubjectsExamScreen) — so there's no separate "Subject" step to click
+  // through for it; the stepper stops at "Mark Entry" (Academic Term) and goes straight to
+  // the workspace.
+  const isG12ExamAll = (st.stage === 'secondary' && st.grade === 'g12' && st.academicTerm === 'examPaper');
+
   // Teachers only ever have one Section, and a fixed, pre-assigned set of Classes/Subjects —
   // making them click through Stage and Grade first (even though those dropdowns only ever
   // offer the one Stage/Grade their own classes happen to sit in) is pure friction. So for the
@@ -732,7 +757,9 @@ function makeStepConfig(st, sectionsData, stagesData){
   if(currentUser && currentUser.role==='teacher'){
     const classStep = { key:'term', title:'Class', state: st, getLabel:()=> st.term ? st.term : null,
       options: ()=> getTeacherClassroomsInSection(st.section).map(c=>({id:c,label:c})), requires:['termPeriod','section'] };
-    return [termPeriodStep, sectionStep, classStep, academicTermStep, subjectStep];
+    return isG12ExamAll
+      ? [termPeriodStep, sectionStep, classStep, academicTermStep]
+      : [termPeriodStep, sectionStep, classStep, academicTermStep, subjectStep];
   }
 
   const stageStep = { key:'stage', title:'Stage', state: st, getLabel:()=> st.stage ? stagesData[st.stage].label : null,
@@ -745,7 +772,9 @@ function makeStepConfig(st, sectionsData, stagesData){
   const termStep = { key:'term', title:'Class', state: st, getLabel:()=> st.term ? st.term : null,
     options: ()=> getClassesInGrade(st).filter(c=>scopeClassroomAllowed(c)).map(c=>({id:c,label:c})), requires:['termPeriod','section','stage','grade'] };
 
-  return [termPeriodStep, sectionStep, stageStep, gradeStep, termStep, academicTermStep, subjectStep];
+  return isG12ExamAll
+    ? [termPeriodStep, sectionStep, stageStep, gradeStep, termStep, academicTermStep]
+    : [termPeriodStep, sectionStep, stageStep, gradeStep, termStep, academicTermStep, subjectStep];
 }
 
 // Returns the leading part of a stepConfig()/makeStepConfig() array up to and including the
@@ -3693,7 +3722,8 @@ function updateIntroState(introId, cfgs){
 
 function renderWorkspace(){
   const cfgs = stepConfig();
-  const ready = state.termPeriod && state.section && state.stage && state.grade && state.term && state.academicTerm && state.subject;
+  const g12ExamAll = state.stage === 'secondary' && state.grade === 'g12' && state.academicTerm === 'examPaper';
+  const ready = state.termPeriod && state.section && state.stage && state.grade && state.term && state.academicTerm && (g12ExamAll || state.subject);
   document.getElementById('workspace').classList.toggle('show', !!ready);
   document.getElementById('introState').classList.toggle('show', !ready);
   if(!ready){
@@ -3711,7 +3741,7 @@ function renderWorkspace(){
     <span class="crumb">${gradeLabel}</span>
     <span class="crumb">${state.term}</span>
     <span class="crumb">${markEntryLabel(state.termPeriod, state.academicTerm)}</span>
-    <span class="crumb subj">${subjectWithIcon(state.subject)}</span>
+    ${g12ExamAll ? `<span class="crumb subj">All Subjects</span>` : `<span class="crumb subj">${subjectWithIcon(state.subject)}</span>`}
   `;
   toggleAddForm(false);
   renderTable();
@@ -7034,6 +7064,10 @@ function renderTableInner(preserveFocus){
   if(state.academicTerm === 'examPaper'){
     const gradeRoster = subjectFilteredGradeRoster();
     document.getElementById('studentCount').textContent = `${gradeRoster.length} students (whole Grade)`;
+    if(state.stage === 'secondary' && state.grade === 'g12'){
+      renderG12AllSubjectsExamScreen(gradeRoster, holder, footNote);
+      return;
+    }
     renderExamPaperScreen(gradeRoster, scoreMap, holder, footNote);
     return;
   }
@@ -7194,6 +7228,130 @@ function renderExamPaperScreen(roster, scoreMap, holder, footNote){
           <th>Percentage</th>
           <th>Grade</th>
           <th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ================== GRADE 12 END-OF-YEAR: ALL-SUBJECTS-AT-ONCE TABLE ==================
+// Grade 12's End-of-Year Mark Entry doesn't step through one Subject at a time like every
+// other grade — it records every subject for the whole class in a SINGLE table (one row per
+// student, one column per subject), matching the paper mark sheet. Scores are still stored
+// under the normal per-subject `scores` bucket (classKey|termPeriod|subject), just written to
+// directly via the subject name rather than through state.subject/subjKey().
+function g12ExamSubjKey(subject){
+  return `${classKey()}|${state.termPeriod}|${subject}`;
+}
+function g12ExamScoreFor(subject, studentId){
+  const bucket = scores[g12ExamSubjKey(subject)];
+  const sc = bucket ? bucket[studentId] : null;
+  if(!sc || sc.examPaper===null || sc.examPaper===undefined || sc.examPaper==='') return null;
+  const v = parseFloat(sc.examPaper);
+  return isNaN(v) ? null : v;
+}
+// Math Total = Pure Mathematics + Applied Mathematics (computed; shown but not itself editable).
+function g12MathTotalFor(studentId){
+  const pure = g12ExamScoreFor('Pure Mathematics', studentId);
+  const applied = g12ExamScoreFor('Applied Mathematics', studentId);
+  if(pure===null && applied===null) return null;
+  return (pure||0) + (applied||0);
+}
+// Overall Total (Max. 320) = Arabic + English/French + Physics + Chemistry + Math Total.
+// Biology, History, Geography, Statistics are recorded but excluded from this Total.
+function g12GrandTotalFor(studentId, subjectsList){
+  let sum = 0, any = false;
+  subjectsList.forEach(subj=>{
+    if(!G12_CORE_TOTAL_SUBJECTS.includes(subj)) return;
+    const v = g12ExamScoreFor(subj, studentId);
+    if(v!==null){ sum += v; any = true; }
+  });
+  return any ? sum : null;
+}
+function updateG12ExamScore(el, studentId, subject, max){
+  if(isCurrentUserGradeEntryLocked()) return;
+  const sk = g12ExamSubjKey(subject);
+  if(!scores[sk]) scores[sk] = {};
+  if(!scores[sk][studentId]) scores[sk][studentId] = emptyScoreObj();
+  const raw = el.value;
+  const val = raw==='' ? null : clamp(raw, max);
+  scores[sk][studentId].examPaper = val;
+  renderTable(true);
+  saveState();
+  const stu = subjectFilteredGradeRoster().find(s=>s.id===studentId);
+  logActivity('edit', `Set "${subject} - End-of-Year" = ${val===null?'—':val} for ${stu?stu.name:'a student'} (${state.term||'—'})`, { studentId });
+}
+function renderG12ExamAllSubjectsRowHtml(s, i, subjectsList, readOnly){
+  let cellsHtml = '';
+  subjectsList.forEach(subj=>{
+    const max = g12SubjectMax(subj);
+    const val = g12ExamScoreFor(subj, s.id);
+    const v = val===null ? '' : val;
+    cellsHtml += readOnly
+      ? `<td><input class="score-input" type="number" value="${v}" disabled style="opacity:.65;"></td>`
+      : `<td><input class="score-input" type="number" min="0" max="${max}" step="0.5" value="${v}"
+             onchange="updateG12ExamScore(this,'${s.id}','${subj}',${max})"></td>`;
+    if(subj === 'Applied Mathematics'){
+      const mathTotal = g12MathTotalFor(s.id);
+      cellsHtml += `<td class="total-cell" style="background:rgba(0,0,0,.03);">${mathTotal===null?'—':mathTotal}</td>`;
+    }
+  });
+  const grandTotal = g12GrandTotalFor(s.id, subjectsList);
+  const pct = grandTotal===null ? null : Math.round((grandTotal/G12_TOTAL_MAX)*1000)/10;
+  const g = pct===null ? null : letterGrade(pct);
+  return `
+      <tr data-row-id="${s.id}">
+        <td>${i+1}</td>
+        <td><span class="seat-badge">${s.displayId||'—'}</span></td>
+        <td class="name-col">${s.name}</td>
+        <td>${s.classroom ? `<span class="seat-badge">${escapeHtml(s.classroom)}</span>` : '—'}</td>
+        ${cellsHtml}
+        <td class="total-cell"><b>${grandTotal===null?'—':grandTotal}</b></td>
+        <td class="pct-cell">${pct===null?'—':pct+'%'}</td>
+        <td>${g ? `<span class="badge ${g.c}">${g.t}</span>` : '—'}</td>
+      </tr>`;
+}
+function renderG12AllSubjectsExamScreen(roster, holder, footNote){
+  hideMonthPill();
+  const subjectsList = getSubjectsForGrade('secondary', 'g12', state.section);
+  const readOnly = (currentUser && currentUser.effective && currentUser.effective.edit===false) || isCurrentUserGradeEntryLocked();
+  const screenLabel = markEntryLabel(state.termPeriod, state.academicTerm);
+  const englishOrFrench = state.section === 'fr' ? 'French' : 'English';
+
+  if(footNote){
+    const saveLine = `Grades are saved to this browser automatically as you type — click "💾 Save" above to sync them to Firestore for every other device. You can still use "Full Backup" to save a copy to your device, or "Restore Backup" to load one later.`;
+    footNote.innerHTML = `This screen records <b>${screenLabel}</b> for every subject at once, for the whole class (Max. per subject shown in each column header). <b>Math Total</b> = Pure Mathematics + Applied Mathematics. <b>Total</b> (Max. ${G12_TOTAL_MAX}) = Arabic + ${englishOrFrench} + Physics + Chemistry + Math Total — Biology, History, Geography and Statistics are recorded here but not counted toward this Total.<br>${saveLine}`;
+  }
+
+  if(roster.length===0){
+    holder.innerHTML = `
+      <div class="empty-state">
+        <div class="seal-lg">?</div>
+        <h3>No students in this class yet</h3>
+        <p>Add students manually or import a list from an Excel file.</p>
+      </div>`;
+    return;
+  }
+
+  let headerCells = '';
+  subjectsList.forEach(subj=>{
+    headerCells += `<th>${subjectWithIcon(subj)}<br><small>(Max. ${g12SubjectMax(subj)})</small></th>`;
+    if(subj === 'Applied Mathematics'){
+      headerCells += `<th>Math Total<br><small>(computed)</small></th>`;
+    }
+  });
+
+  const rows = roster.map((s, i)=> renderG12ExamAllSubjectsRowHtml(s, i, subjectsList, readOnly)).join('');
+
+  holder.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>ID</th><th>Name</th><th>Class</th>
+          ${headerCells}
+          <th>Total<br><small>(Max. ${G12_TOTAL_MAX})</small></th>
+          <th>Percentage</th>
+          <th>Grade</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
