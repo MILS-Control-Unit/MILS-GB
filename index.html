@@ -1058,11 +1058,24 @@
     <button class="class-alert-dismiss" id="classAlertDismissBtn" onclick="dismissClassAlert()">✕</button>
   </div>
 
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true"><defs>
+  <symbol id="icon-teachers" viewBox="0 0 24 24"><path d="M22 9 12 5 2 9l10 4 10-4Z"/><path d="M6 10.5V16c0 1 2.7 3 6 3s6-2 6-3v-5.5"/><path d="M22 9v6"/></symbol>
+  <symbol id="icon-students" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="icon-attendance" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9.5 14.5 5 5m0-5-5 5"/></symbol>
+  <symbol id="icon-gradebook" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v18M8 7h3M8 11h3M8 15h3"/></symbol>
+  <symbol id="icon-certificates" viewBox="0 0 24 24"><circle cx="12" cy="8" r="6"/><path d="m9 13.5-1.5 7 4.5-2.5 4.5 2.5-1.5-7"/></symbol>
+  <symbol id="icon-markentry" viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="M15 5l4 4"/></symbol>
+  <symbol id="icon-dashboard" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></symbol>
+  <symbol id="icon-examsanalysis" viewBox="0 0 24 24"><path d="M3 21h18"/><rect x="6" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="18" y="13" width="3" height="5"/></symbol>
+  <symbol id="icon-perfalerts" viewBox="0 0 24 24"><path d="M8 4h8v5a4 4 0 0 1-8 0Z"/><path d="M8 5H4v1a4 4 0 0 0 4 4M16 5h4v1a4 4 0 0 1-4 4"/><path d="M12 13v4m-3 4h6m-3-4v4"/></symbol>
+  <symbol id="icon-examschedule" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><rect x="8" y="14" width="4" height="4"/></symbol>
+  <symbol id="icon-config" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></symbol>
+</defs></svg>
   <div class="main-nav" id="mainNav">
     <div class="nav-row-tabs">
-      <span class="nav-group-label nav-group-people">People</span>
+      <span class="nav-group-label nav-group-users">Users</span>
       <div class="nav-dropdown" id="teachersDropdownWrap">
-        <button class="nav-tab" data-view="teachers" id="navTabTeachers" title="Teachers" onclick="toggleTeachersMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 9 12 5 2 9l10 4 10-4Z"/><path d="M6 10.5V16c0 1 2.7 3 6 3s6-2 6-3v-5.5"/><path d="M22 9v6"/></svg> Teachers ▾</button>
+        <button class="nav-tab" data-view="teachers" id="navTabTeachers" title="Teachers" onclick="toggleTeachersMenu(event)"><svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-teachers"/></svg> Teachers ▾</button>
         <div class="nav-dropdown-menu" id="teachersMenu">
           <button class="opt-btn" onclick="switchView('teachers');closeTeachersMenu();">🗂 Teachers Database</button>
           <button class="opt-btn" onclick="switchView('teacherClasses');closeTeachersMenu();">📚 Teachers and Classes</button>
@@ -1070,23 +1083,23 @@
         </div>
       </div>
       <div class="nav-dropdown" id="databaseDropdownWrap">
-        <button class="nav-tab active" data-view="database" id="navTabDatabase" title="Students" onclick="toggleDatabaseMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Students ▾</button>
+        <button class="nav-tab active" data-view="database" id="navTabDatabase" title="Students" onclick="toggleDatabaseMenu(event)"><svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-students"/></svg> Students ▾</button>
         <div class="nav-dropdown-menu" id="databaseMenu">
           <button class="opt-btn" onclick="switchView('database');closeDatabaseMenu();">🗂 Students Database</button>
           <button class="opt-btn" onclick="switchView('classLists');closeDatabaseMenu();">📋 Class Lists</button>
           <button class="opt-btn" onclick="switchView('statistics');closeDatabaseMenu();">📊 Statistics</button>
         </div>
       </div>
-      <button class="nav-tab" data-view="attendance" id="navTabAttendance" title="Absence & Approved Leave" onclick="switchView('attendance')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9.5 14.5 5 5m0-5-5 5"/></svg> Absence</button>
+      <button class="nav-tab" data-view="attendance" id="navTabAttendance" title="Absence & Approved Leave" onclick="switchView('attendance')"><svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-attendance"/></svg> Absence</button>
       <span class="nav-row-tick" aria-hidden="true"></span>
       <span class="nav-group-label nav-group-academics">Academics</span>
-      <button class="nav-tab" data-view="grades" id="navTabGrades" title="Grade Book" onclick="switchView('grades')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v18M8 7h3M8 11h3M8 15h3"/></svg> Grade Book</button>
-      <button class="nav-tab" data-view="certReports" id="navTabCertReports" title="Certificates" onclick="switchView('certReports')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="m9 13.5-1.5 7 4.5-2.5 4.5 2.5-1.5-7"/></svg> Certificates</button>
-      <button class="nav-tab" data-view="markEntryReport" id="navTabMarkEntryReport" title="Mark Entry Report" onclick="switchView('markEntryReport')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="M15 5l4 4"/></svg> Mark Entry Report</button>
+      <button class="nav-tab" data-view="grades" id="navTabGrades" title="Grade Book" onclick="switchView('grades')"><svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-gradebook"/></svg> Grade Book</button>
+      <button class="nav-tab" data-view="certReports" id="navTabCertReports" title="Certificates" onclick="switchView('certReports')"><svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-certificates"/></svg> Certificates</button>
+      <button class="nav-tab" data-view="markEntryReport" id="navTabMarkEntryReport" title="Mark Entry Report" onclick="switchView('markEntryReport')"><svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-markentry"/></svg> Mark Entry Report</button>
       <span class="nav-row-tick" aria-hidden="true"></span>
       <span class="nav-group-label nav-group-analytics">Reports &amp; Analytics</span>
       <div class="nav-dropdown" id="dashboardDropdownWrap">
-        <button class="nav-tab" data-view="dashboard" id="navTabDashboard" title="Dashboard" onclick="toggleDashboardMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg> Dashboard ▾</button>
+        <button class="nav-tab" data-view="dashboard" id="navTabDashboard" title="Dashboard" onclick="toggleDashboardMenu(event)"><svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-dashboard"/></svg> Dashboard ▾</button>
         <div class="nav-dropdown-menu" id="dashboardMenu">
           <button class="opt-btn term-group-btn" id="dashTermGroupBtn_term1" onclick="toggleDashTermGroup(event,'term1')">Term 1 <span class="arrow">▸</span></button>
           <div class="term-group" id="dashTermGroup_term1">
@@ -1101,7 +1114,7 @@
         </div>
       </div>
       <div class="nav-dropdown" id="examsDropdownWrap">
-        <button class="nav-tab" data-view="examsAnalysis" id="navTabExamsAnalysis" title="Exams Analysis" onclick="toggleExamsMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><rect x="6" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="18" y="13" width="3" height="5"/></svg> Exams Analysis ▾</button>
+        <button class="nav-tab" data-view="examsAnalysis" id="navTabExamsAnalysis" title="Exams Analysis" onclick="toggleExamsMenu(event)"><svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-examsanalysis"/></svg> Exams Analysis ▾</button>
         <div class="nav-dropdown-menu" id="examsMenu">
           <button class="opt-btn term-group-btn" id="examsTermGroupBtn_term1" onclick="toggleExamsTermGroup(event,'term1')">Term 1 <span class="arrow">▸</span></button>
           <div class="term-group" id="examsTermGroup_term1">
@@ -1118,7 +1131,7 @@
         </div>
       </div>
       <div class="nav-dropdown" id="perfDropdownWrap">
-        <button class="nav-tab" data-view="perfAlerts" id="navTabPerfAlerts" title="Top & At-Risk" onclick="togglePerfMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v5a4 4 0 0 1-8 0Z"/><path d="M8 5H4v1a4 4 0 0 0 4 4M16 5h4v1a4 4 0 0 1-4 4"/><path d="M12 13v4m-3 4h6m-3-4v4"/></svg> Top &amp; At-Risk ▾</button>
+        <button class="nav-tab" data-view="perfAlerts" id="navTabPerfAlerts" title="Top & At-Risk" onclick="togglePerfMenu(event)"><svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-perfalerts"/></svg> Top &amp; At-Risk ▾</button>
         <div class="nav-dropdown-menu" id="perfMenu">
           <button class="opt-btn term-group-btn" id="perfTermGroupBtn_term1" onclick="togglePerfTermGroup(event,'term1')">Term 1 <span class="arrow">▸</span></button>
           <div class="term-group" id="perfTermGroup_term1">
@@ -1149,11 +1162,15 @@
         </div>
       </div>
       <div class="nav-dropdown" id="examSchedDropdownWrap">
-        <button class="nav-tab" data-view="examSchedule" id="navTabExamSched" title="Exams Schedules" onclick="toggleExamSchedMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><rect x="8" y="14" width="4" height="4"/></svg> Exams Schedules ▾</button>
+        <button class="nav-tab" data-view="examSchedule" id="navTabExamSched" title="Exams Schedules" onclick="toggleExamSchedMenu(event)"><svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-examschedule"/></svg> Exams Schedules ▾</button>
         <div class="nav-dropdown-menu" id="examSchedMenu">
           <button class="opt-btn" onclick="openExamScheduleModal('term1','finalexam')">First Term Exam Schedule</button>
           <button class="opt-btn" onclick="openExamScheduleModal('term2','finalexam')">End-of-Year Exam Schedule</button>
         </div>
+      </div>
+      <div class="nav-dropdown nav-more-wrap" id="navMoreWrap" style="display:none;">
+        <button class="nav-tab" id="navMoreBtn" title="More">⋯ More ▾</button>
+        <div class="nav-dropdown-menu" id="navMoreMenu"></div>
       </div>
     </div>
     <span class="nav-row-tick" aria-hidden="true"></span>
@@ -1165,7 +1182,7 @@
       </button>
     </div>
     <div class="nav-dropdown nav-row-config" id="configDropdownWrap">
-      <button class="nav-tab" data-view="config" id="navTabConfig" title="Configuration" onclick="toggleConfigMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg> Configuration ▾</button>
+      <button class="nav-tab" data-view="config" id="navTabConfig" title="Configuration" onclick="toggleConfigMenu(event)"><svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-config"/></svg> Configuration ▾</button>
       <div class="nav-dropdown-menu" id="configMenu">
         <button class="opt-btn" onclick="openUsersModal()">👤 Manage Users</button>
         <button class="opt-btn" onclick="openBlockedStudentsModal()">🚫 Blocked Students</button>
