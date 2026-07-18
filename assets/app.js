@@ -188,10 +188,17 @@ let attSubView = 'absence';
     .db-anim-radar-fill{ animation:dbFadeIn .6s ease both .15s; }
     .db-anim-radar-ring{ animation:dbFadeIn .5s ease both; }
     @keyframes dbFadeIn{ from{ opacity:0;} to{ opacity:1;} }
+    .db-stat-card-gauge{ display:flex; flex-direction:column; align-items:center; gap:6px; }
+    .db-gauge-wrap{ position:relative; width:76px; height:76px; }
+    .db-gauge-wrap .db-gauge-svg{ display:block; }
+    .db-gauge-arc{ transition:stroke-dashoffset 1s cubic-bezier(.22,.9,.32,1); }
+    .db-gauge-center{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+    .db-gauge-center .db-stat-num{ font-size:15px; }
     @media (prefers-reduced-motion: reduce){
       #dashboardChartsArea, .db-student-banner, .db-motivation-badge, .db-stat-card, .db-chart-card,
       .db-strength-alert, .db-attention-banner, .db-subject-trend-table,
       .db-anim-bar, .db-anim-slice, .db-anim-radar-fill, .db-anim-radar-ring{ animation:none !important; }
+      .db-gauge-arc{ transition:none !important; }
     }
   `;
   const style = document.createElement('style');
@@ -1787,6 +1794,23 @@ function isParentDashboardViewer(){ return !!(currentUser && currentUser.role===
 
 function cycleBandOf(v){ return CYCLE_BANDS.find(b=>b.test(v)) || null; }
 
+/* Circular gauge for a 0..max stat (e.g. Student's Average out of CYCLE_MAX).
+   Renders at 0% fill; animateDashboardStatNumbers reads data-target-pct and
+   animates stroke-dashoffset in, respecting prefers-reduced-motion via CSS. */
+function svgGaugeArc(value, max, colorHex, size){
+  size = size || 76;
+  const r = (size/2) - 7;
+  const c = 2*Math.PI*r;
+  const pct = max>0 ? Math.max(0, Math.min(1, value/max)) : 0;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" class="db-gauge-svg" role="img" aria-label="${(pct*100).toFixed(0)}%">
+    <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--border,#e2e2e2)" stroke-width="7"/>
+    <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${colorHex}" stroke-width="7" stroke-linecap="round"
+      stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${c.toFixed(2)}"
+      data-circumference="${c.toFixed(2)}" data-target-pct="${pct.toFixed(4)}"
+      class="db-gauge-arc" transform="rotate(-90 ${size/2} ${size/2})"/>
+  </svg>`;
+}
+
 function computeSimpleAvg(vals){ return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null; }
 
 /* Badge: 🏆 for a clear, meaningful jump between Cycle 1 and Cycle 2; ⭐ for staying in
@@ -1941,6 +1965,13 @@ function renderDashboardCharts(){
 function animateDashboardStatNumbers(container){
   if(!container) return;
   const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  container.querySelectorAll('.db-gauge-arc').forEach(arc=>{
+    const circumference = parseFloat(arc.getAttribute('data-circumference'))||0;
+    const targetPct = parseFloat(arc.getAttribute('data-target-pct'))||0;
+    const finalOffset = circumference - (circumference*targetPct);
+    if(prefersReduced){ arc.style.strokeDashoffset = finalOffset; return; }
+    requestAnimationFrame(()=>{ arc.style.strokeDashoffset = finalOffset; });
+  });
   container.querySelectorAll('.db-stat-num').forEach(el=>{
     const smallEl = el.querySelector('small');
     const suffix = smallEl ? smallEl.outerHTML : '';
@@ -1978,9 +2009,16 @@ function renderCycle1View(perSubject, section, stage, grade, term, studentId){
   const vals = withData.map(p=>p.v1);
   const overallAvg = vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length) : 0;
 
+  const avgBandColor = (cycleBandOf(overallAvg) || CYCLE_BANDS[CYCLE_BANDS.length-1]).color;
   return `
     <div class="db-summary-row">
-      <div class="db-stat-card"><div class="db-stat-num">${overallAvg.toFixed(2)}<small>/5</small></div><div class="db-stat-label">Student's Average</div></div>
+      <div class="db-stat-card db-stat-card-gauge">
+        <div class="db-gauge-wrap">
+          ${svgGaugeArc(overallAvg, CYCLE_MAX, avgBandColor)}
+          <div class="db-gauge-center"><div class="db-stat-num">${overallAvg.toFixed(2)}<small>/5</small></div></div>
+        </div>
+        <div class="db-stat-label">Student's Average</div>
+      </div>
       <div class="db-stat-card"><div class="db-stat-num">${vals.length}</div><div class="db-stat-label">Subjects Recorded</div></div>
     </div>
     ${renderStrengthAlertCard('cycle1', perSubject)}
@@ -2032,8 +2070,20 @@ function renderCycleCompareView(perSubject){
 
   return `
     <div class="db-summary-row">
-      <div class="db-stat-card"><div class="db-stat-num">${a1.toFixed(2)}<small>/5</small></div><div class="db-stat-label">Cycle 1 Average</div></div>
-      <div class="db-stat-card"><div class="db-stat-num">${a2.toFixed(2)}<small>/5</small></div><div class="db-stat-label">Cycle 2 Average</div></div>
+      <div class="db-stat-card db-stat-card-gauge">
+        <div class="db-gauge-wrap">
+          ${svgGaugeArc(a1, CYCLE_MAX, (cycleBandOf(a1)||CYCLE_BANDS[CYCLE_BANDS.length-1]).color)}
+          <div class="db-gauge-center"><div class="db-stat-num">${a1.toFixed(2)}<small>/5</small></div></div>
+        </div>
+        <div class="db-stat-label">Cycle 1 Average</div>
+      </div>
+      <div class="db-stat-card db-stat-card-gauge">
+        <div class="db-gauge-wrap">
+          ${svgGaugeArc(a2, CYCLE_MAX, (cycleBandOf(a2)||CYCLE_BANDS[CYCLE_BANDS.length-1]).color)}
+          <div class="db-gauge-center"><div class="db-stat-num">${a2.toFixed(2)}<small>/5</small></div></div>
+        </div>
+        <div class="db-stat-label">Cycle 2 Average</div>
+      </div>
       <div class="db-stat-card" style="color:${diff>=0?'var(--green)':'var(--red)'}"><div class="db-stat-num">${diff>=0?'+':''}${diff.toFixed(2)}</div><div class="db-stat-label">Change</div></div>
       <div class="db-stat-card"><div class="db-stat-num">${total}</div><div class="db-stat-label">Subjects Compared</div></div>
     </div>
@@ -5733,9 +5783,9 @@ function renderTableInner(preserveFocus){
         else if(mode==='coursework') modeLine = `This screen shows the <b>Total Coursework</b> summary (Max. 70): Two Months Av. (40, the average of Total 1 and Total 2) + Total Cycles (30, Cycle 1 + Cycle 2). Both are calculated automatically from the Month 1 and Month 2 mark-entry screens.`;
         else modeLine = `This screen is for <b>Month 1</b> marks only: Q.1–Q.4 (5 each) are averaged (ignoring empty cells) then ×3 to give Q. Av. (15). Q. Av. (15) + C.W. (15) + Behaviour &amp; Attendance (10) make up Total 1 (Max. 40), plus Cycle 1 (Max. 15).`;
       } else {
-        if(mode==='month2') modeLine = `This screen is for <b>Month 2</b> marks only: Q.1–Q.4 (5 each) are averaged then ×4 to give Q. Av. (20). Q. Av. (20) + C.W. (20) + Behaviour &amp; Attendance (10) make up Total 2 (Max. 40), plus Cycle 2 (Max. 5).`;
+        if(mode==='month2') modeLine = `This screen is for <b>Month 2</b> marks only: Q.1–Q.4 (5 each) are averaged (ignoring empty cells) to give Q. Av. (Max. 5). Q. Av. (5) + H.W. (5) + Behaviour &amp; Attendance (5) make up Total 2 (Max. 15), plus Cycle 2 (Max. 5).`;
         else if(mode==='coursework') modeLine = `This screen shows the <b>Total Coursework</b> summary (Max. 40): Two Months Average (15) + Total Cycles (10) + Activity (5) + Performance Tasks (10). Two Months Average and Total Cycles are calculated automatically from the Month 1 and Month 2 mark-entry screens.`;
-        else modeLine = `This screen is for <b>Month 1</b> marks only: Q.1–Q.4 (5 each) are averaged then ×4 to give Q. Av. (20). Q. Av. (20) + C.W. (20) + Behaviour &amp; Attendance (10) make up Total 1 (Max. 40), plus Cycle 1 (Max. 5).`;
+        else modeLine = `This screen is for <b>Month 1</b> marks only: Q.1–Q.4 (5 each) are averaged (ignoring empty cells) to give Q. Av. (Max. 5). Q. Av. (5) + H.W. (5) + Behaviour &amp; Attendance (5) make up Total 1 (Max. 15), plus Cycle 1 (Max. 5).`;
       }
       footNote.innerHTML = `${modeLine}<br>${langLine}${religionLine}${saveLine}`;
     } else if(isG9CycleMode()){
@@ -6102,11 +6152,20 @@ function renderPrimaryMonth1Table(roster, scoreMap, holder){
   const qMax = g78 ? 20 : 15;
   const cwMax = g78 ? 10 : 15;
   const cycleMax = extended ? 15 : 5;
+  // Grade 3-6 Primary (non-extended): Q.Av (Max.5) + H.W. (Max.5) + Beh. & Attend. (Max.5)
+  // = Total 1 (Max.15), per the approved header image — mirrors what
+  // computePrimaryTotals() and the G3-G6 Month Report certificate already compute.
+  const behMax = extended ? 10 : 5;
+  const totalMax = extended ? 40 : 15;
   let rows = roster.map((s, i)=>{
     const sc = scoreMap[s.id] || emptyScoreObj();
     const t = computePrimaryTotals(sc);
     // ===== Flexible Q.1–Q.4 maxima: استخدام calculateGrade3QAv للجميع =====
     const qAv = calculateGrade3QAv(sc.m1E1, sc.m1E2, sc.m1E3, sc.m1E4, false) * (extended ? qMult : 1);
+    const secondFieldCell = extended
+      ? `<td>${scoreInputHtml(s.id,'m1CW',sc.m1CW, cwMax)}</td>`
+      : `<td>${scoreInputHtml(s.id,'m1Hw',sc.m1Hw,5)}</td>`;
+    const secondFieldVal = extended ? (parseFloat(sc.m1CW)||0) : (parseFloat(sc.m1Hw)||0);
     return `
       <tr>
         ${primaryIdCellsHtml(s, i)}
@@ -6115,9 +6174,9 @@ function renderPrimaryMonth1Table(roster, scoreMap, holder){
         <td>${scoreInputHtml(s.id,'m1E3',sc.m1E3, g3Maxima.m1E3Max)}</td>
         <td>${scoreInputHtml(s.id,'m1E4',sc.m1E4, g3Maxima.m1E4Max)}</td>
         <td class="pct-cell">${Math.round(qAv*10)/10}</td>
-        <td>${scoreInputHtml(s.id,'m1CW',sc.m1CW, extended?cwMax:20)}</td>
-        <td>${scoreInputHtml(s.id,'m1Beh',sc.m1Beh,10)}</td>
-        <td class="total-cell">${Math.round((qAv + (parseFloat(sc.m1CW)||0) + (parseFloat(sc.m1Beh)||0))*10)/10}</td>
+        ${secondFieldCell}
+        <td>${scoreInputHtml(s.id,'m1Beh',sc.m1Beh,behMax)}</td>
+        <td class="total-cell">${Math.round((qAv + secondFieldVal + (parseFloat(sc.m1Beh)||0))*10)/10}</td>
         <td class="cycle-cell">${scoreInputHtml(s.id,'m1Cycle',sc.m1Cycle, cycleMax, sc.m1CycleAtt==='A' ? 'Student marked Absent for Cycle 1' : null)}${cycleAttButtonHtml(s.id,'m1CycleAtt',sc.m1CycleAtt)}</td>
         <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
@@ -6127,6 +6186,9 @@ function renderPrimaryMonth1Table(roster, scoreMap, holder){
   // Each question unlocks its own column the moment its max is set — the four
   // fields are independent, not an all-or-nothing gate.
   const grade3MaximaHTML = renderG3MaxBoxHtml('m1', 'Month 1');
+  const secondFieldHeader = extended
+    ? `<th>C.W.<br><small>(Max. ${cwMax})</small></th>`
+    : `<th>H.W.<br><small>(Max. 5)</small></th>`;
 
   holder.innerHTML = `${grade3MaximaHTML}
     <table>
@@ -6137,9 +6199,9 @@ function renderPrimaryMonth1Table(roster, scoreMap, holder){
           <th>Q. 3</th>
           <th>Q. 4</th>
           <th>Q. Av.<br><small>(Max. ${extended?qMax:5})</small></th>
-          <th>C.W.<br><small>(Max. ${extended?cwMax:20})</small></th>
-          <th>Beh. &amp;<br>Attend.<br><small>(Max. 10)</small></th>
-          <th>Total 1<br><small>(Max. ${extended?40:35})</small></th>
+          ${secondFieldHeader}
+          <th>Beh. &amp;<br>Attend.<br><small>(Max. ${behMax})</small></th>
+          <th>Total 1<br><small>(Max. ${totalMax})</small></th>
           <th>Cycle 1<br><small>(Max. ${cycleMax})</small></th>
           <th></th>
         </tr>
@@ -6219,11 +6281,20 @@ function renderPrimaryMonth2Table(roster, scoreMap, holder){
   const qMax = g78 ? 20 : 15;
   const cwMax = g78 ? 10 : 15;
   const cycleMax = extended ? 15 : 5;
+  // Grade 3-6 Primary (non-extended): Q.Av (Max.5) + H.W. (Max.5) + Beh. & Attend. (Max.5)
+  // = Total 2 (Max.15), per the approved header image — mirrors what
+  // computePrimaryTotals() and the G3-G6 Month Report certificate already compute.
+  const behMax = extended ? 10 : 5;
+  const totalMax = extended ? 40 : 15;
   let rows = roster.map((s, i)=>{
     const sc = scoreMap[s.id] || emptyScoreObj();
     const t = computePrimaryTotals(sc);
     // ===== Flexible Q.1–Q.4 maxima: استخدام calculateGrade3QAv للجميع =====
     const qAv = calculateGrade3QAv(sc.m2E1, sc.m2E2, sc.m2E3, sc.m2E4, true) * (extended ? qMult : 1);
+    const secondFieldCell = extended
+      ? `<td>${scoreInputHtml(s.id,'m2CW',sc.m2CW, cwMax)}</td>`
+      : `<td>${scoreInputHtml(s.id,'m2Hw',sc.m2Hw,5)}</td>`;
+    const secondFieldVal = extended ? (parseFloat(sc.m2CW)||0) : (parseFloat(sc.m2Hw)||0);
     return `
       <tr>
         ${primaryIdCellsHtml(s, i)}
@@ -6232,9 +6303,9 @@ function renderPrimaryMonth2Table(roster, scoreMap, holder){
         <td>${scoreInputHtml(s.id,'m2E3',sc.m2E3, g3Maxima.m2E3Max)}</td>
         <td>${scoreInputHtml(s.id,'m2E4',sc.m2E4, g3Maxima.m2E4Max)}</td>
         <td class="pct-cell">${Math.round(qAv*10)/10}</td>
-        <td>${scoreInputHtml(s.id,'m2CW',sc.m2CW, extended?cwMax:20)}</td>
-        <td>${scoreInputHtml(s.id,'m2Beh',sc.m2Beh,10)}</td>
-        <td class="total-cell">${Math.round((qAv + (parseFloat(sc.m2CW)||0) + (parseFloat(sc.m2Beh)||0))*10)/10}</td>
+        ${secondFieldCell}
+        <td>${scoreInputHtml(s.id,'m2Beh',sc.m2Beh,behMax)}</td>
+        <td class="total-cell">${Math.round((qAv + secondFieldVal + (parseFloat(sc.m2Beh)||0))*10)/10}</td>
         <td class="cycle-cell">${scoreInputHtml(s.id,'m2Cycle',sc.m2Cycle, cycleMax, sc.m2CycleAtt==='A' ? 'Student marked Absent for Cycle 2' : null)}${cycleAttButtonHtml(s.id,'m2CycleAtt',sc.m2CycleAtt)}</td>
         <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
@@ -6243,6 +6314,9 @@ function renderPrimaryMonth2Table(roster, scoreMap, holder){
   // Each question unlocks its own column the moment its max is set — the four
   // fields are independent, not an all-or-nothing gate.
   const grade3MaximaHTML = renderG3MaxBoxHtml('m2', 'Month 2');
+  const secondFieldHeader = extended
+    ? `<th>C.W.<br><small>(Max. ${cwMax})</small></th>`
+    : `<th>H.W.<br><small>(Max. 5)</small></th>`;
 
   holder.innerHTML = `${grade3MaximaHTML}
     <table>
@@ -6253,9 +6327,9 @@ function renderPrimaryMonth2Table(roster, scoreMap, holder){
           <th>Q. 3</th>
           <th>Q. 4</th>
           <th>Q. Av.<br><small>(Max. ${extended?qMax:5})</small></th>
-          <th>C.W.<br><small>(Max. ${extended?cwMax:20})</small></th>
-          <th>Beh. &amp;<br>Attend.<br><small>(Max. 10)</small></th>
-          <th>Total 2<br><small>(Max. ${extended?40:35})</small></th>
+          ${secondFieldHeader}
+          <th>Beh. &amp;<br>Attend.<br><small>(Max. ${behMax})</small></th>
+          <th>Total 2<br><small>(Max. ${totalMax})</small></th>
           <th>Cycle 2<br><small>(Max. ${cycleMax})</small></th>
           <th></th>
         </tr>
@@ -6592,7 +6666,7 @@ function editableFieldsForCurrentScreen(){
       return [
         {field:'m1E1',label:'Month 1 Q. 1',max:5}, {field:'m1E2',label:'Month 1 Q. 2',max:5},
         {field:'m1E3',label:'Month 1 Q. 3',max:5}, {field:'m1E4',label:'Month 1 Q. 4',max:5},
-        {field:'m1CW',label:'Month 1 C.W.',max:20}, {field:'m1Beh',label:'Month 1 Beh. & Attend.',max:10},
+        {field:'m1Hw',label:'Month 1 H.W.',max:5}, {field:'m1Beh',label:'Month 1 Beh. & Attend.',max:5},
         {field:'m1Cycle',label:'Cycle 1',max:5}
       ];
     }
@@ -6613,7 +6687,7 @@ function editableFieldsForCurrentScreen(){
       return [
         {field:'m2E1',label:'Month 2 Q. 1',max:5}, {field:'m2E2',label:'Month 2 Q. 2',max:5},
         {field:'m2E3',label:'Month 2 Q. 3',max:5}, {field:'m2E4',label:'Month 2 Q. 4',max:5},
-        {field:'m2CW',label:'Month 2 C.W.',max:20}, {field:'m2Beh',label:'Month 2 Beh. & Attend.',max:10},
+        {field:'m2Hw',label:'Month 2 H.W.',max:5}, {field:'m2Beh',label:'Month 2 Beh. & Attend.',max:5},
         {field:'m2Cycle',label:'Cycle 2',max:5}
       ];
     }
