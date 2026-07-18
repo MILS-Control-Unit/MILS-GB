@@ -113,6 +113,40 @@ let attState = { termPeriod:null, section:null, stage:null, grade:null, term:nul
 let openStep = null;
 let currentView = 'database';
 
+/* ================== Central Ticker ==================
+   Consolidates every recurring background poll (class alert watcher, Grade Entry
+   Control re-check, header quick widgets, presence heartbeat/poll, birthday widget,
+   clock, weather) into ONE setInterval that ticks once a second, instead of each
+   feature running its own independent setInterval. A feature calls registerTicker()
+   with its own effective interval (in ms) and callback; this fires that callback every
+   time roughly that many seconds have elapsed, by accumulating on each 1s tick — so
+   every feature keeps the exact same cadence it had before, but only one timer is ever
+   actually running in the browser, no matter how many features are active. Much lighter
+   on a tab left open for hours than the previous ~7 independent timers.
+   registerTicker(id, intervalMs, fn, {runImmediately:false}) — by default the task's
+   first firing happens after one full intervalMs (matching plain setInterval behavior);
+   pass runImmediately:true to fire on the very next 1s tick instead. */
+const tickerTasks = {}; // id -> { intervalMs, fn, elapsed }
+let tickerHandle = null;
+function registerTicker(id, intervalMs, fn, opts){
+  tickerTasks[id] = { intervalMs, fn, elapsed: (opts && opts.runImmediately) ? intervalMs : 0 };
+  if(!tickerHandle){
+    tickerHandle = setInterval(()=>{
+      Object.keys(tickerTasks).forEach(taskId=>{
+        const task = tickerTasks[taskId];
+        if(!task) return;
+        task.elapsed += 1000;
+        if(task.elapsed >= task.intervalMs){
+          task.elapsed = 0;
+          try{ task.fn(); }catch(err){ console.warn(`Ticker task "${taskId}" failed:`, err); }
+        }
+      });
+    }, 1000);
+  }
+}
+function unregisterTicker(id){ delete tickerTasks[id]; }
+
+
 // students[classKey] = [{id, displayId, name, classroom, lang2}]
 let students = {};
 // A student whose Notes field is exactly "TC" (case-insensitive, ignoring surrounding
@@ -200,6 +234,28 @@ let attSubView = 'absence';
       .db-anim-bar, .db-anim-slice, .db-anim-radar-fill, .db-anim-radar-ring{ animation:none !important; }
       .db-gauge-arc{ transition:none !important; }
     }
+  `;
+  const style = document.createElement('style');
+  style.textContent = css;
+  if(document.head) document.head.appendChild(style);
+  else document.addEventListener('DOMContentLoaded', ()=> document.head.appendChild(style));
+})();
+
+// Styles for the "Slipping below their usual level" proactive decline-trend banner
+// (see renderDeclineTrendBanner) and the "Score Timeline Across Terms & Cycles" line
+// chart (see renderScoreTimelineChart) on the Cycle Dashboard — kept in their own
+// injected block, same pattern as injectDashboardAnimStyles above.
+(function injectDeclineTrendAndTimelineStyles(){
+  const css = `
+    .db-decline-banner{ display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px;
+      background:#fff7ed; border:1px solid #fdba74; border-radius:10px; padding:10px 14px;
+      margin:0 0 14px; animation: dbCardIn .45s cubic-bezier(.22,.9,.32,1) both; }
+    .db-decline-label{ font-weight:800; color:#c2410c; font-size:12.5px; }
+    .db-decline-badge{ display:inline-flex; align-items:center; gap:4px; background:#ffedd5;
+      border:1px solid #fb923c; border-radius:20px; padding:4px 10px; font-size:12px;
+      color:#9a3412; font-weight:700; }
+    .db-decline-badge small{ font-weight:600; opacity:.85; margin-inline-start:2px; }
+    @media (prefers-reduced-motion: reduce){ .db-decline-banner{ animation:none !important; } }
   `;
   const style = document.createElement('style');
   style.textContent = css;
@@ -570,6 +626,7 @@ function switchView(view){
   }
   if(view==='teacherStatistics') renderTeacherStatistics();
   if(view==='teacherClasses') renderTeachersAndClasses();
+  if(view==='grades'){ renderStepper(); renderWorkspace(); }
   if(view==='markEntryReport'){ renderMarkEntryStepper(); renderMarkEntryWorkspace(); }
   if(view==='attendance'){ renderAttendanceStepper(); renderAttendanceWorkspace(); }
   if(view==='dashboard'){ renderDashboard(); }
@@ -874,17 +931,22 @@ function selectValue(key, id, targetState){
   if(st===certState){ st.studentId = null; st.generated = false; }
   openStep=null;
   if(st === state) saveLastGradebookSelection();
-  renderStepper();
-  renderMarkEntryStepper();
-  renderAttendanceStepper();
-  renderPerfFilterStepper();
-  renderCertReportsStepper();
-  renderWorkspace();
-  renderMarkEntryWorkspace();
-  renderAttendanceWorkspace();
-  if(st === state){ renderClassListsStepper(); renderClassListsWorkspace(); }
-  if(st && st.__isPerfFilter) renderPerfAlerts();
-  if(st && st.__isCert) renderCertReportsWorkspace();
+  // Only rebuild the stepper/workspace pair for the tab that's actually on screen right
+  // now — a click always originates from the currently visible stepper anyway, so every
+  // OTHER tab's stepper/workspace was being fully rebuilt for nothing while hidden. Each
+  // tab already does a full, fresh rebuild of its own stepper+workspace the moment the
+  // user switches into it (see switchView()), so nothing goes stale in the meantime.
+  if(st === state){
+    if(currentView==='grades'){ renderStepper(); renderWorkspace(); }
+    else if(currentView==='markEntryReport'){ renderMarkEntryStepper(); renderMarkEntryWorkspace(); }
+    else if(currentView==='classLists'){ renderClassListsStepper(); renderClassListsWorkspace(); }
+  } else if(st === attState){
+    if(currentView==='attendance'){ renderAttendanceStepper(); renderAttendanceWorkspace(); }
+  } else if(st && st.__isCert){
+    if(currentView==='certReports'){ renderCertReportsStepper(); renderCertReportsWorkspace(); }
+  } else if(st && st.__isPerfFilter){
+    if(currentView==='perfAlerts'){ renderPerfFilterStepper(); renderPerfAlerts(); }
+  }
 }
 
 // Hover-to-open / delayed-fade-out for the top nav dropdowns (Dashboard,
@@ -2146,6 +2208,15 @@ const ALERT_MARGIN = 0.4;
    current score falls below this is flagged right away, so a parent isn't
    left to spot it themselves further down in the tables/charts. */
 const CYCLE_ATTENTION_THRESHOLD = 2.5;
+/* Proactive "slipping" detection — distinct from CYCLE_ATTENTION_THRESHOLD above, which
+   only fires once a score crosses a fixed absolute line. This instead compares a subject's
+   CURRENT score against that SAME STUDENT's own historical average in that subject (their
+   personal baseline), so a drop from, say, 4.6 to 3.2 gets flagged even though 3.2 is still
+   comfortably "Good" and would never trip the flat threshold. DECLINE_MIN_HISTORY requires
+   at least this many prior recorded periods before judging a baseline, so a single earlier
+   score (which could itself just be noise) never triggers a false alarm. */
+const DECLINE_TREND_MARGIN = 0.5;
+const DECLINE_MIN_HISTORY = 2;
 const CYCLE_BANDS = [
   { key:'excellent', label:'Excellent (4.5–5)', color:'#2F6F4E', test:v=>v>=4.5 },
   { key:'verygood',  label:'Very Good (4–4.49)', color:'#2A5C99', test:v=>v>=4 && v<4.5 },
@@ -2348,10 +2419,11 @@ function renderDashboardCharts(){
     motivationHtml = renderParentMotivationCards(mode, withData, band, weakestSubjects, section, stage, grade, studentId, term);
   }
 
+  const declineBannerHtml = renderDeclineTrendBanner(mode, withData, section, stage, grade, term, studentId);
   if(mode==='cycle1vs2'){
-    area.innerHTML = renderAttentionBanner(mode, withData) + nameBanner + motivationHtml + renderCycleCompareView(stats.perSubject);
+    area.innerHTML = renderAttentionBanner(mode, withData) + declineBannerHtml + nameBanner + motivationHtml + renderCycleCompareView(stats.perSubject, section, stage, grade, studentId);
   } else {
-    area.innerHTML = renderAttentionBanner(mode, withData) + nameBanner + motivationHtml + renderCycle1View(stats.perSubject, section, stage, grade, term, studentId);
+    area.innerHTML = renderAttentionBanner(mode, withData) + declineBannerHtml + nameBanner + motivationHtml + renderCycle1View(stats.perSubject, section, stage, grade, term, studentId);
   }
   animateDashboardStatNumbers(area);
 }
@@ -2422,6 +2494,7 @@ function renderCycle1View(perSubject, section, stage, grade, term, studentId){
     </div>
     ${renderStrengthAlertCard('cycle1', perSubject)}
     ${renderSubjectTrendTable(perSubject, 'cycle1', section, stage, grade, term, studentId)}
+    ${renderScoreTimelineChart(section, stage, grade, perSubject, studentId)}
     <div class="db-charts-grid">
       <div class="db-chart-card">
         <h4>Cycle 1 — Student vs Class Average (Max 5)</h4>
@@ -2439,7 +2512,7 @@ function renderCycle1View(perSubject, section, stage, grade, term, studentId){
     </div>`;
 }
 
-function renderCycleCompareView(perSubject){
+function renderCycleCompareView(perSubject, section, stage, grade, studentId){
   const withData = perSubject.filter(p=>p.hasV1 || p.hasV2);
   const bars = withData.map(p=>({ label:p.subject, values:[p.v1, p.v2] }));
   const barSvg = svgGroupedBarChart(bars, CYCLE_MAX, ['Cycle 1','Cycle 2'], ['var(--blue)','var(--gold)']);
@@ -2488,6 +2561,7 @@ function renderCycleCompareView(perSubject){
     </div>
     ${renderStrengthAlertCard('cycle1vs2', perSubject)}
     ${renderSubjectTrendTable(perSubject, 'cycle1vs2')}
+    ${renderScoreTimelineChart(section, stage, grade, perSubject, studentId)}
     <div class="db-charts-grid">
       <div class="db-chart-card">
         <h4>Cycle 1 vs Cycle 2 per Subject (Max 5)</h4>
@@ -2515,6 +2589,36 @@ function renderCycleCompareView(perSubject){
    recorded cycle of the prior term (Term 2's Cycle 1 vs Term 1's Cycle 2).
    Term 1's Cycle 1 has no earlier recorded period this school year, so it
    simply has no trend to show yet. */
+/* Every Cycle recorded (Term 1 Cycle 1 → Term 2 Cycle 2) is exactly one of these four
+   periods, in chronological order. Shared by getStudentSubjectCycleHistory below and by
+   renderScoreTimelineChart, so both always agree on ordering/labelling. */
+const TIMELINE_PERIODS = [
+  { term:'term1', cycle:1, periodKey:'term1_c1', label:'Term 1 • Cycle 1' },
+  { term:'term1', cycle:2, periodKey:'term1_c2', label:'Term 1 • Cycle 2' },
+  { term:'term2', cycle:1, periodKey:'term2_c1', label:'Term 2 • Cycle 1' },
+  { term:'term2', cycle:2, periodKey:'term2_c2', label:'Term 2 • Cycle 2' }
+];
+
+/* Every Cycle score ever recorded for this student in this subject, across BOTH terms,
+   in chronological order — used to (a) draw the full Score Timeline chart, and (b) build
+   the "usual performance" baseline for the proactive decline-trend alert. Reads `scores`
+   directly (rather than reusing computeCycleStats, which only looks at one term at a
+   time) so it can see across the term boundary. */
+function getStudentSubjectCycleHistory(section, stage, grade, subject, studentId){
+  const ck = `${section}|${stage}|${grade}`;
+  const points = [];
+  TIMELINE_PERIODS.forEach(per=>{
+    const sk = `${ck}|${per.term}|${subject}`;
+    const subjScores = scores[sk] || {};
+    const sc = subjScores[studentId];
+    if(!sc) return;
+    const raw = per.cycle===1 ? sc.m1Cycle : sc.m2Cycle;
+    const v = parseFloat(raw);
+    if(!isNaN(v)) points.push({ ...per, value:v });
+  });
+  return points;
+}
+
 function getPreviousPeriodCycleValue(section, stage, grade, term, subject, studentId){
   if(term !== 'term2') return null;
   const ck = `${section}|${stage}|${grade}`;
@@ -2614,6 +2718,54 @@ function renderSubjectTrendTable(perSubject, mode, section, stage, grade, term, 
     </div>`;
 }
 
+/* Rotating color palette for the multi-subject timeline chart. Long enough to keep every
+   subject visually distinct even for a Stage with a full subject list. */
+const TIMELINE_PALETTE = ['#2A5C99','#C9A227','#2F6F4E','#B23A3A','#7C3AED','#0E7490','#BE185D','#CA8A04','#059669','#DC2626','#4F46E5','#0369A1','#B45309','#9333EA'];
+
+/* ================== Score Timeline Across Terms & Cycles ==================
+   Expands the old single-number "Current vs Previous" trend table into an actual line
+   chart: every Cycle score recorded for this student this school year (up to Term 1
+   Cycle 1 → Term 2 Cycle 2, four points), one line per subject, plotted together so the
+   real shape of their progress — not just the latest delta — is visible at a glance.
+   Terms/Cycles with no data yet simply aren't shown as columns, so an empty Term 2
+   doesn't flatten the chart before any Term 2 marks exist. */
+function renderScoreTimelineChart(section, stage, grade, perSubject, studentId){
+  if(!section || !stage || !grade || !studentId) return '';
+  const subjectsWithHistory = perSubject
+    .map(p=>({ subject:p.subject, history: getStudentSubjectCycleHistory(section, stage, grade, p.subject, studentId) }))
+    .filter(s=> s.history.length >= 2); // a single point has no "shape" to draw
+
+  if(!subjectsWithHistory.length) return '';
+
+  const activePeriods = TIMELINE_PERIODS.filter(per=>
+    subjectsWithHistory.some(sub=> sub.history.some(h=>h.periodKey===per.periodKey))
+  );
+  if(activePeriods.length < 2) return '';
+
+  const series = subjectsWithHistory.map((sub,i)=>{
+    const byKey = {};
+    sub.history.forEach(h=>{ byKey[h.periodKey] = h.value; });
+    return {
+      label: sub.subject,
+      color: TIMELINE_PALETTE[i % TIMELINE_PALETTE.length],
+      values: activePeriods.map(per=> Object.prototype.hasOwnProperty.call(byKey, per.periodKey) ? byKey[per.periodKey] : null)
+    };
+  });
+
+  const lineSvg = svgLineChart(series, activePeriods.map(p=>p.label), CYCLE_MAX);
+  const legend = series.map(s=>
+    `<span style="display:inline-flex;align-items:center;gap:5px;margin-inline-end:14px;margin-bottom:6px;font-size:11.5px;color:var(--ink-soft);"><span style="width:10px;height:10px;border-radius:3px;background:${s.color};display:inline-block;"></span>${escapeXml(s.label)}</span>`
+  ).join('');
+
+  return `
+    <div class="db-chart-card db-chart-full" style="margin-bottom:18px;">
+      <h4>📈 Score Timeline Across Terms &amp; Cycles</h4>
+      <div style="margin-bottom:6px;">${legend}</div>
+      ${lineSvg}
+      <p class="db-trend-note">Every Cycle recorded so far this school year for this student, in order — a subject that dips only shows up here if it has at least two recorded points to draw a line between.</p>
+    </div>`;
+}
+
 /* ================== Top-of-page "Needs immediate attention" banner ==================
    Unlike the Strengths & Alerts card (which compares against class average or
    the previous cycle), this is a flat, absolute check: any subject whose
@@ -2638,6 +2790,53 @@ function renderAttentionBanner(mode, perSubject){
   if(!flagged.length) return '';
   const badges = flagged.map(f=>`<span class="db-attention-badge">🔴 ${escapeXml(f.subject)} <b>(${f.score.toFixed(1)}/${CYCLE_MAX})</b></span>`).join('');
   return `<div class="db-attention-banner"><span class="db-attention-label">🔴 Needs immediate attention:</span>${badges}</div>`;
+}
+
+/* ================== Proactive "slipping below their usual level" banner ==================
+   Unlike renderAttentionBanner (a flat, absolute cut-off) or renderStrengthAlertCard's
+   alerts (which compare against the CLASS average or the immediately-previous cycle),
+   this compares a subject's current score against THIS STUDENT'S OWN historical average
+   in that subject across every prior recorded Cycle. It catches a student who is still
+   scoring "fine" in absolute terms but has quietly dropped off their own normal level —
+   e.g. someone who usually averages 4.6 in Math now sitting at 3.4 would be missed by
+   both of the other checks, but is exactly the kind of early signal a parent/teacher
+   wants to see before it becomes an "at risk" score. */
+function getDeclineTrendAlerts(mode, perSubject, section, stage, grade, term, studentId){
+  if(!section || !stage || !grade || !studentId) return [];
+  // Subjects already shown in the flat "Needs immediate attention" banner are skipped here
+  // so the two banners don't both light up for the exact same subject — a score that's
+  // already below the absolute threshold doesn't need a second, softer warning on top of it.
+  const attentionSet = new Set(getAttentionSubjects(mode, perSubject).map(f=>f.subject));
+  const flagged = [];
+  perSubject.forEach(p=>{
+    if(attentionSet.has(p.subject)) return;
+    let current = null, currentPeriodKey = null;
+    if(mode==='cycle1vs2'){
+      if(p.hasV2){ current = p.v2; currentPeriodKey = `${term}_c2`; }
+      else if(p.hasV1){ current = p.v1; currentPeriodKey = `${term}_c1`; }
+    } else if(p.hasV1){
+      current = p.v1; currentPeriodKey = `${term}_c1`;
+    }
+    if(current===null || current===undefined || isNaN(current)) return;
+    const history = getStudentSubjectCycleHistory(section, stage, grade, p.subject, studentId);
+    // Baseline is built only from periods strictly before the one currently being judged,
+    // so the current score is never averaged into its own comparison point.
+    const priorPoints = history.filter(h=> h.periodKey !== currentPeriodKey);
+    if(priorPoints.length < DECLINE_MIN_HISTORY) return;
+    const baseline = priorPoints.reduce((a,b)=>a+b.value,0)/priorPoints.length;
+    const diff = current - baseline;
+    if(diff <= -DECLINE_TREND_MARGIN){
+      flagged.push({ subject:p.subject, current, baseline, diff });
+    }
+  });
+  return flagged.sort((a,b)=>a.diff-b.diff);
+}
+
+function renderDeclineTrendBanner(mode, perSubject, section, stage, grade, term, studentId){
+  const flagged = getDeclineTrendAlerts(mode, perSubject, section, stage, grade, term, studentId);
+  if(!flagged.length) return '';
+  const badges = flagged.map(f=>`<span class="db-decline-badge">📉 ${escapeXml(f.subject)} <small>(usually ${f.baseline.toFixed(1)}, now ${f.current.toFixed(1)}/${CYCLE_MAX})</small></span>`).join('');
+  return `<div class="db-decline-banner"><span class="db-decline-label">📉 Slipping below their usual level:</span>${badges}</div>`;
 }
 
 /* ================== Strengths & Alerts narrative card ==================
@@ -3125,6 +3324,57 @@ function svgRadarChart(items, maxVal, seriesNames, colors, targetVal, targetLabe
   return `<div style="margin-bottom:6px;">${legend}</div><svg viewBox="0 0 ${w} ${h}" style="width:100%;max-width:400px;height:auto;display:block;margin:0 auto;">${gridRings}${spokes}${targetRing}${seriesPolys}${axisLabels}</svg>`;
 }
 
+/* Generic multi-series line chart (the "Score Timeline" chart is its only caller today).
+   series: [{ label, color, values:[v_or_null, ...] }], all values aligned 1:1 to periodLabels.
+   A null value leaves a gap in that subject's line instead of drawing a false 0 — and if a
+   subject only has one point on either side of a gap, that lone point still renders as a
+   dot so it isn't silently dropped. */
+function svgLineChart(series, periodLabels, maxVal){
+  const w = 640, h = 300, padL=36, padB=54, padT=16, padR=16;
+  const chartW = w-padL-padR, chartH = h-padT-padB;
+  const n = periodLabels.length || 1;
+  const xFor = i => padL + (n<=1 ? chartW/2 : (chartW*(i/(n-1))));
+  const yFor = v => padT + chartH - (Math.max(0,Math.min(maxVal,v))/maxVal)*chartH;
+
+  const gridLines = [0,1,2,3,4,5].filter(g=>g<=maxVal).map(g=>{
+    const y = padT + chartH - (g/maxVal)*chartH;
+    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${w-padR}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="1"></line>
+      <text x="${padL-8}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--ink-soft)">${g}</text>`;
+  }).join('');
+
+  const xLabels = periodLabels.map((lbl,i)=>{
+    const x = xFor(i);
+    return `<text x="${x.toFixed(1)}" y="${h-padB+16}" text-anchor="middle" font-size="10" fill="var(--ink-soft)" transform="rotate(-18 ${x.toFixed(1)} ${h-padB+16})">${escapeXml(lbl)}</text>`;
+  }).join('');
+
+  let linesSvg = '';
+  series.forEach(s=>{
+    // Break the line into separate segments across any null (not-yet-recorded) gaps,
+    // rather than interpolating across missing periods.
+    let segments = [], current = [];
+    s.values.forEach((v,i)=>{
+      if(v===null || v===undefined || isNaN(v)){
+        if(current.length) segments.push(current);
+        current = [];
+      } else {
+        current.push([xFor(i), yFor(v)]);
+      }
+    });
+    if(current.length) segments.push(current);
+    segments.forEach(seg=>{
+      if(seg.length===1){
+        linesSvg += `<circle cx="${seg[0][0].toFixed(1)}" cy="${seg[0][1].toFixed(1)}" r="3.2" fill="${s.color}"></circle>`;
+      } else {
+        const d = 'M' + seg.map(p=>p.map(c=>c.toFixed(1)).join(',')).join('L');
+        linesSvg += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path>`;
+        seg.forEach(p=>{ linesSvg += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3.2" fill="${s.color}"></circle>`; });
+      }
+    });
+  });
+
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;">${gridLines}${linesSvg}${xLabels}</svg>`;
+}
+
 function escapeXml(str){
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
@@ -3152,7 +3402,12 @@ function renderWorkspace(){
   const ready = state.termPeriod && state.section && state.stage && state.grade && state.term && state.academicTerm && state.subject;
   document.getElementById('workspace').classList.toggle('show', !!ready);
   document.getElementById('introState').classList.toggle('show', !ready);
-  if(!ready){ updateIntroState('introState', cfgs); return; }
+  if(!ready){
+    updateIntroState('introState', cfgs);
+    const staleWidget = document.getElementById('classComparisonWidget');
+    if(staleWidget) staleWidget.remove();
+    return;
+  }
 
   const gradeLabel = STAGES[state.stage].grades.find(g=>g.id===state.grade).label;
   document.getElementById('crumbs').innerHTML = `
@@ -3166,6 +3421,7 @@ function renderWorkspace(){
   `;
   toggleAddForm(false);
   renderTable();
+  renderClassComparisonWidget();
 }
 
 const TERM_LABELS = { term1:'Term 1', term2:'Term 2' };
@@ -5303,12 +5559,198 @@ function computePrimaryTotals(sc){
   return { avg1, month1Total, avg2, month2Total, twoMonthsAvg, totalCycles, totalCoursework, maxTotal, junior, g78, g1011 };
 }
 
+/* ================== TEACHER HELPERS: Missing Marks + Class Comparison ==================
+   Two small teacher-facing aids that read the SAME score data already on screen — no new
+   Firestore fields, no new save path. They just surface it more usefully:
+   1) isStudentMissingCurrentScreen() flags a student who has literally nothing entered yet
+      for whichever Mark Entry screen (Month 1 / Month 2 / Cycle / Exam Paper) is currently open.
+   2) computeTotalForCurrentScreen() gives a single comparable number per student for that
+      same screen, used to build quick class-vs-class averages. */
+function isStudentMissingCurrentScreen(sc){
+  sc = sc || emptyScoreObj();
+  if(state.academicTerm === 'examPaper'){
+    if(isPrimary() && isJuniorPrimary()){
+      const hasInitial = sc.examInitial!==null && sc.examInitial!==undefined && sc.examInitial!=='';
+      const hasFinal = sc.examFinal!==null && sc.examFinal!==undefined && sc.examFinal!=='';
+      return !hasInitial && !hasFinal;
+    }
+    return !(sc.examPaper!==null && sc.examPaper!==undefined && sc.examPaper!=='');
+  }
+  if(isG9CycleMode()){
+    const field = academicSubMode()==='month2' ? 'g9c2' : 'g9c1';
+    return !(sc[field]!==null && sc[field]!==undefined && sc[field]!=='');
+  }
+  if(isPrimary() || isExtendedGradingStage()){
+    if(academicSubMode()==='coursework') return false;
+    const p = academicSubMode()==='month2' ? 'm2' : 'm1';
+    return [`${p}E1`,`${p}E2`,`${p}E3`,`${p}E4`].every(f=> sc[f]===null || sc[f]===undefined || sc[f]==='');
+  }
+  return ['m1','m2','mid','final'].every(f=> sc[f]===null || sc[f]===undefined || sc[f]==='');
+}
+
+function computeTotalForCurrentScreen(sc){
+  sc = sc || emptyScoreObj();
+  if(state.academicTerm === 'examPaper'){
+    if(isPrimary() && isJuniorPrimary()) return computePrimaryTotals(sc).totalCoursework;
+    const val = sc.examPaper;
+    return (val!==null && val!==undefined && val!=='') ? parseFloat(val) : null;
+  }
+  if(isG9CycleMode()){
+    const field = academicSubMode()==='month2' ? 'g9c2' : 'g9c1';
+    const val = sc[field];
+    return (val!==null && val!==undefined && val!=='') ? parseFloat(val) : null;
+  }
+  if(isPrimary() || isExtendedGradingStage()){
+    const t = computePrimaryTotals(sc);
+    const mode = academicSubMode();
+    if(mode==='month2') return t.month2Total;
+    if(mode==='coursework') return t.totalCoursework;
+    return t.month1Total;
+  }
+  const parts = [sc.m1, sc.m2, sc.mid, sc.final];
+  if(parts.every(v=> v===null||v===undefined||v==='')) return null;
+  return (parseFloat(sc.m1)||0)+(parseFloat(sc.m2)||0)+(parseFloat(sc.mid)||0)+(parseFloat(sc.final)||0);
+}
+
+function getMissingGradeStudents(roster, scoreMap){
+  return roster.filter(s => isStudentMissingCurrentScreen(scoreMap[s.id]));
+}
+
+function renderMissingGradesBanner(roster, scoreMap, holder){
+  if(!holder) return;
+  const old = holder.querySelector('#missingGradesBanner');
+  if(old) old.remove();
+  const missing = getMissingGradeStudents(roster, scoreMap);
+  if(!missing.length) return;
+  const pills = missing.map(s=> `<span style="display:inline-block;background:#fff;border:1px solid #f0b429;border-radius:12px;padding:2px 9px;margin:2px;font-size:12px;">${escapeHtml(s.name)}</span>`).join('');
+  const banner = document.createElement('div');
+  banner.id = 'missingGradesBanner';
+  banner.style.cssText = 'margin:0 0 10px;padding:10px 14px;background:#fff8e8;border:1px solid #f0b429;border-radius:8px;';
+  banner.innerHTML = `<b>⚠️ ${missing.length} student${missing.length>1?'s':''} with nothing entered yet on this screen:</b><div style="margin-top:6px;">${pills}</div>`;
+  holder.insertBefore(banner, holder.firstChild);
+}
+
+function renderClassComparisonWidget(){
+  const crumbs = document.getElementById('crumbs');
+  const old = document.getElementById('classComparisonWidget');
+  if(old) old.remove();
+  if(!crumbs || !state.subject) return;
+  const classes = getClassesInGrade(state);
+  if(classes.length < 2) return;
+
+  const scoreMap = getScoreMap();
+  const perClass = {};
+  classes.forEach(c=> perClass[c] = { sum:0, count:0, missing:0, total:0 });
+  subjectFilteredGradeRoster().forEach(s=>{
+    const c = s.classroom || '—';
+    if(!perClass[c]) perClass[c] = { sum:0, count:0, missing:0, total:0 };
+    perClass[c].total++;
+    const sc = scoreMap[s.id];
+    if(isStudentMissingCurrentScreen(sc)){ perClass[c].missing++; return; }
+    const val = computeTotalForCurrentScreen(sc);
+    if(val!==null && !isNaN(val)){ perClass[c].sum += val; perClass[c].count++; }
+  });
+
+  const rows = classes.map(c=>{
+    const d = perClass[c];
+    return { c, avg: d.count ? Math.round((d.sum/d.count)*10)/10 : null, missing: d.missing, isCurrent: c===state.term };
+  });
+  if(!rows.some(r=> r.avg!==null)) return;
+
+  const cards = rows.map(r=> `
+    <div style="flex:1;min-width:100px;padding:8px 10px;border-radius:8px;border:1px solid ${r.isCurrent?'#4f46e5':'#e2e2e2'};background:${r.isCurrent?'#eef0ff':'#fafafa'};text-align:center;">
+      <div style="font-size:11px;color:#666;">${escapeHtml(r.c)}${r.isCurrent?' ★':''}</div>
+      <div style="font-size:18px;font-weight:700;">${r.avg!==null ? r.avg : '—'}</div>
+      <div style="font-size:11px;color:${r.missing? '#c2410c':'#16a34a'};">${r.missing} missing</div>
+    </div>`).join('');
+
+  const widget = document.createElement('div');
+  widget.id = 'classComparisonWidget';
+  widget.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;';
+  widget.innerHTML = `<div style="width:100%;font-size:12px;color:#666;">📊 Class averages — ${subjectWithIcon(state.subject)} (${markEntryLabel(state.termPeriod, state.academicTerm) || ''})</div>${cards}`;
+  crumbs.insertAdjacentElement('afterend', widget);
+}
+
+// Fast path for a single score edit: rebuilds only the ONE <tr> for this student instead
+// of calling renderTable() (which regenerates innerHTML for every row in the class, plus
+// the Missing Grades banner, on every keystroke/toggle — expensive on a 30+ student class,
+// and used to need a scroll-position save/restore hack purely to undo the jump that full
+// rebuild caused). Covers every mark-entry layout — Standard, G9 Cycle, Primary/Extended-
+// Grading (Month 1, Month 2, Total Coursework — junior and non-junior variants) and Exam
+// Paper (junior and standard) — since each has its own row-html generator that a row is
+// derived purely from that one student's own score object. Falls back to a full rebuild
+// only for the rare case with no matching row generator (e.g. the G7-G8/G10-G11 Total
+// Coursework summary, which has no editable inputs and so is never actually hit here).
+// Returns true if it successfully patched the row, false if the caller should fall back.
+function patchScoreRowInPlace(studentId){
+  const holder = document.getElementById('tableHolder');
+  if(!holder) return false;
+  const row = holder.querySelector(`tr[data-row-id="${studentId}"]`);
+  if(!row) return false; // not currently on screen (filtered out, etc.) — caller falls back
+
+  const roster = state.academicTerm === 'examPaper' ? subjectFilteredGradeRoster() : subjectFilteredRoster();
+  const i = roster.findIndex(s=>s.id===studentId);
+  if(i===-1) return false;
+  const s = roster[i];
+  const scoreMap = getScoreMap();
+  const sc = scoreMap[s.id] || emptyScoreObj();
+
+  let newRowHtml;
+  if(state.academicTerm === 'examPaper'){
+    const junior = isPrimary() && isJuniorPrimary();
+    newRowHtml = junior
+      ? renderExamPaperJuniorRowHtml(s, i, sc)
+      : renderExamPaperStandardRowHtml(s, i, sc, examPaperMax());
+  } else if(isPrimary() || isExtendedGradingStage()){
+    const mode = academicSubMode();
+    const junior = isJuniorPrimary();
+    const g3Maxima = g3MaximaFor();
+    const g78 = isG7G8Prep();
+    const g1011 = isG10G11Secondary();
+    const extended = g78 || g1011;
+    const qMult = g78 ? 4 : 3;
+    const cwMax = g78 ? 10 : 15;
+    const behMax = extended ? 10 : 5;
+    if(mode==='month1'){
+      newRowHtml = junior
+        ? renderPrimaryMonth1JuniorRowHtml(s, i, sc, g3Maxima)
+        : renderPrimaryMonth1RowHtml(s, i, sc, g3Maxima, extended, qMult, cwMax, behMax);
+    } else if(mode==='month2'){
+      newRowHtml = junior
+        ? renderPrimaryMonth2JuniorRowHtml(s, i, sc, g3Maxima)
+        : renderPrimaryMonth2RowHtml(s, i, sc, g3Maxima, extended, qMult, cwMax, behMax);
+    } else if(mode==='coursework'){
+      if(junior) newRowHtml = renderPrimaryCourseworkJuniorRowHtml(s, i, sc);
+      else if(!extended) newRowHtml = renderPrimaryCourseworkStandardRowHtml(s, i, sc);
+      // G7-G8/G10-G11 Total Coursework summary has no editable inputs — no row generator,
+      // falls back below (in practice this branch is never reached from an actual edit).
+    }
+  } else if(isG9CycleMode()){
+    const mode = academicSubMode();
+    const field = mode==='month2' ? 'g9c2' : 'g9c1';
+    const cycleLabel = mode==='month2' ? 'Cycle 2' : 'Cycle 1';
+    newRowHtml = renderG9CycleTableRowHtml(s, i, sc, field, 15, cycleLabel);
+  } else {
+    newRowHtml = renderStandardTableRowHtml(s, i, sc);
+  }
+
+  if(!newRowHtml) return false;
+
+  row.outerHTML = newRowHtml;
+  // renderTableInner() never calls renderMissingGradesBanner() for the Exam Paper screen
+  // (it returns right after renderExamPaperScreen) — match that here so the patch path
+  // doesn't introduce a banner the full rebuild wouldn't have shown.
+  if(state.academicTerm !== 'examPaper') renderMissingGradesBanner(roster, scoreMap, holder);
+  updateGradeBookSaveUI();
+  return true;
+}
+
 function updateScore(studentId, field, value, max){
   if(isCurrentUserGradeEntryLocked()) return;
   const map = getScoreMap();
   if(!map[studentId]) map[studentId]=emptyScoreObj();
   map[studentId][field] = (value===''||value===null||value===undefined) ? null : clamp(value, max);
-  renderTable(true);
+  if(!patchScoreRowInPlace(studentId)) renderTable(true);
   saveState();
   const stu = getRoster().find(s=>s.id===studentId);
   logActivity('edit', `Set "${field}" = ${value===''?'—':value} for ${stu?stu.name:'a student'} — ${state.subject||''} (${state.term||'—'})`, { studentId });
@@ -5341,7 +5783,7 @@ function toggleCycleAttendance(studentId, field){
   const cur = map[studentId][field]==='A' ? 'A' : 'P';
   const next = cur==='A' ? 'P' : 'A';
   map[studentId][field] = next;
-  renderTable(true);
+  if(!patchScoreRowInPlace(studentId)) renderTable(true);
   saveState();
   const stu = getRoster().find(s=>s.id===studentId);
   const cycleLabel = field==='m1CycleAtt' ? 'Cycle 1' : 'Cycle 2';
@@ -6226,12 +6668,47 @@ function renderTableInner(preserveFocus){
   if(isPrimary() || isExtendedGradingStage()){ renderPrimaryTable(roster, scoreMap, holder); }
   else if(isG9CycleMode()){ renderG9CycleTable(roster, scoreMap, holder); }
   else { renderStandardTable(roster, scoreMap, holder); }
+
+  renderMissingGradesBanner(roster, scoreMap, holder);
 }
 
 // Standalone "First Term Exam Paper" (Term 1) / "End-of-Year Exam Paper" (Term 2) mark-entry
 // screen. It's the same single-column layout for every Stage/Grade — only the maximum grade
 // changes (Max. 60 Primary, Max. 30 Prep & Secondary) — and it's saved as its own field
 // ("examPaper"), independent of the Month 1 / Month 2 / Total Coursework screens and totals.
+// Pulled out on its own so patchScoreRowInPlace() can rebuild just ONE row after a score
+// edit instead of the whole table (Grade 1 & 2 Primary Term Total layout).
+function renderExamPaperJuniorRowHtml(s, i, sc){
+  const t = computePrimaryTotals(sc);
+  const pct = Math.round((t.totalCoursework / t.maxTotal * 100) * 10) / 10;
+  const g = letterGrade(pct);
+  const col = courseworkColor(pct);
+  return `
+        <tr data-row-id="${s.id}">
+          ${primaryIdCellsHtml(s, i)}
+          <td class="total-cell">${Math.round(t.totalCoursework*10)/10}</td>
+          <td><span class="badge ${g.c}">${g.t}</span></td>
+          <td><span class="badge ${col.c}">${col.t}</span></td>
+          <td>${examFieldInputHtml(s.id,'examInitial',sc.examInitial)}</td>
+          <td>${examFieldInputHtml(s.id,'examFinal',sc.examFinal)}</td>
+          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
+        </tr>`;
+}
+// Every other Stage/Grade's single-column Exam Paper row (Max. 60 Primary, Max. 30 Prep & Secondary).
+function renderExamPaperStandardRowHtml(s, i, sc, max){
+  const val = sc.examPaper;
+  const hasVal = val!==null && val!==undefined && val!=='';
+  const pct = hasVal ? Math.round((parseFloat(val)/max*100)*10)/10 : null;
+  const g = hasVal ? letterGrade(pct) : null;
+  return `
+      <tr data-row-id="${s.id}">
+        ${primaryIdCellsHtml(s, i)}
+        <td>${scoreInputHtml(s.id,'examPaper',val,max)}</td>
+        <td class="pct-cell">${hasVal ? pct+'%' : '—'}</td>
+        <td>${g ? `<span class="badge ${g.c}">${g.t}</span>` : '—'}</td>
+        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
+      </tr>`;
+}
 function renderExamPaperScreen(roster, scoreMap, holder, footNote){
   hideMonthPill();
   const junior = isPrimary() && isJuniorPrimary();
@@ -6262,23 +6739,7 @@ function renderExamPaperScreen(roster, scoreMap, holder, footNote){
   }
 
   if(junior){
-    let rows = roster.map((s, i)=>{
-      const sc = scoreMap[s.id] || emptyScoreObj();
-      const t = computePrimaryTotals(sc);
-      const pct = Math.round((t.totalCoursework / t.maxTotal * 100) * 10) / 10;
-      const g = letterGrade(pct);
-      const col = courseworkColor(pct);
-      return `
-        <tr>
-          ${primaryIdCellsHtml(s, i)}
-          <td class="total-cell">${Math.round(t.totalCoursework*10)/10}</td>
-          <td><span class="badge ${g.c}">${g.t}</span></td>
-          <td><span class="badge ${col.c}">${col.t}</span></td>
-          <td>${examFieldInputHtml(s.id,'examInitial',sc.examInitial)}</td>
-          <td>${examFieldInputHtml(s.id,'examFinal',sc.examFinal)}</td>
-          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
-        </tr>`;
-    }).join('');
+    let rows = roster.map((s, i)=> renderExamPaperJuniorRowHtml(s, i, scoreMap[s.id] || emptyScoreObj())).join('');
 
     holder.innerHTML = `
       <table>
@@ -6297,21 +6758,7 @@ function renderExamPaperScreen(roster, scoreMap, holder, footNote){
     return;
   }
 
-  let rows = roster.map((s, i)=>{
-    const sc = scoreMap[s.id] || emptyScoreObj();
-    const val = sc.examPaper;
-    const hasVal = val!==null && val!==undefined && val!=='';
-    const pct = hasVal ? Math.round((parseFloat(val)/max*100)*10)/10 : null;
-    const g = hasVal ? letterGrade(pct) : null;
-    return `
-      <tr>
-        ${primaryIdCellsHtml(s, i)}
-        <td>${scoreInputHtml(s.id,'examPaper',val,max)}</td>
-        <td class="pct-cell">${hasVal ? pct+'%' : '—'}</td>
-        <td>${g ? `<span class="badge ${g.c}">${g.t}</span>` : '—'}</td>
-        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
-      </tr>`;
-  }).join('');
+  let rows = roster.map((s, i)=> renderExamPaperStandardRowHtml(s, i, scoreMap[s.id] || emptyScoreObj(), max)).join('');
 
   holder.innerHTML = `
     <table>
@@ -6346,21 +6793,22 @@ function updateExamField(studentId, field, value){
   const map = getScoreMap();
   if(!map[studentId]) map[studentId] = emptyScoreObj();
   map[studentId][field] = (value===''||value===null||value===undefined) ? null : value;
-  renderTable(true);
+  if(!patchScoreRowInPlace(studentId)) renderTable(true);
   saveState();
   const stu = subjectFilteredGradeRoster().find(s=>s.id===studentId);
   logActivity('edit', `Set "${field}" = ${value===''?'—':value} for ${stu?stu.name:'a student'} — ${state.subject||''} (${state.term||'—'})`, { studentId });
 }
 
-function renderStandardTable(roster, scoreMap, holder){
-  hideMonthPill();
-  let rows = roster.map((s, i)=>{
-    const sc = scoreMap[s.id] || emptyScoreObj();
-    const total = (parseFloat(sc.m1)||0)+(parseFloat(sc.m2)||0)+(parseFloat(sc.mid)||0)+(parseFloat(sc.final)||0);
-    const pct = Math.round(total*10)/10;
-    const g = letterGrade(pct);
-    return `
-      <tr>
+// Single row's markup for renderStandardTable — pulled out on its own (rather than only
+// inline inside the .map() below) so patchScoreRowInPlace() can rebuild just ONE row after
+// a score edit instead of the whole table. data-row-id on the <tr> is how that row gets
+// found again afterwards.
+function renderStandardTableRowHtml(s, i, sc){
+  const total = (parseFloat(sc.m1)||0)+(parseFloat(sc.m2)||0)+(parseFloat(sc.mid)||0)+(parseFloat(sc.final)||0);
+  const pct = Math.round(total*10)/10;
+  const g = letterGrade(pct);
+  return `
+      <tr data-row-id="${s.id}">
         <td><input type="checkbox" name="studentCheckbox" value="${s.id}" style="cursor:pointer;"></td>
         <td>${i+1}</td>
         <td><span class="seat-badge">${s.displayId||'—'}</span></td>
@@ -6376,7 +6824,10 @@ function renderStandardTable(roster, scoreMap, holder){
         <td><span class="badge ${g.c}">${g.t}</span></td>
         <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
-  }).join('');
+}
+function renderStandardTable(roster, scoreMap, holder){
+  hideMonthPill();
+  let rows = roster.map((s, i)=> renderStandardTableRowHtml(s, i, scoreMap[s.id] || emptyScoreObj())).join('');
 
   holder.innerHTML = `
     <table>
@@ -6405,21 +6856,13 @@ function renderStandardTable(roster, scoreMap, holder){
 // Grade 9 Prep (both sections) First Month / Second Month Mark Entry screens: a single
 // "Cycle 1" / "Cycle 2" score (Max. 15) instead of the standard Month 1/Month 2/Mid-Year/
 // Final Exam/Total columns. Percentage and Grade follow the same rules as every other stage.
-function renderG9CycleTable(roster, scoreMap, holder){
-  hideMonthPill();
-  const mode = academicSubMode();
-  const field = mode==='month2' ? 'g9c2' : 'g9c1';
-  const cycleLabel = mode==='month2' ? 'Cycle 2' : 'Cycle 1';
-  const max = 15;
-
-  let rows = roster.map((s, i)=>{
-    const sc = scoreMap[s.id] || emptyScoreObj();
-    const val = sc[field];
-    const hasVal = val!==null && val!==undefined && val!=='';
-    const pct = hasVal ? Math.round((parseFloat(val)/max*100)*10)/10 : null;
-    const g = hasVal ? letterGrade(pct) : null;
-    return `
-      <tr>
+function renderG9CycleTableRowHtml(s, i, sc, field, max, cycleLabel){
+  const val = sc[field];
+  const hasVal = val!==null && val!==undefined && val!=='';
+  const pct = hasVal ? Math.round((parseFloat(val)/max*100)*10)/10 : null;
+  const g = hasVal ? letterGrade(pct) : null;
+  return `
+      <tr data-row-id="${s.id}">
         <td><input type="checkbox" name="studentCheckbox" value="${s.id}" style="cursor:pointer;"></td>
         ${primaryIdCellsHtml(s, i)}
         <td>${scoreInputHtml(s.id,field,val,max)}</td>
@@ -6427,7 +6870,15 @@ function renderG9CycleTable(roster, scoreMap, holder){
         <td>${g ? `<span class="badge ${g.c}">${g.t}</span>` : '—'}</td>
         <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
-  }).join('');
+}
+function renderG9CycleTable(roster, scoreMap, holder){
+  hideMonthPill();
+  const mode = academicSubMode();
+  const field = mode==='month2' ? 'g9c2' : 'g9c1';
+  const cycleLabel = mode==='month2' ? 'Cycle 2' : 'Cycle 1';
+  const max = 15;
+
+  let rows = roster.map((s, i)=> renderG9CycleTableRowHtml(s, i, scoreMap[s.id] || emptyScoreObj(), field, max, cycleLabel)).join('');
 
   holder.innerHTML = `
     <table>
@@ -6494,22 +6945,53 @@ function renderPrimaryTable(roster, scoreMap, holder){
   return renderPrimaryMonth1Table(roster, scoreMap, holder);
 }
 
+// Pulled out on its own so patchScoreRowInPlace() can rebuild just ONE row after a score edit
+// (Term Av. / Total Coursework screen, Grade 1 & 2 Primary "Term Total" layout).
+function renderPrimaryCourseworkJuniorRowHtml(s, i, sc){
+  const t = computePrimaryTotals(sc);
+  const pct = Math.round((t.totalCoursework / t.maxTotal * 100) * 10) / 10;
+  const g = letterGrade(pct);
+  const col = courseworkColor(pct);
+  return `
+        <tr data-row-id="${s.id}">
+          ${primaryIdCellsHtml(s, i)}
+          <td class="pct-cell">${Math.round(t.twoMonthsAvg*10)/10}</td>
+          <td>${scoreInputHtml(s.id,'activity',sc.activity,20)}</td>
+          <td>${scoreInputHtml(s.id,'tasks',sc.tasks,5)}</td>
+          <td class="total-cell">${Math.round(t.totalCoursework*10)/10}</td>
+          <td><span class="badge ${g.c}">${g.t}</span></td>
+          <td><span class="badge ${col.c}">${col.t}</span></td>
+          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
+        </tr>`;
+}
+// Standard-grade (non-extended, non-junior) Total Coursework row — has editable Activity
+// (Max.5) / Per. Tasks (Max.10) inputs, so it also benefits from row-level patching.
+function renderPrimaryCourseworkStandardRowHtml(s, i, sc){
+  const t = computePrimaryTotals(sc);
+  const pct = Math.round((t.totalCoursework / t.maxTotal * 100) * 10) / 10;
+  const g = letterGrade(pct);
+  return `
+      <tr data-row-id="${s.id}">
+        ${primaryIdCellsHtml(s, i)}
+        <td class="pct-cell">${Math.round(t.twoMonthsAvg*10)/10}</td>
+        <td class="pct-cell">${Math.round(t.totalCycles*10)/10}</td>
+        <td>${scoreInputHtml(s.id,'activity',sc.activity,5)}</td>
+        <td>${scoreInputHtml(s.id,'tasks',sc.tasks,10)}</td>
+        <td class="total-cell">${Math.round(t.totalCoursework*10)/10}</td>
+        <td class="pct-cell">${pct}%</td>
+        <td><span class="badge ${g.c}">${g.t}</span></td>
+        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
+      </tr>`;
+}
+
 /* ---- First Month Mark Entry: Q.1–Q.4, Q. Av., H.W., Beh. & Attend., Total 1, Cycle 1 ---- */
 /* Grade 1 & Grade 2 Primary use an extended version: Q. Av., C.W., H.W., Oral (out of 20/20/20/10) + Beh. & Attend. (5) = Total 1 (Max. 75), plus Cycle 1. */
-function renderPrimaryMonth1Table(roster, scoreMap, holder){
-  const junior = isJuniorPrimary();
-
-  if(junior){
-    // Grade 1 & 2 Primary now use the same flexible, teacher-set Q.1–Q.4 maximums
-    // as every other grade (Set Quiz Max. Score box), instead of a fixed Max. 5 —
-    // computePrimaryTotals() already normalizes t.avg1/month1Total against these
-    // per-subject maximums, so only the on-screen inputs/labels need updating here.
-    const g3Maxima = g3MaximaFor();
-    let rows = roster.map((s, i)=>{
-      const sc = scoreMap[s.id] || emptyScoreObj();
-      const t = computePrimaryTotals(sc);
-      return `
-        <tr>
+// Pulled out on its own (like renderStandardTableRowHtml) so patchScoreRowInPlace() can
+// rebuild just ONE row after a score edit instead of the whole table.
+function renderPrimaryMonth1JuniorRowHtml(s, i, sc, g3Maxima){
+  const t = computePrimaryTotals(sc);
+  return `
+        <tr data-row-id="${s.id}">
           ${primaryIdCellsHtml(s, i)}
           <td>${scoreInputHtml(s.id,'m1E1',sc.m1E1, g3Maxima.m1E1Max)}</td>
           <td>${scoreInputHtml(s.id,'m1E2',sc.m1E2, g3Maxima.m1E2Max)}</td>
@@ -6524,7 +7006,43 @@ function renderPrimaryMonth1Table(roster, scoreMap, holder){
           <td class="cycle-cell">${scoreInputHtml(s.id,'m1Cycle',sc.m1Cycle,5, sc.m1CycleAtt==='A' ? 'Student marked Absent for Cycle 1' : null)}${cycleAttButtonHtml(s.id,'m1CycleAtt',sc.m1CycleAtt)}</td>
           <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
         </tr>`;
-    }).join('');
+}
+// Pulled out on its own so patchScoreRowInPlace() can rebuild just ONE row after a score
+// edit instead of the whole table (covers G3-G6 Primary, G7-G8 Prep and G10-G11 Secondary).
+function renderPrimaryMonth1RowHtml(s, i, sc, g3Maxima, extended, qMult, cwMax, behMax){
+  const t = computePrimaryTotals(sc);
+  // ===== Flexible Q.1–Q.4 maxima: استخدام calculateGrade3QAv للجميع =====
+  const qAv = calculateGrade3QAv(sc.m1E1, sc.m1E2, sc.m1E3, sc.m1E4, false) * (extended ? qMult : 1);
+  const cycleMax = extended ? 15 : 5;
+  const secondFieldCell = extended
+    ? `<td>${scoreInputHtml(s.id,'m1CW',sc.m1CW, cwMax)}</td>`
+    : `<td>${scoreInputHtml(s.id,'m1Hw',sc.m1Hw,5)}</td>`;
+  const secondFieldVal = extended ? (parseFloat(sc.m1CW)||0) : (parseFloat(sc.m1Hw)||0);
+  return `
+      <tr data-row-id="${s.id}">
+        ${primaryIdCellsHtml(s, i)}
+        <td>${scoreInputHtml(s.id,'m1E1',sc.m1E1, g3Maxima.m1E1Max)}</td>
+        <td>${scoreInputHtml(s.id,'m1E2',sc.m1E2, g3Maxima.m1E2Max)}</td>
+        <td>${scoreInputHtml(s.id,'m1E3',sc.m1E3, g3Maxima.m1E3Max)}</td>
+        <td>${scoreInputHtml(s.id,'m1E4',sc.m1E4, g3Maxima.m1E4Max)}</td>
+        <td class="pct-cell">${Math.round(qAv*10)/10}</td>
+        ${secondFieldCell}
+        <td>${scoreInputHtml(s.id,'m1Beh',sc.m1Beh,behMax)}</td>
+        <td class="total-cell">${Math.round((qAv + secondFieldVal + (parseFloat(sc.m1Beh)||0))*10)/10}</td>
+        <td class="cycle-cell">${scoreInputHtml(s.id,'m1Cycle',sc.m1Cycle, cycleMax, sc.m1CycleAtt==='A' ? 'Student marked Absent for Cycle 1' : null)}${cycleAttButtonHtml(s.id,'m1CycleAtt',sc.m1CycleAtt)}</td>
+        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
+      </tr>`;
+}
+function renderPrimaryMonth1Table(roster, scoreMap, holder){
+  const junior = isJuniorPrimary();
+
+  if(junior){
+    // Grade 1 & 2 Primary now use the same flexible, teacher-set Q.1–Q.4 maximums
+    // as every other grade (Set Quiz Max. Score box), instead of a fixed Max. 5 —
+    // computePrimaryTotals() already normalizes t.avg1/month1Total against these
+    // per-subject maximums, so only the on-screen inputs/labels need updating here.
+    const g3Maxima = g3MaximaFor();
+    let rows = roster.map((s, i)=> renderPrimaryMonth1JuniorRowHtml(s, i, scoreMap[s.id] || emptyScoreObj(), g3Maxima)).join('');
 
     holder.innerHTML = `${renderG3MaxBoxHtml('m1', 'Month 1')}
       <table>
@@ -6569,30 +7087,7 @@ function renderPrimaryMonth1Table(roster, scoreMap, holder){
   // computePrimaryTotals() and the G3-G6 Month Report certificate already compute.
   const behMax = extended ? 10 : 5;
   const totalMax = extended ? 40 : 15;
-  let rows = roster.map((s, i)=>{
-    const sc = scoreMap[s.id] || emptyScoreObj();
-    const t = computePrimaryTotals(sc);
-    // ===== Flexible Q.1–Q.4 maxima: استخدام calculateGrade3QAv للجميع =====
-    const qAv = calculateGrade3QAv(sc.m1E1, sc.m1E2, sc.m1E3, sc.m1E4, false) * (extended ? qMult : 1);
-    const secondFieldCell = extended
-      ? `<td>${scoreInputHtml(s.id,'m1CW',sc.m1CW, cwMax)}</td>`
-      : `<td>${scoreInputHtml(s.id,'m1Hw',sc.m1Hw,5)}</td>`;
-    const secondFieldVal = extended ? (parseFloat(sc.m1CW)||0) : (parseFloat(sc.m1Hw)||0);
-    return `
-      <tr>
-        ${primaryIdCellsHtml(s, i)}
-        <td>${scoreInputHtml(s.id,'m1E1',sc.m1E1, g3Maxima.m1E1Max)}</td>
-        <td>${scoreInputHtml(s.id,'m1E2',sc.m1E2, g3Maxima.m1E2Max)}</td>
-        <td>${scoreInputHtml(s.id,'m1E3',sc.m1E3, g3Maxima.m1E3Max)}</td>
-        <td>${scoreInputHtml(s.id,'m1E4',sc.m1E4, g3Maxima.m1E4Max)}</td>
-        <td class="pct-cell">${Math.round(qAv*10)/10}</td>
-        ${secondFieldCell}
-        <td>${scoreInputHtml(s.id,'m1Beh',sc.m1Beh,behMax)}</td>
-        <td class="total-cell">${Math.round((qAv + secondFieldVal + (parseFloat(sc.m1Beh)||0))*10)/10}</td>
-        <td class="cycle-cell">${scoreInputHtml(s.id,'m1Cycle',sc.m1Cycle, cycleMax, sc.m1CycleAtt==='A' ? 'Student marked Absent for Cycle 1' : null)}${cycleAttButtonHtml(s.id,'m1CycleAtt',sc.m1CycleAtt)}</td>
-        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
-      </tr>`;
-  }).join('');
+  let rows = roster.map((s, i)=> renderPrimaryMonth1RowHtml(s, i, scoreMap[s.id] || emptyScoreObj(), g3Maxima, extended, qMult, cwMax, behMax)).join('');
 
   // ===== Flexible Evaluation: إضافة حقول إدخال الماكس (كل الصفوف) =====
   // Each question unlocks its own column the moment its max is set — the four
@@ -6625,20 +7120,11 @@ function renderPrimaryMonth1Table(roster, scoreMap, holder){
 
 /* ---- Second Month Mark Entry: Q.1–Q.4, Q. Av., H.W., Beh. & Attend., Total 2, Cycle 2 ---- */
 /* Grade 1 & Grade 2 Primary use an extended version: Q. Av., C.W., H.W., Oral (out of 20/20/20/10) + Beh. & Attend. (5) = Total 2 (Max. 75), plus Cycle 2. */
-function renderPrimaryMonth2Table(roster, scoreMap, holder){
-  const junior = isJuniorPrimary();
-
-  if(junior){
-    // Grade 1 & 2 Primary now use the same flexible, teacher-set Q.1–Q.4 maximums
-    // as every other grade (Set Quiz Max. Score box), instead of a fixed Max. 5 —
-    // computePrimaryTotals() already normalizes t.avg2/month2Total against these
-    // per-subject maximums, so only the on-screen inputs/labels need updating here.
-    const g3Maxima = g3MaximaFor();
-    let rows = roster.map((s, i)=>{
-      const sc = scoreMap[s.id] || emptyScoreObj();
-      const t = computePrimaryTotals(sc);
-      return `
-        <tr>
+// Pulled out on its own so patchScoreRowInPlace() can rebuild just ONE row after a score edit.
+function renderPrimaryMonth2JuniorRowHtml(s, i, sc, g3Maxima){
+  const t = computePrimaryTotals(sc);
+  return `
+        <tr data-row-id="${s.id}">
           ${primaryIdCellsHtml(s, i)}
           <td>${scoreInputHtml(s.id,'m2E1',sc.m2E1, g3Maxima.m2E1Max)}</td>
           <td>${scoreInputHtml(s.id,'m2E2',sc.m2E2, g3Maxima.m2E2Max)}</td>
@@ -6653,7 +7139,43 @@ function renderPrimaryMonth2Table(roster, scoreMap, holder){
           <td class="cycle-cell">${scoreInputHtml(s.id,'m2Cycle',sc.m2Cycle,5, sc.m2CycleAtt==='A' ? 'Student marked Absent for Cycle 2' : null)}${cycleAttButtonHtml(s.id,'m2CycleAtt',sc.m2CycleAtt)}</td>
           <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
         </tr>`;
-    }).join('');
+}
+// Pulled out on its own so patchScoreRowInPlace() can rebuild just ONE row after a score
+// edit instead of the whole table (covers G3-G6 Primary, G7-G8 Prep and G10-G11 Secondary).
+function renderPrimaryMonth2RowHtml(s, i, sc, g3Maxima, extended, qMult, cwMax, behMax){
+  const t = computePrimaryTotals(sc);
+  // ===== Flexible Q.1–Q.4 maxima: استخدام calculateGrade3QAv للجميع =====
+  const qAv = calculateGrade3QAv(sc.m2E1, sc.m2E2, sc.m2E3, sc.m2E4, true) * (extended ? qMult : 1);
+  const cycleMax = extended ? 15 : 5;
+  const secondFieldCell = extended
+    ? `<td>${scoreInputHtml(s.id,'m2CW',sc.m2CW, cwMax)}</td>`
+    : `<td>${scoreInputHtml(s.id,'m2Hw',sc.m2Hw,5)}</td>`;
+  const secondFieldVal = extended ? (parseFloat(sc.m2CW)||0) : (parseFloat(sc.m2Hw)||0);
+  return `
+      <tr data-row-id="${s.id}">
+        ${primaryIdCellsHtml(s, i)}
+        <td>${scoreInputHtml(s.id,'m2E1',sc.m2E1, g3Maxima.m2E1Max)}</td>
+        <td>${scoreInputHtml(s.id,'m2E2',sc.m2E2, g3Maxima.m2E2Max)}</td>
+        <td>${scoreInputHtml(s.id,'m2E3',sc.m2E3, g3Maxima.m2E3Max)}</td>
+        <td>${scoreInputHtml(s.id,'m2E4',sc.m2E4, g3Maxima.m2E4Max)}</td>
+        <td class="pct-cell">${Math.round(qAv*10)/10}</td>
+        ${secondFieldCell}
+        <td>${scoreInputHtml(s.id,'m2Beh',sc.m2Beh,behMax)}</td>
+        <td class="total-cell">${Math.round((qAv + secondFieldVal + (parseFloat(sc.m2Beh)||0))*10)/10}</td>
+        <td class="cycle-cell">${scoreInputHtml(s.id,'m2Cycle',sc.m2Cycle, cycleMax, sc.m2CycleAtt==='A' ? 'Student marked Absent for Cycle 2' : null)}${cycleAttButtonHtml(s.id,'m2CycleAtt',sc.m2CycleAtt)}</td>
+        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
+      </tr>`;
+}
+function renderPrimaryMonth2Table(roster, scoreMap, holder){
+  const junior = isJuniorPrimary();
+
+  if(junior){
+    // Grade 1 & 2 Primary now use the same flexible, teacher-set Q.1–Q.4 maximums
+    // as every other grade (Set Quiz Max. Score box), instead of a fixed Max. 5 —
+    // computePrimaryTotals() already normalizes t.avg2/month2Total against these
+    // per-subject maximums, so only the on-screen inputs/labels need updating here.
+    const g3Maxima = g3MaximaFor();
+    let rows = roster.map((s, i)=> renderPrimaryMonth2JuniorRowHtml(s, i, scoreMap[s.id] || emptyScoreObj(), g3Maxima)).join('');
 
     holder.innerHTML = `${renderG3MaxBoxHtml('m2', 'Month 2')}
       <table>
@@ -6698,30 +7220,7 @@ function renderPrimaryMonth2Table(roster, scoreMap, holder){
   // computePrimaryTotals() and the G3-G6 Month Report certificate already compute.
   const behMax = extended ? 10 : 5;
   const totalMax = extended ? 40 : 15;
-  let rows = roster.map((s, i)=>{
-    const sc = scoreMap[s.id] || emptyScoreObj();
-    const t = computePrimaryTotals(sc);
-    // ===== Flexible Q.1–Q.4 maxima: استخدام calculateGrade3QAv للجميع =====
-    const qAv = calculateGrade3QAv(sc.m2E1, sc.m2E2, sc.m2E3, sc.m2E4, true) * (extended ? qMult : 1);
-    const secondFieldCell = extended
-      ? `<td>${scoreInputHtml(s.id,'m2CW',sc.m2CW, cwMax)}</td>`
-      : `<td>${scoreInputHtml(s.id,'m2Hw',sc.m2Hw,5)}</td>`;
-    const secondFieldVal = extended ? (parseFloat(sc.m2CW)||0) : (parseFloat(sc.m2Hw)||0);
-    return `
-      <tr>
-        ${primaryIdCellsHtml(s, i)}
-        <td>${scoreInputHtml(s.id,'m2E1',sc.m2E1, g3Maxima.m2E1Max)}</td>
-        <td>${scoreInputHtml(s.id,'m2E2',sc.m2E2, g3Maxima.m2E2Max)}</td>
-        <td>${scoreInputHtml(s.id,'m2E3',sc.m2E3, g3Maxima.m2E3Max)}</td>
-        <td>${scoreInputHtml(s.id,'m2E4',sc.m2E4, g3Maxima.m2E4Max)}</td>
-        <td class="pct-cell">${Math.round(qAv*10)/10}</td>
-        ${secondFieldCell}
-        <td>${scoreInputHtml(s.id,'m2Beh',sc.m2Beh,behMax)}</td>
-        <td class="total-cell">${Math.round((qAv + secondFieldVal + (parseFloat(sc.m2Beh)||0))*10)/10}</td>
-        <td class="cycle-cell">${scoreInputHtml(s.id,'m2Cycle',sc.m2Cycle, cycleMax, sc.m2CycleAtt==='A' ? 'Student marked Absent for Cycle 2' : null)}${cycleAttButtonHtml(s.id,'m2CycleAtt',sc.m2CycleAtt)}</td>
-        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
-      </tr>`;
-  }).join('');
+  let rows = roster.map((s, i)=> renderPrimaryMonth2RowHtml(s, i, scoreMap[s.id] || emptyScoreObj(), g3Maxima, extended, qMult, cwMax, behMax)).join('');
 
   // Each question unlocks its own column the moment its max is set — the four
   // fields are independent, not an all-or-nothing gate.
@@ -6759,24 +7258,7 @@ function renderPrimaryCourseworkTable(roster, scoreMap, holder){
   const junior = isJuniorPrimary();
 
   if(junior){
-    let rows = roster.map((s, i)=>{
-      const sc = scoreMap[s.id] || emptyScoreObj();
-      const t = computePrimaryTotals(sc);
-      const pct = Math.round((t.totalCoursework / t.maxTotal * 100) * 10) / 10;
-      const g = letterGrade(pct);
-      const col = courseworkColor(pct);
-      return `
-        <tr>
-          ${primaryIdCellsHtml(s, i)}
-          <td class="pct-cell">${Math.round(t.twoMonthsAvg*10)/10}</td>
-          <td>${scoreInputHtml(s.id,'activity',sc.activity,20)}</td>
-          <td>${scoreInputHtml(s.id,'tasks',sc.tasks,5)}</td>
-          <td class="total-cell">${Math.round(t.totalCoursework*10)/10}</td>
-          <td><span class="badge ${g.c}">${g.t}</span></td>
-          <td><span class="badge ${col.c}">${col.t}</span></td>
-          <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
-        </tr>`;
-    }).join('');
+    let rows = roster.map((s, i)=> renderPrimaryCourseworkJuniorRowHtml(s, i, scoreMap[s.id] || emptyScoreObj())).join('');
 
     holder.innerHTML = `
       <table>
@@ -6835,24 +7317,7 @@ function renderPrimaryCourseworkTable(roster, scoreMap, holder){
 
   const twoMonthsMax = 15;
   const courseworkMax = 40;
-  let rows = roster.map((s, i)=>{
-    const sc = scoreMap[s.id] || emptyScoreObj();
-    const t = computePrimaryTotals(sc);
-    const pct = Math.round((t.totalCoursework / t.maxTotal * 100) * 10) / 10;
-    const g = letterGrade(pct);
-    return `
-      <tr>
-        ${primaryIdCellsHtml(s, i)}
-        <td class="pct-cell">${Math.round(t.twoMonthsAvg*10)/10}</td>
-        <td class="pct-cell">${Math.round(t.totalCycles*10)/10}</td>
-        <td>${scoreInputHtml(s.id,'activity',sc.activity,5)}</td>
-        <td>${scoreInputHtml(s.id,'tasks',sc.tasks,10)}</td>
-        <td class="total-cell">${Math.round(t.totalCoursework*10)/10}</td>
-        <td class="pct-cell">${pct}%</td>
-        <td><span class="badge ${g.c}">${g.t}</span></td>
-        <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
-      </tr>`;
-  }).join('');
+  let rows = roster.map((s, i)=> renderPrimaryCourseworkStandardRowHtml(s, i, scoreMap[s.id] || emptyScoreObj())).join('');
 
   holder.innerHTML = `
     <table>
@@ -10169,7 +10634,6 @@ function saveBellTimes(){
    session). */
 const CLASS_ALERT_LEAD_MINUTES = 5;
 const CLASS_ALERT_DISMISSED_LS_KEY = 'classAlertDismissed_v1';
-let classAlertTimer = null;
 
 function classAlertDismissedSet(){
   try{ return new Set(JSON.parse(sessionStorage.getItem(CLASS_ALERT_DISMISSED_LS_KEY) || '[]')); }
@@ -10228,11 +10692,10 @@ function checkUpcomingClassAlert(){
 function startClassAlertWatcher(){
   loadBellTimes();
   checkUpcomingClassAlert();
-  clearInterval(classAlertTimer);
-  classAlertTimer = setInterval(()=>{ if(!document.hidden) checkUpcomingClassAlert(); }, 20*1000);
+  registerTicker('classAlert', 20*1000, ()=>{ if(!document.hidden) checkUpcomingClassAlert(); });
 }
 function stopClassAlertWatcher(){
-  clearInterval(classAlertTimer);
+  unregisterTicker('classAlert');
   const bar = document.getElementById('classAlertBar');
   if(bar) bar.style.display = 'none';
 }
@@ -12034,12 +12497,12 @@ function saveGradeEntryControl(){
 // Scheduled rules need no page reload to kick in / expire: while the Grade Book is open,
 // or the Grade Entry Control modal itself is open, re-check every 30s so a scheduled lock
 // disables the score inputs (and an auto-unlock re-enables them) without user action.
-setInterval(function(){
+registerTicker('gradeEntryLockRecheck', 30000, function(){
   if(document.hidden) return;
   if(typeof currentView!=='undefined' && currentView==='grades' && typeof renderTable==='function') renderTable();
   const modal = document.getElementById('gradeEntryControlOverlay');
   if(modal && modal.classList.contains('show')) renderGradeEntryControlRules();
-}, 30000);
+});
 
 /* ========== REPORT CARD RELEASE ========== */
 let reportCardReleases = [];
@@ -13068,7 +13531,7 @@ document.addEventListener('click', (e)=>{
   }
 });
 
-setInterval(function(){ if(!document.hidden) refreshHeaderQuickWidgets(); }, 60 * 1000);
+registerTicker('headerQuickWidgets', 60 * 1000, function(){ if(!document.hidden) refreshHeaderQuickWidgets(); });
 
 const ROLE_LABELS = { 
   admin:'Admin', 
@@ -14131,8 +14594,11 @@ function loginAs(user, remember, showWelcome){
   const u = document.getElementById('loginUsername'), p = document.getElementById('loginPassword'), r = document.getElementById('rememberMe');
   if(u) u.value=''; if(p) p.value=''; if(r) r.checked=false;
   applyPermissionsUI();
-  renderStepper(); renderMarkEntryStepper(); renderAttendanceStepper();
-  renderWorkspace(); renderMarkEntryWorkspace(); renderAttendanceWorkspace();
+  // renderStepper()/renderMarkEntryStepper()/renderAttendanceStepper() and their matching
+  // renderWorkspace() calls used to run here unconditionally for EVERY tab regardless of
+  // which one the user actually lands on — switchView(allowed) below now lazily renders
+  // only the tab that's actually shown (see switchView()'s per-view render calls), the
+  // same way it already did for Dashboard/Exams/Certificates/etc.
   const allowed = firstAllowedTab();
   if(allowed){
     document.getElementById('noAccessPanel').style.display = 'none';
@@ -15505,15 +15971,19 @@ function hideInitialSyncIndicator(){
 }
 
 // Shared post-apply UI refresh — cheap to call after ANY of the three documents below
-// finishes applying, since re-rendering already-visible tables/steppers is far cheaper
+// finishes applying, since re-rendering only the currently visible tab is far cheaper
 // than the network reads/writes that used to be entangled across documents. Kept as one
 // function so all three apply* functions below stay in sync on what gets refreshed.
+// Every branch is gated on currentView — a remote change shouldn't rebuild the Student
+// Database, Teachers Database, Grade Book table or Attendance workspace while the user
+// is sitting on, say, the Dashboard tab; that work happens for free the moment they
+// actually switch into one of those tabs (see switchView()).
 function refreshUIAfterRemoteChange(){
   saveStateLocalOnly();
-  renderDatabaseNow();
-  if(typeof renderTeachersDatabase==='function') renderTeachersDatabase();
-  if(typeof renderTable==='function') renderTable();
-  if(typeof renderAttendanceWorkspace==='function') renderAttendanceWorkspace();
+  if(currentView==='database') renderDatabaseNow();
+  if(currentView==='teachers' && typeof renderTeachersDatabase==='function') renderTeachersDatabase();
+  if(currentView==='grades' && typeof renderTable==='function') renderTable();
+  if(currentView==='attendance' && typeof renderAttendanceWorkspace==='function') renderAttendanceWorkspace();
   // Re-render the Certificates tab live if a Parent/Student (or Admin) currently has it open,
   // so a newly-released Report Card appears immediately without needing a manual refresh.
   if(currentView==='certReports' && typeof renderCertReportsWorkspace==='function'){
@@ -15942,9 +16412,6 @@ const PRESENCE_HEARTBEAT_MS  = 25000;   // how often this browser reports itself
 const PRESENCE_POLL_MS       = 30000;   // how often the widget refreshes
 const PRESENCE_STALE_MS      = 70000;   // ignore heartbeats older than this
 let presenceBucket = null;
-let presenceHeartbeatTimer = null;
-let presenceWidgetTimer = null;
-let birthdayWidgetTimer = null;
 
 try{ presenceBucket = localStorage.getItem(PRESENCE_BUCKET_LS_KEY) || null; }catch(err){}
 
@@ -16017,16 +16484,13 @@ function startPresenceTracking(){
   sendPresenceHeartbeat();
   refreshActiveVisitorsWidget();
   refreshBirthdayWidgets();
-  clearInterval(presenceHeartbeatTimer);
-  clearInterval(presenceWidgetTimer);
-  clearInterval(birthdayWidgetTimer);
-  presenceHeartbeatTimer = setInterval(sendPresenceHeartbeat, PRESENCE_HEARTBEAT_MS);
-  presenceWidgetTimer = setInterval(refreshActiveVisitorsWidget, PRESENCE_POLL_MS);
-  birthdayWidgetTimer = setInterval(refreshBirthdayWidgets, 10*60*1000);
+  registerTicker('presenceHeartbeat', PRESENCE_HEARTBEAT_MS, sendPresenceHeartbeat);
+  registerTicker('presenceWidget', PRESENCE_POLL_MS, refreshActiveVisitorsWidget);
+  registerTicker('birthdayWidget', 10*60*1000, refreshBirthdayWidgets);
 }
 function stopPresenceTracking(){
-  clearInterval(presenceHeartbeatTimer);
-  clearInterval(presenceWidgetTimer);
+  unregisterTicker('presenceHeartbeat');
+  unregisterTicker('presenceWidget');
   removePresenceKey();
   const countEl = document.getElementById('activeVisitorsCount');
   const listEl = document.getElementById('activeVisitorsList');
@@ -16101,10 +16565,12 @@ loadAdminStructure();
 loadGrade3FlexibleMaxima();
 loadGithubConfig();
 loadLastGradebookSelection();
-renderStepper();
-renderAttendanceStepper();
-renderWorkspace();
-renderAttendanceWorkspace();
+// renderStepper()/renderAttendanceStepper()/renderWorkspace()/renderAttendanceWorkspace()
+// used to run here unconditionally too, for the exact same reason renderDatabaseNow() and
+// renderTeachersDatabase() (below) were removed from this spot: #appWrap is display:none
+// until login, so building the Grade Book/Attendance stepper and workspace here is pure
+// waste before login, and redundant after it — loginAs() -> switchView(allowed) now lazily
+// renders only the tab the signed-in user actually lands on.
 // renderDatabaseNow() and renderTeachersDatabase() used to run here unconditionally on
 // every page load, building the FULL unfiltered student/teacher tables (sticky columns,
 // badges, etc.) into #appWrap — which is display:none until login. That work is pure
@@ -16209,9 +16675,9 @@ function dtwInitWeather(){
 
 function initDateTimeWeatherWidget(){
   dtwUpdateClock();
-  setInterval(dtwUpdateClock, 1000);
+  registerTicker('dtwClock', 1000, dtwUpdateClock);
   dtwInitWeather();
-  setInterval(dtwInitWeather, 30 * 60 * 1000); // refresh weather every 30 minutes
+  registerTicker('dtwWeather', 30 * 60 * 1000, dtwInitWeather); // refresh weather every 30 minutes
 }
 
 /* ================== LOGIN SCREEN: DAILY QUOTE ================== */
