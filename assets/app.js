@@ -1860,7 +1860,7 @@ function hideHelpAssistantWidget(){
   if(panel) panel.style.display = 'none';
 }
 
-const DASHBOARD_MODE_LABELS = { cycle1:'Cycle 1', cycle1vs2:'Cycle 1 Vs Cycle 2' };
+const DASHBOARD_MODE_LABELS = { cycle1:'Cycle 1', cycle1vs2:'Cycle 1 Vs Cycle 2', termtotal:'Term Total' };
 
 function openDashboard(term, mode){
   state.dashboardTerm = term;
@@ -2284,6 +2284,108 @@ const CYCLE_BANDS = [
   { key:'weak',      label:'Weak (below 2)',     color:'#B23A3A', test:v=>v<2 }
 ];
 
+/* ---------- Term Total Dashboard: data ----------
+   Same Term Total figure (Coursework + Exam Paper, out of 100 — junior Grades 1 & 2
+   Primary use Total Coursework alone) already shown on Report Certificates and in the
+   Exams Analysis "Term Total" mode, reused here per-student/per-subject for the
+   Dashboard's charts. Mirrors computeCycleStats' shape (perSubject list + student/class
+   average) so the existing generic chart helpers (svgGroupedBarChart/svgPieChart/
+   svgGaugeArc/svgRadarChart) work unchanged with max=100 instead of CYCLE_MAX. */
+function computeTermTotalStats(section, stage, grade, term, studentId){
+  const subjects = getSubjectsForStageAndSection(stage, section);
+  const ck = `${section}|${stage}|${grade}`;
+  const roster = visibleRoster(students[ck]);
+  const student = (studentId && scopeStudentAllowed(studentId)) ? roster.find(s=>s.id===studentId) : null;
+  if(!roster.length || !student){
+    return { empty: !roster.length, noStudent: !student, perSubject: [] };
+  }
+  const junior = stage==='primary' && (grade==='g1' || grade==='g2');
+  const perSubject = subjects.map(subject=>{
+    return withExamsAnalysisState(section, stage, grade, term, subject, ()=>{
+      const subjScores = scores[subjKey()] || {};
+      const termTotalOf = sc=>{
+        const t = computePrimaryTotals(sc);
+        const examVal = (sc.examPaper===null||sc.examPaper===undefined||sc.examPaper==='') ? 0 : (parseFloat(sc.examPaper)||0);
+        return junior ? t.totalCoursework : (t.totalCoursework + examVal);
+      };
+      const classVals = [];
+      roster.forEach(s=>{
+        const sc = subjScores[s.id];
+        if(sc) classVals.push(termTotalOf(sc));
+      });
+      const classAvg = classVals.length ? classVals.reduce((a,b)=>a+b,0)/classVals.length : null;
+      const mySc = subjScores[studentId];
+      const v = mySc ? termTotalOf(mySc) : null;
+      return { subject, v, classAvg, hasV: !!mySc };
+    });
+  });
+  return { empty:false, noStudent:false, student, perSubject };
+}
+
+const TERM_TOTAL_MAX = 100;
+// Same Blue/Green/Yellow/Red color code used for Term Total on Report Certificates (courseworkColor).
+const TERM_TOTAL_BANDS = [
+  { key:'blue',   label:'Blue (85–100%)',   color:'#2A5C99', test:v=>v>=85 },
+  { key:'green',  label:'Green (65–84.9%)', color:'#2F6F4E', test:v=>v>=65 && v<85 },
+  { key:'yellow', label:'Yellow (50–64.9%)',color:'#C9A227', test:v=>v>=50 && v<65 },
+  { key:'red',    label:'Red (below 50%)',  color:'#B23A3A', test:v=>v<50 }
+];
+function termTotalBandOf(v){ return TERM_TOTAL_BANDS.find(b=>b.test(v)) || null; }
+
+function renderTermTotalView(perSubject, section, stage, grade, term, studentId){
+  const withData = perSubject.filter(p=>p.hasV);
+  const bars = withData.map(p=>({ label:p.subject, values:[p.v, p.classAvg] }));
+  const barSvg = svgGroupedBarChart(bars, TERM_TOTAL_MAX, ['Student','Class Average'], ['var(--blue)','var(--gold)']);
+  const radarSvg = svgRadarChart(bars, TERM_TOTAL_MAX, ['Student','Class Average'], ['var(--blue)','var(--gold)']);
+
+  const bandCounts = TERM_TOTAL_BANDS.map(b=>({ ...b, count: withData.filter(p=>b.test(p.v)).length }));
+  const pieSvg = svgPieChart(bandCounts.map(b=>({ label:b.label, value:b.count, color:b.color })));
+
+  const vals = withData.map(p=>p.v);
+  const overallAvg = vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length) : 0;
+  const avgBandColor = (termTotalBandOf(overallAvg) || TERM_TOTAL_BANDS[TERM_TOTAL_BANDS.length-1]).color;
+
+  const subjectRows = withData.map(p=>{
+    const band = termTotalBandOf(p.v);
+    return `<tr><td>${escapeXml(subjectWithIcon(p.subject))}</td><td>${Math.round(p.v*10)/10}</td><td>${p.classAvg!==null?Math.round(p.classAvg*10)/10:'—'}</td><td><span class="badge" style="background:${band?band.color:'#999'};color:#fff;">${band?band.label.split(' (')[0]:'—'}</span></td></tr>`;
+  }).join('');
+
+  return `
+    <div class="db-summary-row">
+      <div class="db-stat-card db-stat-card-gauge">
+        <div class="db-gauge-wrap">
+          ${svgGaugeArc(overallAvg, TERM_TOTAL_MAX, avgBandColor)}
+          <div class="db-gauge-center"><div class="db-stat-num">${overallAvg.toFixed(1)}<small>/100</small></div></div>
+        </div>
+        <div class="db-stat-label">Student's Average</div>
+      </div>
+      <div class="db-stat-card"><div class="db-stat-num">${vals.length}</div><div class="db-stat-label">Subjects Recorded</div></div>
+    </div>
+    <div class="table-card">
+      <div class="grade-table-scroll">
+        <table class="stats-table">
+          <thead><tr><th>Subject</th><th>Term Total</th><th>Class Average</th><th>Color</th></tr></thead>
+          <tbody>${subjectRows}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="db-charts-grid">
+      <div class="db-chart-card">
+        <h4>Term Total — Student vs Class Average (Max 100)</h4>
+        ${barSvg}
+      </div>
+      <div class="db-chart-card">
+        <h4>Performance Distribution Across Subjects</h4>
+        ${pieSvg}
+        ${legendHtml(bandCounts)}
+      </div>
+      <div class="db-chart-card db-chart-full">
+        <h4>🕸️ Subject Balance (Radar) — Student vs Class Average</h4>
+        ${radarSvg}
+      </div>
+    </div>`;
+}
+
 /* ================== Parent/Student Dashboard: motivational layer ==================
    Purely presentational, additive, and Parent/Student-only: an admin/teacher looking at
    the same Cycle Dashboard never sees any of this — they get the plain analytics as
@@ -2411,7 +2513,52 @@ function renderDashboardCharts(){
   if(!area) return;
   const { dashboardSection:section, dashboardStage:stage, dashboardGrade:grade, dashboardTerm:term, dashboardMode:mode, dashboardStudent:studentId } = state;
   if(!section || !stage || !grade){
-    area.innerHTML = `<div class="empty-state"><div class="seal-lg">📈</div><h3>Choose a class</h3><p>Select the Section, Stage and Grade above to view the Cycle 1 analysis.</p></div>`;
+    area.innerHTML = `<div class="empty-state"><div class="seal-lg">📈</div><h3>Choose a class</h3><p>Select the Section, Stage and Grade above to view the ${mode==='termtotal'?'Term Total':'Cycle 1'} analysis.</p></div>`;
+    return;
+  }
+
+  // Term Total runs its own self-contained path (own compute + render functions) rather
+  // than threading through the Cycle-specific logic below (getMotivationBadge/
+  // renderParentMotivationCards/renderDeclineTrendBanner/renderAttentionBanner are all
+  // calibrated to the 0–5 Cycle scale and its own thresholds) — keeps this addition from
+  // risking any regression in the existing Cycle 1 / Cycle 1 vs 2 dashboards.
+  if(mode==='termtotal'){
+    const ttStats = computeTermTotalStats(section, stage, grade, term, studentId);
+    if(ttStats.empty){
+      area.innerHTML = `<div class="empty-state"><div class="seal-lg">ℹ️</div><h3>No students</h3><p>There are no students registered for this class yet.</p></div>`;
+      return;
+    }
+    if(!studentId){
+      area.innerHTML = `<div class="empty-state"><div class="seal-lg">🎓</div><h3>Choose a student</h3><p>Select the Classroom (optional) and Student above to view their Term Total analysis across all subjects.</p></div>`;
+      return;
+    }
+    const withData = ttStats.perSubject.filter(p=>p.hasV);
+    if(!withData.length){
+      area.innerHTML = `<div class="empty-state"><div class="seal-lg">ℹ️</div><h3>No Term Total marks yet</h3><p>No Term Total scores have been entered for <b>${escapeXml(ttStats.student.name)}</b> in ${TERM_LABELS[term]||'this term'}.</p></div>`;
+      return;
+    }
+    const isParent = isParentDashboardViewer();
+    const aiSubjectRows = withData.map(p=>({ subject:p.subject, score:p.v })).filter(r=>r.score!==null && !isNaN(r.score));
+    window.__aiDashboardCtx = {
+      name: ttStats.student.name,
+      meta: `${STAGES[stage].grades.find(g=>g.id===grade).label}${ttStats.student.classroom?' • '+ttStats.student.classroom:''}`,
+      subjectRows: aiSubjectRows,
+      maxScore: TERM_TOTAL_MAX
+    };
+    const aiBtnHtml = `<button type="button" class="ai-action-btn ai-action-btn--accent" onclick="openAIStudentAnalysis(window.__aiDashboardCtx.name, window.__aiDashboardCtx.meta, window.__aiDashboardCtx.subjectRows, window.__aiDashboardCtx.maxScore)"><span class="ai-action-btn__icon">🤖</span><span class="ai-action-btn__text"><span class="ai-action-btn__title">AI Analysis</span><span class="ai-action-btn__sub">Insights for this student</span></span></button>`;
+    let classBtnHtml = '';
+    if(!isParent){
+      const classSubjectRows = withData.map(p=>({ subject:p.subject, score:p.classAvg })).filter(r=>r.score!==null && !isNaN(r.score));
+      window.__aiDashboardClassCtx = {
+        meta: `${STAGES[stage].grades.find(g=>g.id===grade).label} • ${SECTIONS[section].label}${ttStats.student.classroom?' • '+ttStats.student.classroom:''}`,
+        subjectRows: classSubjectRows,
+        maxScore: TERM_TOTAL_MAX
+      };
+      classBtnHtml = `<button type="button" class="ai-action-btn ai-action-btn--pro" onclick="openAIClassAnalysis(window.__aiDashboardClassCtx.meta, window.__aiDashboardClassCtx.subjectRows, window.__aiDashboardClassCtx.maxScore)"><span class="ai-action-btn__icon">📊</span><span class="ai-action-btn__text"><span class="ai-action-btn__title">Class Analysis</span><span class="ai-action-btn__sub">Compare across the class</span></span></button>`;
+    }
+    const nameBanner = `<div class="db-student-banner-wrap"><div class="db-student-banner"><span class="seal-lg" style="width:38px;height:38px;font-size:16px;">🎓</span><div><div class="db-student-name">${escapeXml(ttStats.student.name)}</div><div class="db-student-meta">${STAGES[stage].grades.find(g=>g.id===grade).label} • ${SECTIONS[section].label}${ttStats.student.classroom?' • '+escapeXml(ttStats.student.classroom):''}</div></div></div><div class="ai-action-row">${aiBtnHtml}${classBtnHtml}</div></div>`;
+    area.innerHTML = nameBanner + renderTermTotalView(ttStats.perSubject, section, stage, grade, term, studentId);
+    animateDashboardStatNumbers(area);
     return;
   }
   const preStats = computeCycleStats(section, stage, grade, term, studentId);
