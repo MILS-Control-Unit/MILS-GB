@@ -1329,35 +1329,28 @@ function renderPerfAlerts(){
     ${otherCycle ? `<p style="font-size:12px;color:var(--ink-soft);margin-top:8px;">Rows shaded red mark students who also appear in the ${escapeXml(catLabel)} list for the other Cycle in ${escapeXml(termLabel)}, within this same scope.</p>` : ''}`;
 }
 
-/* ================== AI TEACHING ASSISTANT (Groq) ==================
-   Generates a short teacher-facing "Insight" and a ready parent-facing "Parent
-   Comment" for one student, from their recorded subject scores, using Groq's
-   free OpenAI-compatible Chat Completions API (console.groq.com — no credit
-   card required). Same "fetch → parse JSON" shape as the Claude Vision exam-
-   schedule reader above, just pointed at a different provider/model.
+/* ================== AI RESULT ANALYSIS (Groq, via the same in-app help-assistant Worker) ==================
+   Generates a short teacher-facing "Insight" (+ a parent-ready comment for single students)
+   from recorded Cycle scores — for one student (Dashboard "🤖 AI Analysis" button) or for a
+   whole class (Dashboard "📊 Class Analysis" button).
 
-   SECURITY NOTE: the Groq API key no longer lives in this file. It is held
-   server-side by a small Cloudflare Worker (see worker.js) that proxies the
-   chat-completions request to Groq and returns the result. The browser only
-   ever talks to WORKER_URL below — never to api.groq.com directly — so the
-   key can't be read from DevTools or this file on GitHub.
-     - Set WORKER_URL to your deployed Worker's URL (e.g.
-       https://mils-ai-proxy.<your-subdomain>.workers.dev).
-     - The Worker enforces which models are allowed; keep GROQ_MODEL /
-       GROQ_VISION_MODEL below in sync with the Worker's allow-list. */
-const WORKER_URL = 'https://REPLACE_WITH_YOUR_WORKER_URL.workers.dev';
-// llama-3.3-70b-versatile was deprecated by Groq on 2026-06-17 (full shutdown ~Aug 2026);
-// openai/gpt-oss-120b is Groq's recommended free-tier replacement — see console.groq.com/docs/deprecations.
-const GROQ_MODEL = 'openai/gpt-oss-120b';
-// Vision-capable model used by the exam-schedule image reader below. Groq's multimodal lineup
-// changes often (llama-4-scout was itself deprecated 2026-06-17) — qwen/qwen3.6-27b is the
-// current recommended vision model, but Groq still serves it as PREVIEW (evaluate, don't rely
-// on it for anything critical). If image reads start failing/erroring, check
-// console.groq.com/docs/vision for the current model name and swap it in here.
+   Reuses HELP_ASSISTANT_WORKER_URL (see the in-app help assistant widget further down) rather
+   than a second Worker — same Groq key, same server-side proxy, one less thing to deploy.
+   The Worker's contract is POST { message, history } -> { reply }, so we send our analysis
+   prompt as `message` with empty history and parse `reply` as strict JSON. */
+
+// Separate Worker used ONLY by the "read exam schedule from a photo" feature further down —
+// that one sends an image, which needs the generic {model, messages} passthrough contract
+// (see worker.js), not the help-assistant Worker's {message, history} contract. Optional:
+// only set this if you use that photo-reading feature.
+const VISION_WORKER_URL = 'https://REPLACE_WITH_YOUR_WORKER_URL.workers.dev';
+// Groq's multimodal lineup changes often (llama-4-scout was deprecated 2026-06-17) —
+// qwen/qwen3.6-27b is the current recommended vision model, but Groq still serves it as
+// PREVIEW. If image reads start failing/erroring, check console.groq.com/docs/vision.
 const GROQ_VISION_MODEL = 'qwen/qwen3.6-27b';
 
 function aiTeacherAssistantAvailable(){
-  return !!(WORKER_URL && WORKER_URL.indexOf('REPLACE_WITH') !== 0);
+  return !!(HELP_ASSISTANT_WORKER_URL && HELP_ASSISTANT_WORKER_URL.indexOf('REPLACE_WITH') !== 0);
 }
 
 // Max score for one row's subject list — Cycle rows use the stage/grade's Cycle
@@ -1374,23 +1367,24 @@ function buildStudentAIContext(name, meta, subjectRows, maxScore){
   return `Student: ${name}\nClass: ${meta || ''}\nRecorded scores (out of ${maxScore} each):\n${lines.join('\n')}`;
 }
 
+// Plain-text summary of a whole class's per-subject averages, for the "Class Analysis" button.
+function buildClassAIContext(meta, subjectRows, maxScore){
+  const lines = subjectRows.map(su=> `- ${su.subject}: class average ${Math.round(su.score*10)/10} / ${maxScore}`);
+  return `Class: ${meta || ''}\nSubject averages (out of ${maxScore} each):\n${lines.join('\n')}`;
+}
+
 async function callGroqChat(prompt){
-  const response = await fetch(WORKER_URL, {
+  const response = await fetch(HELP_ASSISTANT_WORKER_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      temperature: 0.4,
-      max_tokens: 500,
-      messages: [{ role: 'user', content: prompt }]
-    })
+    body: JSON.stringify({ message: prompt, history: [] })
   });
   if(!response.ok){
     const errText = await response.text().catch(()=> '');
     throw new Error('AI proxy request failed (' + response.status + '): ' + errText.slice(0,200));
   }
   const data = await response.json();
-  const text = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+  const text = (data && data.reply) || '';
   return text.trim();
 }
 
@@ -1399,7 +1393,7 @@ async function callGroqChat(prompt){
 // teacher copy either block. Reuses the app's existing .overlay/.modal styling.
 async function openAIStudentAnalysis(name, meta, subjectRows, maxScore){
   if(!aiTeacherAssistantAvailable()){
-    alert('AI analysis isn\'t configured yet. Deploy the Cloudflare Worker (worker.js) and paste its URL into WORKER_URL near the top of app.js.');
+    alert('AI analysis isn\'t configured yet. Deploy the Cloudflare Worker (worker.js or your existing mils-ai-proxy) and paste its URL into HELP_ASSISTANT_WORKER_URL near the top of app.js.');
     return;
   }
   if(!subjectRows || !subjectRows.length){
@@ -1474,6 +1468,78 @@ function openAIStudentAnalysisFromPerf(idx){
   const row = perfAIRowStash[idx];
   if(!row) return;
   openAIStudentAnalysis(row.name, row.meta, row.subjectRows, row.maxScore);
+}
+
+// Same idea as openAIStudentAnalysis, but for a whole class's per-subject averages —
+// the Dashboard's "📊 Class Analysis" button. Asks for a teacher-facing insight plus
+// concrete next-step recommendations (no parent comment — this isn't about one child).
+async function openAIClassAnalysis(meta, subjectRows, maxScore){
+  if(!aiTeacherAssistantAvailable()){
+    alert('AI analysis isn\'t configured yet. Deploy the Cloudflare Worker (worker.js or your existing mils-ai-proxy) and paste its URL into HELP_ASSISTANT_WORKER_URL near the top of app.js.');
+    return;
+  }
+  if(!subjectRows || !subjectRows.length){
+    alert('No recorded class scores to analyze yet.');
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay show';
+  overlay.innerHTML = `
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Class Analysis">
+      <h3>📊 Class Analysis — ${escapeHtml(meta)}</h3>
+      <div id="aiClassAnalysisBody" style="min-height:80px;">
+        <p style="color:var(--ink-soft);">⏳ Analyzing the class with AI — this can take a few seconds…</p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" id="aiClassAnalysisClose">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  function close(){ overlay.remove(); }
+  overlay.querySelector('#aiClassAnalysisClose').addEventListener('click', close);
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) close(); });
+
+  const context = buildClassAIContext(meta, subjectRows, maxScore);
+  const prompt = `You are a supportive school academic advisor helping a teacher/HOD read their class's results. Based ONLY on the data below, return STRICT JSON (no markdown fences, no commentary) with exactly two keys:
+"classInsight": a concise 3-4 sentence analytical note on this class's overall performance — which subjects are strongest, which are weakest, and any notable pattern.
+"recommendations": 2-3 short, concrete, actionable next steps the teacher/department could take to raise the weaker subjects, as a single string with each step on its own line (start each line with "- ").
+
+${context}`;
+
+  try{
+    const raw = await callGroqChat(prompt);
+    const cleaned = raw.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'').trim();
+    let parsed;
+    try{ parsed = JSON.parse(cleaned); }
+    catch(e){ parsed = { classInsight: raw, recommendations: '' }; }
+    const body = overlay.querySelector('#aiClassAnalysisBody');
+    if(body){
+      body.innerHTML = `
+        <div style="margin-bottom:14px;">
+          <div style="font-weight:600;margin-bottom:4px;">📊 Insight</div>
+          <p style="white-space:pre-line;margin:0 0 6px;">${escapeHtml(parsed.classInsight||'—')}</p>
+          <button type="button" class="btn btn-outline" style="font-size:12px;padding:4px 10px;" data-copy-text="${escapeHtml(parsed.classInsight||'')}">Copy</button>
+        </div>
+        ${parsed.recommendations ? `
+        <div>
+          <div style="font-weight:600;margin-bottom:4px;">✅ Recommendations</div>
+          <p style="white-space:pre-line;margin:0 0 6px;">${escapeHtml(parsed.recommendations)}</p>
+          <button type="button" class="btn btn-outline" style="font-size:12px;padding:4px 10px;" data-copy-text="${escapeHtml(parsed.recommendations)}">Copy</button>
+        </div>` : ''}
+        <p style="font-size:11px;color:var(--ink-soft);margin-top:12px;">⚠ AI-generated — please review before acting on it.</p>`;
+      body.querySelectorAll('[data-copy-text]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          navigator.clipboard.writeText(btn.getAttribute('data-copy-text')||'');
+          const old = btn.textContent; btn.textContent = 'Copied ✓';
+          setTimeout(()=>{ btn.textContent = old; }, 1200);
+        });
+      });
+    }
+  }catch(err){
+    console.error(err);
+    const body = overlay.querySelector('#aiClassAnalysisBody');
+    if(body) body.innerHTML = `<p style="color:var(--red);">Could not get an AI analysis right now (${escapeHtml(err.message||'network error')}). Please try again in a moment.</p>`;
+  }
 }
 
 // Adds a "First Term Exam" item under Term 1 and a "Second Term Exam" item under Term 2 of the
@@ -2253,7 +2319,24 @@ function renderDashboardCharts(){
     maxScore: CYCLE_MAX
   };
   const aiBtnHtml = `<button type="button" class="btn btn-outline" style="font-size:12px;padding:5px 10px;margin-inline-start:auto;" onclick="openAIStudentAnalysis(window.__aiDashboardCtx.name, window.__aiDashboardCtx.meta, window.__aiDashboardCtx.subjectRows, window.__aiDashboardCtx.maxScore)">🤖 AI Analysis</button>`;
-  const nameBanner = `<div class="db-student-banner"><span class="seal-lg" style="width:38px;height:38px;font-size:16px;">🎓</span><div><div class="db-student-name">${escapeXml(stats.student.name)}</div><div class="db-student-meta">${STAGES[stage].grades.find(g=>g.id===grade).label} • ${SECTIONS[section].label}${stats.student.classroom?' • '+escapeXml(stats.student.classroom):''}</div></div>${badgeHtml}${aiBtnHtml}</div>`;
+
+  // Class-wide averages (per subject, across the whole roster of this Section/Stage/Grade/Class)
+  // — already computed by computeCycleStats() alongside the selected student's own scores, so no
+  // extra querying needed. Powers the "📊 Class Analysis" button (teacher/admin/HOD only — a
+  // parent viewer only ever sees their own child's AI Analysis, not department-wide recommendations).
+  let classBtnHtml = '';
+  if(!isParent){
+    const classSubjectRows = withData
+      .map(p=>({ subject:p.subject, score: mode==='cycle1vs2' ? (p.classAvg2!==null&&p.classAvg2!==undefined?p.classAvg2:p.classAvg1) : p.classAvg1 }))
+      .filter(r=> r.score!==null && r.score!==undefined && !isNaN(r.score));
+    window.__aiDashboardClassCtx = {
+      meta: `${STAGES[stage].grades.find(g=>g.id===grade).label} • ${SECTIONS[section].label}${stats.student.classroom?' • '+stats.student.classroom:''}`,
+      subjectRows: classSubjectRows,
+      maxScore: CYCLE_MAX
+    };
+    classBtnHtml = `<button type="button" class="btn btn-outline" style="font-size:12px;padding:5px 10px;${withData.length? '':'margin-inline-start:auto;'}" onclick="openAIClassAnalysis(window.__aiDashboardClassCtx.meta, window.__aiDashboardClassCtx.subjectRows, window.__aiDashboardClassCtx.maxScore)">📊 Class Analysis</button>`;
+  }
+  const nameBanner = `<div class="db-student-banner"><span class="seal-lg" style="width:38px;height:38px;font-size:16px;">🎓</span><div><div class="db-student-name">${escapeXml(stats.student.name)}</div><div class="db-student-meta">${STAGES[stage].grades.find(g=>g.id===grade).label} • ${SECTIONS[section].label}${stats.student.classroom?' • '+escapeXml(stats.student.classroom):''}</div></div>${badgeHtml}${aiBtnHtml}${classBtnHtml}</div>`;
 
   let motivationHtml = '';
   if(isParent){
@@ -10925,7 +11008,7 @@ Extract every exam row you can clearly read and return ONLY a raw JSON array (no
 "duration" ("" if not shown — it will be auto-derived from the times when possible),
 "room" (room number, hall name, or any other note in that column; "" if none).
 If the image is not an exam schedule or no rows can be read, return [].`;
-    const response = await fetch(WORKER_URL, {
+    const response = await fetch(VISION_WORKER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
