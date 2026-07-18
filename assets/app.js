@@ -701,6 +701,14 @@ function makeStepConfig(st, sectionsData, stagesData){
     options: Object.entries(sectionsData).filter(([id])=>scopeSectionAllowed(id)).map(([id,v])=>({id,label:v.label})), requires:['termPeriod'] };
   const academicTermStep = { key:'academicTerm', title:'Mark Entry', state: st, getLabel:()=> markEntryLabel(st.termPeriod, st.academicTerm),
     options: ()=>{
+      // Grade 12 Mark Entry: only the 2nd Term (Term 2) End-of-Year table exists.
+      // Term 1 has no Mark Entry table at all for Grade 12.
+      if(st.stage === 'secondary' && st.grade === 'g12'){
+        const opts = [];
+        if(st.termPeriod==='term2') opts.push({ id:'examPaper', label:'End-of-Year' });
+        return opts;
+      }
+      // Grades 1-11 have standard options
       const opts = [
         { id:'month1', label:'First Month Mark Entry' },
         { id:'month2', label:'Second Month Mark Entry' },
@@ -3782,6 +3790,13 @@ const CERT_REPORT_TITLES = {
   endyear: 'End-of-Year Report Card'
 };
 function certReportTypeOptions(termPeriod, stage, grade){
+  // Grade 12 only has End-of-Year Report Card
+  if(stage === 'secondary' && grade === 'g12'){
+    return [
+      { id:'endyear', label:'End-of-Year Report Card' }
+    ];
+  }
+  // Grades 1-11 have standard options
   const base = [
     { id:'month1', label:'First Month Report Card' },
     { id:'month2', label:'Second Month Report Card' }
@@ -4192,11 +4207,11 @@ function renderCertReportsCards(){
     // Total (Max.40), Cycle (Max.15). No H.W./Oral columns for this stage (mirrors the
     // Grade 7 & 8 Prep template/computations, but with the Secondary-specific maxima).
     const isSecG1011MonthCert = certState.stage==='secondary' && ['g10','g11'].includes(certState.grade) && (type==='month1' || type==='month2');
-    const isG12MonthCert = certState.stage==='secondary' && certState.grade==='g12' && (type==='month1' || type==='month2');
+    const isG12MonthCert = false; // Grade 12 only has End-of-Year, no Month certificates
     // Grade 10 & 11 Secondary Total Coursework certificate — uses its own header:
     // Two Months Av. (Max.40), Two Cycles (Max.30), Total Coursework (Max.70) — no Activity/Per. Tasks.
     const isSecG1011CourseworkCert = certState.stage==='secondary' && ['g10','g11'].includes(certState.grade) && type==='coursework';
-    const isG12CourseworkCert = certState.stage==='secondary' && certState.grade==='g12' && type==='coursework';
+    const isG12CourseworkCert = false; // Grade 12 only has End-of-Year, no Coursework certificates
     let sumVal=0, sumMax=0;
     let tableHeadHtml, tableBodyHtml, showGradingKey = true;
 
