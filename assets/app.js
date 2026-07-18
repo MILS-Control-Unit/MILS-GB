@@ -186,10 +186,13 @@ let attSubView = 'absence';
 (function injectApprovedLeaveStyles(){
   const css = `
     .att-subtabs{ display:flex; gap:8px; margin:0 0 14px 0; }
-    .att-subtab-btn{ padding:8px 18px; border:1px solid #d0d5dd; border-radius:8px; background:#f8f9fb;
-      cursor:pointer; font-weight:700; font-size:13px; color:#475467; transition:all .15s ease; }
-    .att-subtab-btn:hover{ background:#eef1f5; }
-    .att-subtab-btn.active{ background:#2563eb; border-color:#2563eb; color:#fff; }
+    .att-subtab-select{ padding:9px 34px 9px 16px; border:1px solid #d0d5dd; border-radius:8px; background-color:#2563eb;
+      cursor:pointer; font-weight:700; font-size:13px; color:#fff; transition:all .15s ease;
+      appearance:none; -webkit-appearance:none; -moz-appearance:none;
+      background-image:url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23ffffff'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3E%3C/svg%3E");
+      background-repeat:no-repeat; background-position:right 10px center; background-size:16px; }
+    .att-subtab-select:hover{ background-color:#1d4ed8; }
+    .att-subtab-select:focus{ outline:2px solid #93b4fb; outline-offset:1px; }
     td.att-leave-cell{ text-align:center; font-weight:800; color:#b54708; background:#fffaeb; }
     td.att-na-cell{ text-align:center; color:#98a2b3; background:#f8f9fb; }
   `;
@@ -6494,16 +6497,17 @@ function ensureAttSubTabsBar(){
     intro.parentNode.insertBefore(bar, intro);
   }
   bar.innerHTML = `
-    <button type="button" class="att-subtab-btn" data-subview="absence" onclick="switchAttSubView('absence')">Absence</button>
-    <button type="button" class="att-subtab-btn" data-subview="leave" onclick="switchAttSubView('leave')">Approved Leave</button>
-    <button type="button" class="att-subtab-btn" data-subview="summary" onclick="switchAttSubView('summary')">Summary</button>
+    <select id="attSubTabsSelect" class="att-subtab-select" onchange="switchAttSubView(this.value)">
+      <option value="absence">Absence</option>
+      <option value="leave">Approved Leave</option>
+      <option value="summary">Summary</option>
+    </select>
   `;
   updateAttSubTabsActive();
 }
 function updateAttSubTabsActive(){
-  document.querySelectorAll('#attSubTabsBar .att-subtab-btn').forEach(b=>{
-    b.classList.toggle('active', b.dataset.subview===attSubView);
-  });
+  const sel = document.getElementById('attSubTabsSelect');
+  if(sel) sel.value = attSubView;
 }
 function switchAttSubView(view){
   if((view==='leave' || view==='summary') && !canUseApprovedLeave()) return;
