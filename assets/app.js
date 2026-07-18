@@ -3729,7 +3729,11 @@ function renderCertReportsCards(){
           // Highlighted subtotal row right after Social Studies — sums the last column
           // (Year Average for the End-of-Year certificate, Term Total otherwise) for every
           // subject listed above it (the core/basic subjects: Arabic through Social Studies).
-          if(sub==='Social Studies'){
+          // Grade 3 Primary is the one exception: Social Studies (and ICT) were removed from
+          // its subject list, so the Total row is placed right after Mathematics instead,
+          // summing only Arabic / English O.L. / Mathematics above it.
+          const totalRowAfterSubject = (certState.grade==='g3') ? 'Mathematics' : 'Social Studies';
+          if(sub===totalRowAfterSubject){
             const sumVal = isEndYear ? runningYearAvg : runningTermTotal;
             const sumMax = subjectCount * 100;
             const sumPct = Math.round((sumVal / sumMax * 100) * 10) / 10;
