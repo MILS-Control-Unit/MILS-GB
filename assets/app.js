@@ -181,11 +181,15 @@ let approvedLeave = {};
 // only what's written into each cell differs.
 let attSubView = 'absence';
 
-// Styling for the new Approved Leave sub-tab bar and the locked "L" cells inside the Absence
-// table — injected here in JS since these are new UI elements that don't exist in the HTML.
+// Styling for the Absence/Approved Leave/Summary sidebar submenu and the locked "L" cells
+// inside the Absence table — injected here in JS since these are new UI elements that don't
+// exist in the HTML. The sidebar's own colors/fonts live in the HTML file's stylesheet, not
+// here, so `.att-subtabs-sidebar`'s dark navy is a close approximation of the active nav
+// button's color rather than a shared variable.
 (function injectApprovedLeaveStyles(){
   const css = `
     .att-subtabs{ display:flex; gap:8px; margin:0 0 14px 0; }
+    .att-subtabs-sidebar{ display:block; margin:2px 14px 10px; }
     .att-subtab-select{ padding:9px 34px 9px 16px; border:1px solid #d0d5dd; border-radius:8px; background-color:#2563eb;
       cursor:pointer; font-weight:700; font-size:13px; color:#fff; transition:all .15s ease;
       appearance:none; -webkit-appearance:none; -moz-appearance:none;
@@ -193,6 +197,9 @@ let attSubView = 'absence';
       background-repeat:no-repeat; background-position:right 10px center; background-size:16px; }
     .att-subtab-select:hover{ background-color:#1d4ed8; }
     .att-subtab-select:focus{ outline:2px solid #93b4fb; outline-offset:1px; }
+    .att-subtabs-sidebar .att-subtab-select{ width:100%; font-size:12.5px; padding:8px 30px 8px 14px;
+      background-color:#22315c; border:1px solid rgba(255,255,255,.18); }
+    .att-subtabs-sidebar .att-subtab-select:hover{ background-color:#2a3b6e; }
     td.att-leave-cell{ text-align:center; font-weight:800; color:#b54708; background:#fffaeb; }
     td.att-na-cell{ text-align:center; color:#98a2b3; background:#f8f9fb; }
   `;
@@ -639,6 +646,9 @@ function switchView(view){
   if(view==='classLists'){ renderClassListsStepper(); renderClassListsWorkspace(); }
   if(view==='statistics'){ renderStatistics(); }
   if(view==='certReports'){ renderCertReportsStepper(); renderCertReportsWorkspace(); }
+  // Shows/hides the Absence/Approved Leave/Summary sidebar submenu under navTabAttendance —
+  // needs to re-run on every switch (not just view==='attendance') so leaving the tab removes it.
+  ensureAttSubTabsBar();
 }
 
 let openTermGroup = null;
@@ -6493,25 +6503,35 @@ function canUseApprovedLeave(){
 // a Teacher) removes the dropdown immediately rather than leaving a stale one in the DOM.
 // Recording Approved Leave is restricted to Admin and HOS/Deputy — Teachers, Heads of
 // Department, and Parent/Student accounts only ever see the plain Absence table, no sub-tabs.
+// Creates (or refreshes) the "Absence" / "Approved Leave" / "Summary" sub-tab dropdown as a
+// small submenu in the SIDEBAR, directly under the "Absence & Approved Leave" nav button itself
+// (#navTabAttendance) — not in the tab's content area — matching the collapsible-group look of
+// the sidebar's other nav items. Only shown while the Attendance tab is the active view (so it
+// doesn't clutter the sidebar while some other tab is open), and only for roles that can use
+// Approved Leave/Summary (Admin/HOS-Deputy) — everyone else just gets the plain Absence table,
+// no submenu, exactly as before. Rebuilt on every call (cheap) so a role switch (e.g. re-login
+// as a Teacher) or a tab switch removes the dropdown immediately rather than leaving a stale one
+// in the DOM — called both from renderAttendanceWorkspace() and from the end of switchView().
 function ensureAttSubTabsBar(){
-  const stepperHolder = document.getElementById('attendanceStepper');
-  if(!stepperHolder || !stepperHolder.parentNode) return;
+  const navTab = document.getElementById('navTabAttendance');
+  if(!navTab || !navTab.parentNode) return;
   const canLeave = canUseApprovedLeave();
   if(!canLeave && (attSubView==='leave' || attSubView==='summary')) attSubView = 'absence';
   let bar = document.getElementById('attSubTabsBar');
-  if(!canLeave){
+  const show = canLeave && currentView==='attendance';
+  if(!show){
     if(bar) bar.remove();
     return;
   }
   if(!bar){
     bar = document.createElement('div');
     bar.id = 'attSubTabsBar';
-    bar.className = 'att-subtabs';
-    stepperHolder.parentNode.insertBefore(bar, stepperHolder);
-  } else if(bar.nextSibling !== stepperHolder){
+    bar.className = 'att-subtabs att-subtabs-sidebar';
+    navTab.insertAdjacentElement('afterend', bar);
+  } else if(bar.previousElementSibling !== navTab){
     // Bar exists but sits in the old position from a previous render — move it back to
-    // directly above the breadcrumb/stepper bar.
-    stepperHolder.parentNode.insertBefore(bar, stepperHolder);
+    // directly under the nav button.
+    navTab.insertAdjacentElement('afterend', bar);
   }
   bar.innerHTML = `
     <select id="attSubTabsSelect" class="att-subtab-select" onchange="switchAttSubView(this.value)">
