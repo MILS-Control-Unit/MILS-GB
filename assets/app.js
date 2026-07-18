@@ -7344,6 +7344,11 @@ function renderG12ExamAllSubjectsRowHtml(s, i, subjectsList, readOnly){
 }
 function renderG12AllSubjectsExamScreen(roster, holder, footNote){
   hideMonthPill();
+  // Grade 12 End-of-Year Mark Entry lists the whole grade in one table, so — unlike the
+  // per-class screens — it's reviewed here in alphabetical (A-Z) order by student name
+  // rather than registration order, to make a given student easy to find. This sort is
+  // local to this screen only; it doesn't touch `roster` itself or any other grade.
+  roster = roster.slice().sort((a,b)=> (a.name||'').localeCompare((b.name||''), undefined, {sensitivity:'base'}));
   const subjectsList = getSubjectsForGrade('secondary', 'g12', state.section);
   const readOnly = (currentUser && currentUser.effective && currentUser.effective.edit===false) || isCurrentUserGradeEntryLocked();
   const screenLabel = markEntryLabel(state.termPeriod, state.academicTerm);
