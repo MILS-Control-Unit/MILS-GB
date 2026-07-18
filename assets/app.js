@@ -3363,6 +3363,16 @@ function computeExamsAnalysis(section, stage, grade, classroom, term, mode, subj
     return { invalid:true, reason:'There are no students registered for this class yet.' };
   }
   const isG12 = (stage==='secondary' && grade==='g12');
+  if(isG12){
+    if(term!=='term2'){
+      return { invalid:true, reason:'Grade 12 has no Mark Entry under Term 1 — everything is recorded under Term 2 (End-of-Year).' };
+    }
+    // Grade 12 has only ONE Mark Entry screen — the End-of-Year Exam Paper. Whichever mode
+    // was picked from the Term/Mode menu above (Cycle 1, Cycle 2, Term Total, or End-of-Year
+    // Exam Paper itself), show that same End-of-Year breakdown instead of a dead end, since
+    // nothing else was ever recorded for this grade.
+    mode = 'finalexam';
+  }
   const allSubjects = getSubjectsForGrade(stage, grade, section);
   const subjects = subjectFilter ? allSubjects.filter(s=>s===subjectFilter) : allSubjects;
 
@@ -3370,12 +3380,8 @@ function computeExamsAnalysis(section, stage, grade, classroom, term, mode, subj
   // Certificates) covers every Stage/Grade including Grade 1 & 2 Primary (whose Term Total
   // is the Total Coursework alone, since their exam is a Pass/Fail badge, not numeric), so it
   // has no appliesToStage/junior restriction unlike the raw Cycle/Exam Paper fields below.
-  // EXCEPT Grade 12: it has no Month/Coursework Mark Entry at all — its only screen is the
-  // End-of-Year Exam Paper (see EXAM_FIELD_INFO.finalexam below) — so "Term Total" doesn't apply.
+  // (Grade 12 never reaches this branch — it's redirected to 'finalexam' above.)
   if(mode==='termtotal'){
-    if(isG12){
-      return { invalid:true, reason:'Grade 12 has no Term Total — its only Mark Entry screen is the End-of-Year Exam Paper. Choose "End-of-Year Exam Paper" instead.' };
-    }
     const junior = stage==='primary' && (grade==='g1' || grade==='g2');
     const columns = [];
     subjects.forEach(subject=>{
@@ -3461,13 +3467,19 @@ function renderExamsTable(){
     return;
   }
 
+  // Grade 12 only ever has the End-of-Year Exam Paper table — computeExamsAnalysis() redirects
+  // any Cycle/Term Total selection to that same data, so the label shown here should match what's
+  // actually displayed rather than repeating whatever mode happened to be picked from the menu.
+  const isG12 = (stage==='secondary' && grade==='g12');
+  const effectiveMode = isG12 ? 'finalexam' : mode;
+
   const result = computeExamsAnalysis(section, stage, grade, classroom, term, mode, subject);
   if(result.invalid){
     area.innerHTML = `<div class="empty-state"><div class="seal-lg">ℹ️</div><h3>Not applicable</h3><p>${escapeHtml(result.reason)}</p></div>`;
     return;
   }
   if(!result.columns.length){
-    area.innerHTML = `<div class="empty-state"><div class="seal-lg">ℹ️</div><h3>No scores recorded yet</h3><p>No subject has ${escapeHtml(getExamModeLabel(term, mode))} scores recorded for this class yet.</p></div>`;
+    area.innerHTML = `<div class="empty-state"><div class="seal-lg">ℹ️</div><h3>No scores recorded yet</h3><p>No subject has ${escapeHtml(getExamModeLabel(term, effectiveMode))} scores recorded for this class yet.</p></div>`;
     return;
   }
 
@@ -3509,7 +3521,7 @@ function renderExamsTable(){
     </div>
     <p class="foot-note">
       ${maxNote}
-      Only subjects with at least one recorded ${escapeHtml(getExamModeLabel(term, mode))} score for this class are included.
+      Only subjects with at least one recorded ${escapeHtml(getExamModeLabel(term, effectiveMode))} score for this class are included.
     </p>`;
 }
 
