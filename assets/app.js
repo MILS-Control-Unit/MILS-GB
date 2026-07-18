@@ -4026,11 +4026,6 @@ function renderCertReportsCards(){
             <div class="sig-name${hosName ? '' : ' is-placeholder'}">${hosName ? escapeHtml(hosName) : 'Not yet signed'}</div>
           </div>
           <div class="divider"></div>
-          <div class="box date-box">
-            <div class="sig-line">Date</div>
-            <div class="sig-name">${dateStr}</div>
-          </div>
-          <div class="divider"></div>
           <div class="box">
             <div class="sig-line">${escapeHtml(principalTitle)}</div>
             <div class="sig-name${principalName ? '' : ' is-placeholder'}">${principalName ? escapeHtml(principalName) : 'Not yet signed'}</div>
