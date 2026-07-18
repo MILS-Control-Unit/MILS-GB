@@ -1116,16 +1116,18 @@
       <div class="nav-dropdown" id="examsDropdownWrap">
         <button class="nav-tab" data-view="examsAnalysis" id="navTabExamsAnalysis" title="Exams Analysis" onclick="toggleExamsMenu(event)"><svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-examsanalysis"/></svg> Exams Analysis ▾</button>
         <div class="nav-dropdown-menu" id="examsMenu">
-          <button class="opt-btn term-group-btn" id="examsTermGroupBtn_term1" onclick="toggleExamsTermGroup(event,'term1')">Term 1 <span class="arrow">▸</span></button>
-          <div class="term-group" id="examsTermGroup_term1">
+          <div class="term-section-heading">Term 1</div>
+          <div class="term-group-static">
             <button class="opt-btn" onclick="openExamsAnalysis('term1','cycle1')">Cycle 1</button>
             <button class="opt-btn" onclick="openExamsAnalysis('term1','cycle2')">Cycle 2</button>
+            <button class="opt-btn" onclick="openExamsAnalysis('term1','termtotal')">Term Total</button>
             <button class="opt-btn" onclick="openExamsAnalysis('term1','finalexam')">First Term Exam Paper</button>
           </div>
-          <button class="opt-btn term-group-btn" id="examsTermGroupBtn_term2" onclick="toggleExamsTermGroup(event,'term2')">Term 2 <span class="arrow">▸</span></button>
-          <div class="term-group" id="examsTermGroup_term2">
+          <div class="term-section-heading">Term 2</div>
+          <div class="term-group-static">
             <button class="opt-btn" onclick="openExamsAnalysis('term2','cycle1')">Cycle 1</button>
             <button class="opt-btn" onclick="openExamsAnalysis('term2','cycle2')">Cycle 2</button>
+            <button class="opt-btn" onclick="openExamsAnalysis('term2','termtotal')">Term Total</button>
             <button class="opt-btn" onclick="openExamsAnalysis('term2','finalexam')">End-of-Year Exam Paper</button>
           </div>
         </div>
