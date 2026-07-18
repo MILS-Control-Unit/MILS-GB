@@ -3051,9 +3051,16 @@ function certSubjectResult(subject, studentId, type){
 
 // The subjects that actually apply to this particular student (Second Language and
 // Religion/Ch-Religion are mutually exclusive per student, so only one of each pair shows).
-function certApplicableSubjects(stage, student, section){
+function certApplicableSubjects(stage, student, section, grade){
   section = section || 'en';
-  const subjects = getSubjectsForStageAndSection(stage, section);
+  let subjects = getSubjectsForStageAndSection(stage, section);
+  // Grade 3 Primary certificates only: Social Studies and ICT are dropped, and Science
+  // is moved to the end of the subject list, ahead of every other Primary Stage grade
+  // which keeps the standard STAGES/FRENCH_SECTION_SUBJECTS subject order untouched.
+  if(stage==='primary' && grade==='g3'){
+    subjects = subjects.filter(sub=> sub!=='Social Studies' && sub!=='ICT');
+    subjects = subjects.filter(sub=> sub!=='Science').concat('Science');
+  }
   return subjects.filter(sub=>{
     if(isLanguageSubject(sub)){
       const expectedLang = getExpectedLang2ForSubject(sub, section);
@@ -3195,7 +3202,7 @@ function renderCertReportsCards(){
   const certYearShort = certYearParts.length===2 ? certYearParts[0].slice(2) + '-' + certYearParts[1].slice(2) : '';
 
   holder.innerHTML = roster.map(student=>{
-    const subjects = certApplicableSubjects(certState.stage, student, certState.section);
+    const subjects = certApplicableSubjects(certState.stage, student, certState.section, certState.grade);
     const certRefNo = `MILS-${certYearShort}-${(type||'').toUpperCase()}-${escapeHtml(student.displayId||student.id||'')}`;
     // Cycle scores are out of 5 for most grades, but Grade 7-8 Prep and Grade 10-11
     // Secondary use an extended Max.15 Cycle scale (see perfCycleMaxFor) — the subject
@@ -4082,7 +4089,7 @@ function addTeacherSignatureColumnToReportCards(holder, roster, reportType){
   cards.forEach((card, index)=>{
     const student = roster[index];
     if(!student) return;
-    const applicableSubjects = certApplicableSubjects(certState.stage, student, certState.section);
+    const applicableSubjects = certApplicableSubjects(certState.stage, student, certState.section, certState.grade);
     const table = card.querySelector('.cert-subjects, .cert2-table');
     if(!table || table.dataset.teacherColumnAdded==='1') return;
 
