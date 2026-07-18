@@ -1026,7 +1026,66 @@ function positionFixedNavMenu(wrap, menu){
   }
 })();
 
+// ===== Nav overflow: collapse the Reports & Analytics tabs into a "⋯ More"
+// menu below --nav-collapse-bp (kept in sync with the CSS media query on
+// .nav-more-wrap) instead of letting the nav bar wrap to a second row. The
+// four dropdowns are moved wholesale (not rebuilt) so their existing
+// toggle/open handlers, ids, and positionFixedNavMenu() logic keep working
+// unchanged wherever they currently live in the DOM. =====
+(function(){
+  function setupNavOverflowMenu(){
+  const COLLAPSE_IDS = ['dashboardDropdownWrap','examsDropdownWrap','perfDropdownWrap','examSchedDropdownWrap'];
+  const mq = window.matchMedia('(max-width: 1150px)');
+  const moreWrap = document.getElementById('navMoreWrap');
+  const moreMenu = document.getElementById('navMoreMenu');
+  if(!moreWrap || !moreMenu) return;
+
+  const slots = COLLAPSE_IDS.map(id=>{
+    const el = document.getElementById(id);
+    return el ? { el, parent: el.parentNode, next: el.nextSibling } : null;
+  }).filter(Boolean);
+
+  function applyState(compact){
+    if(compact){
+      slots.forEach(({el})=> moreMenu.appendChild(el));
+    } else {
+      slots.forEach(({el, parent, next})=>{
+        if(next && next.parentNode === parent) parent.insertBefore(el, next);
+        else parent.appendChild(el);
+      });
+      moreMenu.classList.remove('open');
+    }
+  }
+  applyState(mq.matches);
+  if(mq.addEventListener) mq.addEventListener('change', e=> applyState(e.matches));
+  else mq.addListener(e=> applyState(e.matches)); // Safari <14 fallback
+
+  let closeTimer;
+  const openNow = ()=>{ clearTimeout(closeTimer); positionFixedNavMenu(moreWrap, moreMenu); moreMenu.classList.add('open'); };
+  const scheduleClose = ()=>{ clearTimeout(closeTimer); closeTimer = setTimeout(()=> moreMenu.classList.remove('open'), 650); };
+  moreWrap.addEventListener('mouseenter', openNow);
+  moreWrap.addEventListener('mouseleave', scheduleClose);
+  moreMenu.addEventListener('mouseenter', openNow);
+  moreMenu.addEventListener('mouseleave', scheduleClose);
+  document.getElementById('navMoreBtn').addEventListener('click', (e)=>{
+    e.stopPropagation();
+    if(!moreMenu.classList.contains('open')) positionFixedNavMenu(moreWrap, moreMenu);
+    moreMenu.classList.toggle('open');
+  });
+  window.addEventListener('resize', ()=>{ if(moreMenu.classList.contains('open')) positionFixedNavMenu(moreWrap, moreMenu); });
+  }
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', setupNavOverflowMenu);
+  } else {
+    setupNavOverflowMenu();
+  }
+})();
+
 document.addEventListener('click', (e)=>{
+  if(!e.target.closest('#navMoreWrap')){
+    const mm = document.getElementById('navMoreMenu');
+    if(mm) mm.classList.remove('open');
+  }
   if(!e.target.closest('.stepper-item')){ openStep=null; renderStepper(); renderAttendanceStepper(); renderPerfFilterStepper(); }
   if(!e.target.closest('#dashboardDropdownWrap')){
     const dm = document.getElementById('dashboardMenu');

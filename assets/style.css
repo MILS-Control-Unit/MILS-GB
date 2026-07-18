@@ -512,6 +512,19 @@ body.dark-mode .masthead-text h1{
 .nav-tab.active::after{background:var(--tab-glow);}
 .nav-tab:not(.active):hover::after{background:var(--tab-glow);opacity:.45;}
 .nav-dropdown{position:relative;}
+/* "More" overflow menu: below --nav-collapse-bp the Reports & Analytics tabs
+   (Dashboard, Exams Analysis, Top & At-Risk, Exams Schedules) are moved by JS
+   out of the main row and into #navMoreMenu, so the bar keeps one tidy row
+   instead of wrapping to a second line on narrower screens. Items inside the
+   More menu are stacked as full-width rows rather than inline pills. */
+.nav-more-wrap{ display:none; }
+#navMoreMenu{ display:flex; flex-direction:column; gap:2px; min-width:210px; }
+#navMoreMenu .nav-dropdown{ width:100%; }
+#navMoreMenu .nav-tab{ width:100%; justify-content:flex-start; }
+#navMoreMenu .nav-dropdown-menu{ position:fixed; }
+@media (max-width: 1150px){
+  .nav-more-wrap{ display:inline-flex !important; }
+}
 .nav-dropdown-menu{
   display:block;position:absolute;top:100%;left:0;margin-top:8px;min-width:230px;
   background:var(--paper);border:1px solid var(--border);border-radius:10px;
