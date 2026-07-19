@@ -13811,8 +13811,8 @@ function reportCardReleaseLabel(rc){
   const style = document.createElement('style');
   style.id = 'rcCheckboxStyle';
   style.textContent = `
-    .rc-check-group{ display:grid; grid-template-columns:repeat(auto-fill,minmax(118px,1fr)); gap:8px 10px; margin-top:10px; grid-column:1 / -1; width:100%; box-sizing:border-box; }
-    .rc-check-chip{ display:flex; align-items:center; gap:7px; white-space:nowrap; padding:7px 12px; border:1.5px solid var(--line,#ddd); border-radius:9px; background:#fff; cursor:pointer; font-size:13px; font-weight:600; color:inherit; transition:border-color .15s, background .15s; box-sizing:border-box; }
+    .rc-check-group{ display:flex; flex-wrap:wrap; gap:8px 10px; margin-top:10px; grid-column:1 / -1; width:100%; box-sizing:border-box; }
+    .rc-check-chip{ display:flex; align-items:center; gap:7px; white-space:nowrap; padding:7px 12px; border:1.5px solid var(--line,#ddd); border-radius:9px; background:#fff; cursor:pointer; font-size:13px; font-weight:600; color:inherit; transition:border-color .15s, background .15s; box-sizing:border-box; flex:0 0 auto; }
     .rc-check-chip:hover{ border-color:var(--gold,#b8860b); }
     .rc-check-chip input[type=checkbox]{ width:15px; height:15px; margin:0; flex:none; accent-color:var(--gold,#b8860b); }
     .rc-check-chip.rc-check-all{ border-color:var(--gold,#b8860b); background:rgba(184,134,11,0.08); }
