@@ -4591,6 +4591,28 @@ function renderCertStudentPicker(){
     </select>`;
 }
 
+// Trims an already-built First/Second Month certificate table down to just the Subject +
+// Q.1-Q.4 + Q. Av. columns (the first 6 <th>/<td> cells of every row — true for every Month
+// Cert grade-band header: Junior, G3-6, Prep G7/8, Secondary G10/11 all lead with that exact
+// column order). Used for "Quizzes Only" Report Card Release — everything else in the
+// certificate (C.W./H.W./Oral/Beh.&Attend./Total/Cycle) stays hidden until the full report
+// is released separately.
+function trimMonthCertToQuizzesOnly(headHtml, bodyHtml){
+  const QUIZ_COLS = 6; // Subject, Q.1, Q.2, Q.3, Q.4, Q. Av.
+  const trimRow = (rowHtml, cellTag) => {
+    const openMatch = rowHtml.match(/^<tr[^>]*>/);
+    const open = openMatch ? openMatch[0] : '<tr>';
+    const cellRe = new RegExp(`<${cellTag}[\\s\\S]*?</${cellTag}>`, 'g');
+    const cells = (rowHtml.match(cellRe) || []).slice(0, QUIZ_COLS);
+    return open + cells.join('') + '</tr>';
+  };
+  const headRows = headHtml.match(/<tr[\s\S]*?<\/tr>/g) || [headHtml];
+  const newHead = headRows.map(r=> trimRow(r, 'th')).join('');
+  const bodyRows = bodyHtml.match(/<tr[\s\S]*?<\/tr>/g) || [];
+  const newBody = bodyRows.map(r=> trimRow(r, 'td')).join('');
+  return { headHtml: newHead, bodyHtml: newBody };
+}
+
 function renderCertReportsCards(){
   const holder = document.getElementById('certReportsHolder');
   let roster = certRosterFor(certState.section, certState.stage, certState.grade, certState.term);
@@ -4608,6 +4630,12 @@ function renderCertReportsCards(){
   const aiAvailable = aiTeacherAssistantAvailable();
   const gradeLabel = STAGES[certState.stage].grades.find(g=>g.id===certState.grade).label;
   const type = certState.reportType;
+  // Report Card Release "Quizzes Only" mode: Parent/Student viewers only, and only for
+  // First/Second Month certificates, when the active release for this exact
+  // Section/Term/Report Type/Grade was scheduled as Quizzes Only (see Report Card Release
+  // Configuration). Admins, staff and teachers always see the full certificate regardless.
+  const certQuizzesOnlyMode = isParentDashboardViewer() && (type==='month1' || type==='month2') &&
+    isReportCardQuizzesOnly(certState.section, certState.termPeriod, certState.reportType, certState.grade);
   const cardTitle = (CERT_REPORT_TITLES[type] || 'Report Card').toUpperCase();
   const hosSignatory = findAdminStructureSignatory(certState.section, certState.stage, 'hos');
   const hosName = hosSignatory && hosSignatory.name ? hosSignatory.name : HOS_NAME;
@@ -5379,9 +5407,21 @@ function renderCertReportsCards(){
       tableBodyHtml = rowsHtml + totalRow;
     }
 
+    // Report Card Release "Quizzes Only" mode — trims the table built above down to just the
+    // Subject + Q.1-Q.4 + Q. Av. columns. Only applies to Month Cert grade-bands that actually
+    // have quiz columns (Grade 9's Cycle-only layout has none, so it's left untouched — Grade 9
+    // Month certs simply follow the normal full-release gate).
+    if(certQuizzesOnlyMode && (isJuniorMonthCert || isG3G6MonthCert || isSecG1011MonthCert || isPrepG78MonthCert)){
+      const trimmed = trimMonthCertToQuizzesOnly(tableHeadHtml, tableBodyHtml);
+      tableHeadHtml = trimmed.headHtml;
+      tableBodyHtml = trimmed.bodyHtml;
+    }
+
     // Build the Teacher column before mounting the certificate, so it is included in
-    // on-screen preview, printing and PDF output for every report layout.
-    if(['month1','month2','coursework'].includes(type)){
+    // on-screen preview, printing and PDF output for every report layout. Skipped in
+    // Quizzes Only mode — the teacher sign-off belongs with the full certificate, not the
+    // early quiz-only preview.
+    if(['month1','month2','coursework'].includes(type) && !(certQuizzesOnlyMode && ['month1','month2'].includes(type))){
       const teacherColumn = appendTeacherSignatureColumnToReportMarkup(tableHeadHtml, tableBodyHtml, student, subjects, type);
       tableHeadHtml = teacherColumn.headHtml;
       tableBodyHtml = teacherColumn.bodyHtml;
@@ -5470,6 +5510,10 @@ function renderCertReportsCards(){
             <tbody>${tableBodyHtml}</tbody>
           </table>
         </div>
+        ${certQuizzesOnlyMode && (isJuniorMonthCert || isG3G6MonthCert || isSecG1011MonthCert || isPrepG78MonthCert) ? `
+        <div class="cert2-key" style="justify-content:center;">
+          <span class="lbl" style="color:var(--ink-soft);">Quizzes released early — the full report card follows later.</span>
+        </div>` : ''}
 
         ${showGradingKey ? `
         <div class="cert2-key">
@@ -13691,7 +13735,44 @@ function openReportCardReleaseModal(){
   loadReportCardReleases();
   renderReportCardReleaseTable();
   populateRcGradeOptions();
+  ensureRcQuizzesOnlyField();
   document.getElementById('reportCardReleaseOverlay').classList.add('show');
+}
+
+// Injects the "Quizzes Only" checkbox next to the Report Card Type select the first time the
+// modal opens (the field isn't in the static markup). Only relevant for First/Second Month
+// certificates — hidden and unchecked for every other Report Card type.
+function ensureRcQuizzesOnlyField(){
+  if(document.getElementById('rcQuizzesOnly')) return;
+  const reportTypeSel = document.getElementById('rcReportType');
+  if(!reportTypeSel) return;
+  const wrap = document.createElement('div');
+  wrap.id = 'rcQuizzesOnlyWrap';
+  wrap.style.display = 'none';
+  wrap.style.margin = '10px 0';
+  wrap.innerHTML = `
+    <label style="display:flex;align-items:flex-start;gap:8px;font-weight:600;cursor:pointer;">
+      <input type="checkbox" id="rcQuizzesOnly" style="width:16px;height:16px;margin-top:2px;">
+      <span>Quizzes Only — release Q. 1 - Q. 4 &amp; Quizzes Av. only, without the rest of the certificate</span>
+    </label>`;
+  const fieldContainer = reportTypeSel.closest('.form-row, .form-group') || reportTypeSel.parentElement;
+  fieldContainer.insertAdjacentElement('afterend', wrap);
+  reportTypeSel.addEventListener('change', toggleRcQuizzesOnlyVisibility);
+}
+
+// Shows the Quizzes Only checkbox only when the selected Report Card Type is a Month
+// certificate (Grade 9's Month cert has no quiz columns, but it's harmless to offer the
+// option there too — isReportCardQuizzesOnly() simply has no quiz columns to trim for it).
+function toggleRcQuizzesOnlyVisibility(){
+  const reportTypeSel = document.getElementById('rcReportType');
+  const wrap = document.getElementById('rcQuizzesOnlyWrap');
+  if(!reportTypeSel || !wrap) return;
+  const isMonthCert = reportTypeSel.value==='month1' || reportTypeSel.value==='month2';
+  wrap.style.display = isMonthCert ? '' : 'none';
+  if(!isMonthCert){
+    const cb = document.getElementById('rcQuizzesOnly');
+    if(cb) cb.checked = false;
+  }
 }
 
 function closeReportCardReleaseModal(){
@@ -13706,7 +13787,8 @@ function reportCardReleaseLabel(rc){
   const termLabel = TERM_LABELS[rc.termPeriod] || rc.termPeriod || '';
   const typeLabel = CERT_REPORT_TITLES[rc.reportType] || rc.reportType || '';
   const gradeLabel = rc.grade ? (GRADE_LABEL_BY_ID[rc.grade] || rc.grade) : 'All Grades';
-  return `${sectionLabel} — ${termLabel} — ${gradeLabel} — ${typeLabel}`;
+  const quizzesSuffix = rc.quizzesOnly ? ' (Quizzes Only)' : '';
+  return `${sectionLabel} — ${termLabel} — ${gradeLabel} — ${typeLabel}${quizzesSuffix}`;
 }
 
 // Repopulates the Grade select with every Grade across all Stages (flat list — Report Card
@@ -13739,6 +13821,7 @@ function populateRcReportTypeOptions(){
   sel.innerHTML = `<option value="">Select Report Card</option>` +
     opts.map(o=> `<option value="${o.id}">${escapeHtml(o.label)}</option>`).join('');
   if(opts.some(o=>o.id===prevVal)) sel.value = prevVal;
+  toggleRcQuizzesOnlyVisibility();
 }
 
 function renderReportCardReleaseTable(){
@@ -13773,7 +13856,7 @@ function renderReportCardReleaseTable(){
         <td>${escapeHtml(SECTIONS[rc.section] ? SECTIONS[rc.section].label : rc.section)}</td>
         <td>${escapeHtml(TERM_LABELS[rc.termPeriod] || rc.termPeriod)}</td>
         <td>${rc.grade ? escapeHtml(GRADE_LABEL_BY_ID[rc.grade] || rc.grade) : 'All Grades'}</td>
-        <td><b>${escapeHtml(CERT_REPORT_TITLES[rc.reportType] || rc.reportType)}</b></td>
+        <td><b>${escapeHtml(CERT_REPORT_TITLES[rc.reportType] || rc.reportType)}</b>${rc.quizzesOnly ? ' <span style="color:var(--accent, #b8860b);font-weight:700;">(Quizzes Only)</span>' : ''}</td>
         <td>${rc.releaseDate} ${rc.releaseTime}</td>
         <td>${rc.endDate ? rc.endDate + ' ' + rc.endTime : 'No end date'}</td>
         <td style="${statusColor};font-weight:700;">${status}</td>
@@ -13819,7 +13902,9 @@ function saveReportCardRelease(){
     }
   }
   
-  const rc = { section, termPeriod, grade, reportType, releaseDate, releaseTime, endDate, endTime, notes };
+  const quizzesOnlyCb = document.getElementById('rcQuizzesOnly');
+  const quizzesOnly = !!(quizzesOnlyCb && quizzesOnlyCb.checked && (reportType==='month1' || reportType==='month2'));
+  const rc = { section, termPeriod, grade, reportType, releaseDate, releaseTime, endDate, endTime, notes, quizzesOnly };
   reportCardReleases.push(rc);
   reportCardReleases.sort((a,b) => (a.releaseDate + a.releaseTime).localeCompare(b.releaseDate + b.releaseTime));
   
@@ -13842,6 +13927,10 @@ function editReportCardRelease(idx){
   if(gradeSel) gradeSel.value = rc.grade || '';
   populateRcReportTypeOptions();
   document.getElementById('rcReportType').value = rc.reportType || '';
+  ensureRcQuizzesOnlyField();
+  toggleRcQuizzesOnlyVisibility();
+  const quizzesOnlyCb = document.getElementById('rcQuizzesOnly');
+  if(quizzesOnlyCb) quizzesOnlyCb.checked = !!rc.quizzesOnly;
   document.getElementById('rcReleaseDate').value = rc.releaseDate;
   document.getElementById('rcReleaseTime').value = rc.releaseTime;
   document.getElementById('rcEndDate').value = rc.endDate || '';
@@ -13880,6 +13969,9 @@ function resetReportCardForm(){
   document.getElementById('rcTermPeriod').value = '';
   populateRcGradeOptions();
   populateRcReportTypeOptions();
+  const quizzesOnlyCb = document.getElementById('rcQuizzesOnly');
+  if(quizzesOnlyCb) quizzesOnlyCb.checked = false;
+  toggleRcQuizzesOnlyVisibility();
   document.getElementById('rcReleaseDate').value = '';
   document.getElementById('rcReleaseTime').value = '00:00';
   document.getElementById('rcEndDate').value = '';
@@ -13896,19 +13988,37 @@ function resetReportCardForm(){
 // Matches on Section + Academic Term + Report Card type, plus Grade if the record was scheduled
 // for a specific Grade. A release saved with "All Grades" (rc.grade blank) still matches every
 // Grade, so existing schedules created before this field was added keep working unchanged.
-function isReportCardVisible(section, termPeriod, reportType, grade){
+// Finds the currently-active Report Card Release record (release date reached, end date not
+// yet passed) for this exact Section/Term/Report Type, optionally scoped to a Grade. If more
+// than one active record matches (e.g. an earlier "Quizzes Only" release plus a later full
+// release), the full (non quizzesOnly) release wins — the most-permissive record decides what
+// the Parent/Student actually sees. Returns null if nothing currently applies.
+function activeReportCardReleaseFor(section, termPeriod, reportType, grade){
   const now = new Date();
-  for(let rc of reportCardReleases){
-    if(rc.section===section && rc.termPeriod===termPeriod && rc.reportType===reportType && (!rc.grade || rc.grade===grade)){
-      const releaseDateTime = new Date(rc.releaseDate + 'T' + rc.releaseTime);
-      const endDateTime = rc.endDate ? new Date(rc.endDate + 'T' + rc.endTime) : null;
-      
-      if(releaseDateTime <= now && (!endDateTime || endDateTime >= now)){
-        return true;
-      }
+  let match = null;
+  for(let rc of (reportCardReleases||[])){
+    if(rc.section!==section || rc.termPeriod!==termPeriod || rc.reportType!==reportType) continue;
+    if(rc.grade && rc.grade!==grade) continue;
+    const releaseDateTime = new Date(rc.releaseDate + 'T' + rc.releaseTime);
+    const endDateTime = rc.endDate ? new Date(rc.endDate + 'T' + rc.endTime) : null;
+    if(releaseDateTime <= now && (!endDateTime || endDateTime >= now)){
+      if(!match || (match.quizzesOnly && !rc.quizzesOnly)) match = rc;
     }
   }
-  return false;
+  return match;
+}
+
+function isReportCardVisible(section, termPeriod, reportType, grade){
+  return !!activeReportCardReleaseFor(section, termPeriod, reportType, grade);
+}
+
+// True only when the currently-active release for this Section/Term/Report Type/Grade was
+// scheduled as "Quizzes Only" — i.e. no full release is active yet. Powers the trimmed
+// Q.1-Q.4 / Q. Av.-only view for First/Second Month certificates (see certQuizzesOnlyMode
+// in renderCertReportsCards).
+function isReportCardQuizzesOnly(section, termPeriod, reportType, grade){
+  const rc = activeReportCardReleaseFor(section, termPeriod, reportType, grade);
+  return !!(rc && rc.quizzesOnly);
 }
 
 // Finds the most recently released report card (across both Academic Terms and every
