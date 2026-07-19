@@ -874,6 +874,15 @@ function perfFilterStepConfig(){
 function renderPerfFilterStepper(){
   const holder = document.getElementById('perfFilterStepper');
   if(!holder) return;
+  if(state.perfCycle === 'top10'){
+    // Top 10 always ranks every student across the WHOLE Stage (every Grade in it, see
+    // PERF_TOP10_BUCKETS/computeTop10ForBucket above) per Section — it never scopes down to
+    // one Grade/Class, so the usual Section > Stage > Grade > Class filter has no effect on
+    // it. Hiding it here instead of leaving a stale/unrelated selection sitting next to the
+    // table avoids the false impression that the table is filtered by it.
+    holder.innerHTML = `<p class="foot-note" style="margin:0 0 8px;">🏆 Top 10 ranks students within each Grade separately (all Classes in that Grade combined) — the Section/Stage/Grade/Class filter doesn't apply to this view; every Section and Grade is shown below.</p>`;
+    return;
+  }
   buildStepperHTML('perfFilterStepper', perfFilterStepConfig(), 'pf-');
 }
 
@@ -1468,12 +1477,13 @@ function perfCycleLabel(term, cycle){
 }
 
 /* ================== Top & At-Risk: "Top 10" (Term 1 / Term 2) ==================
-   A separate ranking view from the Cycle/Exam alert lists above — for each Stage-bucket
-   below, ranks every student in that bucket (combining every Grade in it) by ONE metric for
-   the chosen Term, and shows the top 10 by rank (ties at the 10th place are ALL included, so
-   the list can run longer than 10 rows — "مراعاة المراكز المكررة"). Section (English/French)
-   is kept separate, same as everywhere else in the app, since the two sections don't
-   necessarily share the same student cohort or subjects.
+   A separate ranking view from the Cycle/Exam alert lists above — for each Grade within a
+   Stage-bucket below, ranks every student in that Grade (all Classes in it combined) by ONE
+   metric for the chosen Term, and shows the top 10 by rank (ties at the 10th place are ALL
+   included, so the list can run longer than 10 rows — "مراعاة المراكز المكررة"). Each Grade
+   gets its own separate list — a Grade 1 student never competes against a Grade 2 student.
+   Section (English/French) is kept separate, same as everywhere else in the app, since the
+   two sections don't necessarily share the same student cohort or subjects.
    - Primary Stage (Grade 1-6): ranked by Total Term — the same "Total" percentage shown as
      the subtotal row on the Primary Report Card certificate (summed across its core subjects
      for Grade 3-6; averaged across every subject for Grade 1-2, which have no such subtotal
@@ -1542,28 +1552,28 @@ function perfTop10ActualMark(section, stage, grade, student, term, coreSubjects,
   });
   return any && coreMax ? { pct:(sum/coreMax)*100, raw:sum, max:coreMax } : null;
 }
-// Ranks every student across every Grade in the bucket by that bucket's metric, then keeps
-// every row with rank<=10 using standard competition ranking (ties share a rank, and the next
-// distinct value's rank skips ahead accordingly) — so a tie sitting exactly on the 10th place
-// keeps every tied student rather than arbitrarily cutting the list at a fixed row count.
-function computeTop10ForBucket(section, bucket, term){
+// Ranks every student within ONE Grade by that bucket's metric, then keeps every row with
+// rank<=10 using standard competition ranking (ties share a rank, and the next distinct value's
+// rank skips ahead accordingly) — so a tie sitting exactly on the 10th place keeps every tied
+// student rather than arbitrarily cutting the list at a fixed row count. Ranking is scoped to
+// one Grade at a time (not the whole Stage) so classes across different Grades never compete
+// against each other in the same list.
+function computeTop10ForGrade(section, bucket, grade, term){
   const rows = [];
-  bucket.grades.forEach(grade=>{
-    const ck = `${section}|${bucket.stage}|${grade}`;
-    const roster = visibleRoster(students[ck]);
-    roster.forEach(s=>{
-      let pct=null, raw=null, max=null;
-      if(bucket.key==='primary'){
-        pct = perfTop10PrimaryPct(section, grade, s, term);
-      }else{
-        const coreSubjects = bucket.stage==='prep' ? PREP_ACTUAL_MARK_CORE_SUBJECTS : SEC_ACTUAL_MARK_CORE_SUBJECTS;
-        const actualMap = bucket.stage==='prep' ? PREP_ACTUAL_MARK_MAP : SEC_ACTUAL_MARK_MAP;
-        const r = perfTop10ActualMark(section, bucket.stage, grade, s, term, coreSubjects, actualMap);
-        if(r){ pct = r.pct; raw = r.raw; max = r.max; }
-      }
-      if(pct===null || isNaN(pct)) return;
-      rows.push({ id:s.id, displayId:s.displayId||'—', name:s.name, grade, classroom:s.classroom||'', pct, raw, max });
-    });
+  const ck = `${section}|${bucket.stage}|${grade}`;
+  const roster = visibleRoster(students[ck]);
+  roster.forEach(s=>{
+    let pct=null, raw=null, max=null;
+    if(bucket.key==='primary'){
+      pct = perfTop10PrimaryPct(section, grade, s, term);
+    }else{
+      const coreSubjects = bucket.stage==='prep' ? PREP_ACTUAL_MARK_CORE_SUBJECTS : SEC_ACTUAL_MARK_CORE_SUBJECTS;
+      const actualMap = bucket.stage==='prep' ? PREP_ACTUAL_MARK_MAP : SEC_ACTUAL_MARK_MAP;
+      const r = perfTop10ActualMark(section, bucket.stage, grade, s, term, coreSubjects, actualMap);
+      if(r){ pct = r.pct; raw = r.raw; max = r.max; }
+    }
+    if(pct===null || isNaN(pct)) return;
+    rows.push({ id:s.id, displayId:s.displayId||'—', name:s.name, grade, classroom:s.classroom||'', pct, raw, max });
   });
   if(!rows.length) return [];
   rows.sort((a,b)=> b.pct-a.pct || a.name.localeCompare(b.name));
@@ -1587,30 +1597,32 @@ function renderPerfTop10(term){
     const sectionLabel = (SECTIONS[section] && SECTIONS[section].label) || section;
     html += `<h3 style="margin:18px 0 8px;">${escapeHtml(sectionLabel)}</h3>`;
     PERF_TOP10_BUCKETS.forEach(bucket=>{
-      const rows = computeTop10ForBucket(section, bucket, term);
-      html += `<div class="table-card" style="margin-bottom:14px;">
-        <h4 style="margin:0 0 8px;">${escapeHtml(bucket.label)} — Top 10 (${escapeHtml(bucket.metricLabel)})</h4>`;
-      if(!rows.length){
-        html += `<p class="foot-note">No scores recorded yet for this Section/Stage.</p></div>`;
-        return;
-      }
-      const bodyRows = rows.map(r=>`
-        <tr>
-          <td class="range-cell">${r.rank}</td>
-          <td>${escapeHtml(r.displayId)}</td>
-          <td>${escapeHtml(r.name)}</td>
-          <td>${escapeHtml(GRADE_LABEL_BY_ID[r.grade]||r.grade)}</td>
-          <td>${escapeHtml(r.classroom||'—')}</td>
-          <td><b>${r.pct.toFixed(1)}%</b>${r.raw!=null ? ` <small>(${Math.round(r.raw*10)/10}/${r.max})</small>` : ''}</td>
-        </tr>`).join('');
-      html += `
-        <div class="grade-table-scroll">
-          <table class="exam-analysis-table">
-            <thead><tr><th class="range-cell">Rank</th><th>ID</th><th>Name</th><th>Grade</th><th>Class</th><th>${escapeHtml(bucket.metricLabel)}</th></tr></thead>
+      bucket.grades.forEach(grade=>{
+        const gradeLabel = GRADE_LABEL_BY_ID[grade] || grade;
+        const rows = computeTop10ForGrade(section, bucket, grade, term);
+        html += `<div class="table-card" style="margin-bottom:14px;">
+          <h4 style="margin:0 0 8px;">${escapeHtml(gradeLabel)} — Top 10 (${escapeHtml(bucket.metricLabel)})</h4>`;
+        if(!rows.length){
+          html += `<p class="foot-note">No scores recorded yet for this Section/Grade.</p></div>`;
+          return;
+        }
+        const bodyRows = rows.map(r=>`
+          <tr>
+            <td class="range-cell">${r.rank}</td>
+            <td>${escapeHtml(r.displayId)}</td>
+            <td>${escapeHtml(r.name)}</td>
+            <td>${escapeHtml(r.classroom||'—')}</td>
+            <td><b>${r.pct.toFixed(1)}%</b>${r.raw!=null ? ` <small>(${Math.round(r.raw*10)/10}/${r.max})</small>` : ''}</td>
+          </tr>`).join('');
+        html += `
+          <div class="grade-table-scroll">
+            <table class="exam-analysis-table">
+              <thead><tr><th class="range-cell">Rank</th><th>ID</th><th>Name</th><th>Class</th><th>${escapeHtml(bucket.metricLabel)}</th></tr></thead>
             <tbody>${bodyRows}</tbody>
           </table>
         </div>
       </div>`;
+      });
     });
   });
   html += `<p class="foot-note">Ties sitting exactly on the 10th place are all included — so a list may show more than 10 rows.</p>`;
@@ -6696,6 +6708,16 @@ function scoreInputGroupClass(field){
   return '';
 }
 
+// Cycle score cells (Cycle 1 / Cycle 2, everywhere they're recorded — Primary, Prep and
+// Secondary): flags a cell in red once a score has been entered that's below HALF of that
+// cell's own maximum (e.g. below 2.5/5, or below 7.5/15). Nothing entered yet, or the max
+// not set yet (Grade 3 flexible maxima), is left unstyled rather than falsely flagged.
+function lowCycleScoreStyle(value, max){
+  if(value===null || value===undefined || value==='' || !isMaxSet(max)) return '';
+  const v = parseFloat(value);
+  if(isNaN(v)) return '';
+  return v < (max/2) ? ' style="background:#fbdcdb;"' : '';
+}
 function scoreInputHtml(studentId, field, value, max, lockedReason){
   const v = (value===null||value===undefined) ? '' : value;
   const groupClass = scoreInputGroupClass(field);
@@ -8156,7 +8178,7 @@ function renderPrimaryMonth1JuniorRowHtml(s, i, sc, g3Maxima){
           <td>${scoreInputHtml(s.id,'m1Oral',sc.m1Oral,10)}</td>
           <td>${scoreInputHtml(s.id,'m1Beh',sc.m1Beh,5)}</td>
           <td class="total-cell">${Math.round(t.month1Total*10)/10}</td>
-          <td class="cycle-cell">${scoreInputHtml(s.id,'m1Cycle',sc.m1Cycle,5, sc.m1CycleAtt==='A' ? 'Student marked Absent for Cycle 1' : null)}${cycleAttButtonHtml(s.id,'m1CycleAtt',sc.m1CycleAtt)}</td>
+          <td class="cycle-cell"${lowCycleScoreStyle(sc.m1Cycle,5)}>${scoreInputHtml(s.id,'m1Cycle',sc.m1Cycle,5, sc.m1CycleAtt==='A' ? 'Student marked Absent for Cycle 1' : null)}${cycleAttButtonHtml(s.id,'m1CycleAtt',sc.m1CycleAtt)}</td>
           <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
         </tr>`;
 }
@@ -8182,7 +8204,7 @@ function renderPrimaryMonth1RowHtml(s, i, sc, g3Maxima, extended, qMult, cwMax, 
         ${secondFieldCell}
         <td>${scoreInputHtml(s.id,'m1Beh',sc.m1Beh,behMax)}</td>
         <td class="total-cell">${Math.round((qAv + secondFieldVal + (parseFloat(sc.m1Beh)||0))*10)/10}</td>
-        <td class="cycle-cell">${scoreInputHtml(s.id,'m1Cycle',sc.m1Cycle, cycleMax, sc.m1CycleAtt==='A' ? 'Student marked Absent for Cycle 1' : null)}${cycleAttButtonHtml(s.id,'m1CycleAtt',sc.m1CycleAtt)}</td>
+        <td class="cycle-cell"${lowCycleScoreStyle(sc.m1Cycle,cycleMax)}>${scoreInputHtml(s.id,'m1Cycle',sc.m1Cycle, cycleMax, sc.m1CycleAtt==='A' ? 'Student marked Absent for Cycle 1' : null)}${cycleAttButtonHtml(s.id,'m1CycleAtt',sc.m1CycleAtt)}</td>
         <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
 }
@@ -8289,7 +8311,7 @@ function renderPrimaryMonth2JuniorRowHtml(s, i, sc, g3Maxima){
           <td>${scoreInputHtml(s.id,'m2Oral',sc.m2Oral,10)}</td>
           <td>${scoreInputHtml(s.id,'m2Beh',sc.m2Beh,5)}</td>
           <td class="total-cell">${Math.round(t.month2Total*10)/10}</td>
-          <td class="cycle-cell">${scoreInputHtml(s.id,'m2Cycle',sc.m2Cycle,5, sc.m2CycleAtt==='A' ? 'Student marked Absent for Cycle 2' : null)}${cycleAttButtonHtml(s.id,'m2CycleAtt',sc.m2CycleAtt)}</td>
+          <td class="cycle-cell"${lowCycleScoreStyle(sc.m2Cycle,5)}>${scoreInputHtml(s.id,'m2Cycle',sc.m2Cycle,5, sc.m2CycleAtt==='A' ? 'Student marked Absent for Cycle 2' : null)}${cycleAttButtonHtml(s.id,'m2CycleAtt',sc.m2CycleAtt)}</td>
           <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
         </tr>`;
 }
@@ -8315,7 +8337,7 @@ function renderPrimaryMonth2RowHtml(s, i, sc, g3Maxima, extended, qMult, cwMax, 
         ${secondFieldCell}
         <td>${scoreInputHtml(s.id,'m2Beh',sc.m2Beh,behMax)}</td>
         <td class="total-cell">${Math.round((qAv + secondFieldVal + (parseFloat(sc.m2Beh)||0))*10)/10}</td>
-        <td class="cycle-cell">${scoreInputHtml(s.id,'m2Cycle',sc.m2Cycle, cycleMax, sc.m2CycleAtt==='A' ? 'Student marked Absent for Cycle 2' : null)}${cycleAttButtonHtml(s.id,'m2CycleAtt',sc.m2CycleAtt)}</td>
+        <td class="cycle-cell"${lowCycleScoreStyle(sc.m2Cycle,cycleMax)}>${scoreInputHtml(s.id,'m2Cycle',sc.m2Cycle, cycleMax, sc.m2CycleAtt==='A' ? 'Student marked Absent for Cycle 2' : null)}${cycleAttButtonHtml(s.id,'m2CycleAtt',sc.m2CycleAtt)}</td>
         <td><button class="del-btn" onclick="deleteStudent('${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
       </tr>`;
 }
