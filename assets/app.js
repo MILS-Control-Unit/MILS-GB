@@ -13802,6 +13802,25 @@ function reportCardReleaseLabel(rc){
   return `${sectionLabel} — ${termLabel} — ${gradeLabel} — ${typeLabel}${quizzesSuffix}`;
 }
 
+// One-time style injection for the Report Card Release "Grade" / "Report Card Type"
+// checkbox groups — laid out as a responsive chip grid (not a plain flex-wrap list) so it
+// reads cleanly regardless of how narrow the column it's injected into is, and forces itself
+// to span the full form width via grid-column:1/-1 even inside the 3-column field row.
+(function injectRcCheckboxStyle(){
+  if(document.getElementById('rcCheckboxStyle')) return;
+  const style = document.createElement('style');
+  style.id = 'rcCheckboxStyle';
+  style.textContent = `
+    .rc-check-group{ display:grid; grid-template-columns:repeat(auto-fill,minmax(118px,1fr)); gap:8px 10px; margin-top:10px; grid-column:1 / -1; width:100%; box-sizing:border-box; }
+    .rc-check-chip{ display:flex; align-items:center; gap:7px; white-space:nowrap; padding:7px 12px; border:1.5px solid var(--line,#ddd); border-radius:9px; background:#fff; cursor:pointer; font-size:13px; font-weight:600; color:inherit; transition:border-color .15s, background .15s; box-sizing:border-box; }
+    .rc-check-chip:hover{ border-color:var(--gold,#b8860b); }
+    .rc-check-chip input[type=checkbox]{ width:15px; height:15px; margin:0; flex:none; accent-color:var(--gold,#b8860b); }
+    .rc-check-chip.rc-check-all{ border-color:var(--gold,#b8860b); background:rgba(184,134,11,0.08); }
+    .rc-check-empty{ grid-column:1 / -1; color:var(--ink-soft,#888); font-size:13px; }
+  `;
+  document.head.appendChild(style);
+})();
+
 // Replaces the (now hidden) Grade <select> with a checkbox group so Admin can release to
 // several specific Grades at once instead of picking exactly one, or leave "All Grades"
 // checked (the default) to apply to every Grade in the Section — same meaning as before this
@@ -13821,21 +13840,20 @@ function renderRcGradeCheckboxes(){
   const sel = document.getElementById('rcGrade');
   if(!sel) return;
   let box = document.getElementById('rcGradeCheckboxes');
-  const isNew = !box;
-  if(isNew){
+  if(!box){
     box = document.createElement('div');
     box.id = 'rcGradeCheckboxes';
-    box.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;';
+    box.className = 'rc-check-group';
     sel.insertAdjacentElement('afterend', box);
   }
   const prevChecked = new Set(Array.from(box.querySelectorAll('.rc-grade-cb:checked')).map(cb=>cb.value));
   const prevAllChecked = box.querySelector('#rcGradeAll') ? box.querySelector('#rcGradeAll').checked : true;
   box.innerHTML = `
-    <label style="display:flex;align-items:center;gap:6px;font-weight:700;">
+    <label class="rc-check-chip rc-check-all">
       <input type="checkbox" id="rcGradeAll" ${(prevChecked.size===0 || prevAllChecked) ? 'checked' : ''}> All Grades
     </label>` +
     ALL_GRADE_IDS.map(gid=> `
-    <label style="display:flex;align-items:center;gap:6px;">
+    <label class="rc-check-chip">
       <input type="checkbox" class="rc-grade-cb" value="${gid}" ${prevChecked.has(gid) ? 'checked' : ''}> ${escapeHtml(GRADE_LABEL_BY_ID[gid])}
     </label>`).join('');
   const allCb = document.getElementById('rcGradeAll');
@@ -13905,15 +13923,15 @@ function renderRcReportTypeCheckboxes(opts){
   if(!box){
     box = document.createElement('div');
     box.id = 'rcReportTypeCheckboxes';
-    box.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;';
+    box.className = 'rc-check-group';
     sel.insertAdjacentElement('afterend', box);
   }
   const prevChecked = new Set(Array.from(box.querySelectorAll('.rc-type-cb:checked')).map(cb=>cb.value));
   if(!opts || !opts.length){
-    box.innerHTML = `<span style="color:var(--ink-soft);">Select Academic Term first</span>`;
+    box.innerHTML = `<span class="rc-check-empty">Select Academic Term first</span>`;
   } else {
     box.innerHTML = opts.map(o=> `
-      <label style="display:flex;align-items:center;gap:6px;">
+      <label class="rc-check-chip">
         <input type="checkbox" class="rc-type-cb" value="${o.id}" ${prevChecked.has(o.id) ? 'checked' : ''}> ${escapeHtml(o.label)}
       </label>`).join('');
     Array.from(box.querySelectorAll('.rc-type-cb')).forEach(cb=> cb.addEventListener('change', toggleRcQuizzesOnlyVisibility));
