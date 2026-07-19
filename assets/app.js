@@ -3453,6 +3453,43 @@ function computeExamsAnalysis(section, stage, grade, classroom, term, mode, subj
   return { invalid:false, columns, max:stageMax };
 }
 
+/* Exams Analysis' own bar chart — deliberately separate from svgBarChart/svgGroupedBarChart
+   above (whose gridlines are fixed at the literal values 0,1,2,3,4,5 regardless of maxVal,
+   which only reads correctly when maxVal happens to be small) since here maxVal varies a lot
+   — a roster's total student count for the per-subject distribution chart, or a flat 100 for
+   the pass-rate-by-subject chart — so gridlines are spaced proportionally to whatever maxVal
+   is passed in, and each bar can carry its own color (used to match each score band's color
+   from the table above it). */
+function svgExamsBarChart(items, maxVal){
+  const w = 640, h = 300, padL=40, padB=64, padT=20, padR=16;
+  const chartW = w-padL-padR, chartH = h-padT-padB;
+  const n = items.length || 1;
+  const gap = 16;
+  const slot = (chartW - gap*(n-1))/n;
+  const barW = Math.max(14, slot*0.62);
+  const safeMax = maxVal>0 ? maxVal : 1;
+  let bars = '', labels = '';
+  items.forEach((it,i)=>{
+    const val = (it.value===null || it.value===undefined || isNaN(it.value)) ? 0 : it.value;
+    const bh = (val/safeMax) * chartH;
+    const x = padL + i*(slot+gap/n) + (slot-barW)/2;
+    const y = padT + chartH - bh;
+    const shownVal = Number.isInteger(val) ? val : val.toFixed(1);
+    bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" rx="4" fill="${it.color||'var(--blue)'}"></rect>
+      <text x="${(x+barW/2).toFixed(1)}" y="${(y-6).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink)">${it.value==null?'—':shownVal}</text>`;
+    labels += `<text x="${(x+barW/2).toFixed(1)}" y="${h-padB+16}" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)" transform="rotate(-18 ${(x+barW/2).toFixed(1)} ${h-padB+16})">${escapeXml(it.label)}</text>`;
+  });
+  const steps = 5;
+  let gridLines = '';
+  for(let g=0; g<=steps; g++){
+    const y = padT + chartH - (g/steps)*chartH;
+    const gv = safeMax * g/steps;
+    gridLines += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${w-padR}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="1"></line>
+      <text x="${padL-8}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--ink-soft)">${Math.round(gv)}</text>`;
+  }
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;">${gridLines}${bars}${labels}</svg>`;
+}
+
 function renderExamsTable(){
   const area = document.getElementById('examsTableArea');
   if(!area) return;
@@ -3507,6 +3544,30 @@ function renderExamsTable(){
     ? `Percentages are calculated against this column's own maximum grade (Max. ${sharedMax}) as shown in the mark-entry tables.`
     : `Percentages are calculated against each subject's own maximum grade — shown next to its name above — as shown in the Grade 12 Mark Entry table.`;
 
+  // A Subject is chosen in the filter above -> one subject's own score-range distribution
+  // (mirrors the table's own rows/columns exactly, just as a chart). No Subject chosen ->
+  // compare Pass Rate (share of students scoring 50% or above) across every subject shown,
+  // since raw score bands aren't comparable across subjects with different maximum marks.
+  let chartTitle, chartSvg;
+  if(subject && result.columns.length===1){
+    const c = result.columns[0];
+    const items = SCORE_BANDS.map((band,i)=> ({ label: band.label, value: c.bandCounts[i], color: band.fg }));
+    chartTitle = `Score Distribution — ${escapeHtml(c.subject)} (number of students)`;
+    chartSvg = svgExamsBarChart(items, Math.max(c.total, 1));
+  }else{
+    const items = result.columns.map(c=>{
+      const passRate = c.total ? (100 - (c.bandCounts[0]/c.total*100)) : 0;
+      return { label: c.subject, value: passRate, color: 'var(--blue)' };
+    });
+    chartTitle = 'Pass Rate by Subject (% scoring 50% or above)';
+    chartSvg = svgExamsBarChart(items, 100);
+  }
+  const chartSection = `
+    <div class="table-card" style="margin-top:16px;">
+      <h4 style="margin:0 0 10px;">${chartTitle}</h4>
+      ${chartSvg}
+    </div>`;
+
   area.innerHTML = `
     <div class="table-card">
       <div class="grade-table-scroll">
@@ -3519,6 +3580,7 @@ function renderExamsTable(){
         </table>
       </div>
     </div>
+    ${chartSection}
     <p class="foot-note">
       ${maxNote}
       Only subjects with at least one recorded ${escapeHtml(getExamModeLabel(term, effectiveMode))} score for this class are included.
