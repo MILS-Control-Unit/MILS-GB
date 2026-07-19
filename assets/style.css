@@ -104,10 +104,11 @@ body{
 .logo-pair{display:flex;align-items:center;gap:18px;flex-shrink:0;}
 .school-logo{
   height:78px;width:auto;object-fit:contain;
-  mix-blend-mode:multiply;filter:contrast(1.04);
+  background:#fff;border-radius:10px;padding:6px 10px;
+  box-shadow:0 2px 6px rgba(0,0,0,0.15);
 }
 body.dark-mode .school-logo{
-  mix-blend-mode:normal;background:var(--paper);border-radius:6px;padding:3px;
+  background:var(--paper);border-radius:10px;padding:6px 10px;
 }
 .logo-divider{width:1.5px;height:64px;background:linear-gradient(180deg, transparent, var(--border) 20%, var(--border) 80%, transparent);}
 
