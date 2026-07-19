@@ -646,7 +646,7 @@ function switchView(view){
     // ✅ إذا كانت قائمة المدرسين فارغة وكان Firestore متاحاً
     // حاول جلب البيانات مباشرة (قد تكون الـ sync الحي لم تصل بعد عند البداية)
     if(teachers.length === 0 && githubReady() && fbDb){
-      FB_DOC_REF.get().then(snap => {
+      FB_TEACHERS_DOC_REF.get().then(snap => {
         if(snap.exists){
           const data = snap.data();
           if(data && Array.isArray(data.teachers) && data.teachers.length > 0){
@@ -8574,21 +8574,79 @@ function mergeActivityLogEntries(remoteArr, localArr){
   return Object.values(map).sort((a,b)=> b.ts-a.ts).slice(0, ACTIVITY_LOG_MAX);
 }
 
-// ---- pushMainDoc(): students/scores/attendance/activityLog/config — NO teachers, NO users.
-// Editing a Teacher or a Parent/Student account never reaches this function or this
-// document at all anymore (see pushTeachersDoc/pushUsersDocs below).
-async function pushMainDoc(){
+/* ---------- Per-class document split helpers ----------
+   `students` is keyed directly by classKey ("section|stage|grade"). `scores`,
+   `attendance` and `approvedLeave` use longer composite keys that all START with that
+   same classKey ("section|stage|grade|term|subject", "...|classroom|termPeriod|term|
+   subject|academicTerm", etc.) — classKeyOfDataKey() below recovers the classKey from
+   any of those by taking the first 3 pipe-separated segments, since section/stage/grade
+   values never themselves contain "|". */
+function classKeyOfDataKey(fullKey){
+  return String(fullKey).split('|').slice(0,3).join('|');
+}
+// Firestore document IDs can't contain "/", but to keep them readable and avoid any
+// edge-case character issues, classKey's "|" separators are swapped for "__".
+function classDocId(ck){
+  return String(ck).replace(/\|/g, '__');
+}
+function classDocRef(ck){
+  return FB_CLASSES_COL.doc(classDocId(ck));
+}
+// Groups the four classKey-scoped in-memory objects into one slice per classKey, in a
+// single pass over each object (rather than re-scanning per class), so this stays cheap
+// even with many classes/subjects/terms of accumulated data.
+function buildAllClassSlices(){
+  const out = {};
+  const ensure = ck => (out[ck] = out[ck] || { students:[], scores:{}, attendance:{}, approvedLeave:{} });
+  Object.keys(students).forEach(ck=>{ ensure(ck).students = students[ck]; });
+  Object.keys(scores).forEach(k=>{ ensure(classKeyOfDataKey(k)).scores[k] = scores[k]; });
+  Object.keys(attendance).forEach(k=>{ ensure(classKeyOfDataKey(k)).attendance[k] = attendance[k]; });
+  Object.keys(approvedLeave).forEach(k=>{ ensure(classKeyOfDataKey(k)).approvedLeave[k] = approvedLeave[k]; });
+  return out;
+}
+// Cache of the last slice (per classKey) known to be in sync with the server — set after
+// a successful push of that class, or after accepting a remote class snapshot wholesale
+// (no local pending edits for it). computeDirtyClassKeys() diffs the CURRENT in-memory
+// slice against this cache to find only the classes that actually changed since — this is
+// what lets the Save button skip every untouched class instead of pushing all of them.
+let lastSyncedClassJson = {};
+function computeDirtyClassKeys(){
+  const slices = buildAllClassSlices();
+  const dirty = [];
+  Object.keys(slices).forEach(ck=>{
+    const json = JSON.stringify(slices[ck]);
+    if(lastSyncedClassJson[ck] !== json) dirty.push(ck);
+  });
+  return { dirty, slices };
+}
+// Used by applyClassPayload(): merges a remote class snapshot's scores/attendance/
+// approvedLeave into the matching GLOBAL object, replacing this classKey's own keys only —
+// every other class's keys in that same global object are left completely untouched.
+function mergeOrReplaceClassKeys(globalObj, ck, remoteSubObj){
+  const remoteKeys = Object.keys(remoteSubObj||{});
+  if(gbUnsavedChanges){
+    // There are unsaved edits sitting somewhere in the Grade Book (not necessarily in this
+    // class) — matches the old whole-doc behavior: local keeps any key it already has,
+    // remote only fills in keys local doesn't have yet, scoped to this class.
+    remoteKeys.forEach(k=>{ if(!(k in globalObj)) globalObj[k] = remoteSubObj[k]; });
+  }else{
+    // No pending local edits anywhere — safe to replace this class's slice wholesale.
+    Object.keys(globalObj).forEach(k=>{ if(classKeyOfDataKey(k)===ck) delete globalObj[k]; });
+    remoteKeys.forEach(k=> globalObj[k] = remoteSubObj[k]);
+  }
+}
+
+// ---- pushMetaDoc(): everything that ISN'T tied to one class — activityLog/config/
+// studentIdCounter/etc. NO students/scores/attendance/approvedLeave (see pushClassDoc
+// below for those), NO teachers, NO users.
+async function pushMetaDoc(){
   try{
     let newVersion = 0;
     await fbDb.runTransaction(async (tx)=>{
-      const snap = await tx.get(FB_DOC_REF);
+      const snap = await tx.get(FB_META_DOC_REF);
       const remote = (snap.exists ? snap.data() : null) || {};
       newVersion = (remote.dataVersion || 0) + 1;
       const merged = {
-        students: mergeObjectField(remote.students, students),
-        scores: mergeObjectField(remote.scores, scores),
-        attendance: mergeObjectField(remote.attendance, attendance),
-        approvedLeave: mergeObjectField(remote.approvedLeave, approvedLeave),
         studentIdCounter: Math.max(remote.studentIdCounter||1, studentIdCounter||1),
         activityLog: mergeActivityLogEntries(remote.activityLog, activityLog),
         termMonthDates: termMonthDates || remote.termMonthDates || null,
@@ -8597,10 +8655,8 @@ async function pushMainDoc(){
         bellTimes: bellTimes || remote.bellTimes || null,
         adminStructure: adminStructure || remote.adminStructure || null,
         blockedStudentIds: blockedStudentIds || remote.blockedStudentIds || [],
-        // Grade 3 Flexible "Set Quiz Max. Score" values — merged the same key-by-key
-        // way as students/scores/attendance above, since it's an object keyed by
-        // subject. This used to be missing entirely, which is why these boxes never
-        // synced across devices/browsers.
+        // Grade 3 Flexible "Set Quiz Max. Score" values — kept here since it's keyed only
+        // by subject, not by class.
         grade3FlexibleMaxima: mergeObjectField(remote.grade3FlexibleMaxima, grade3FlexibleMaximaBySubject),
         gradeEntryLockRules: normalizeGradeEntryLockRules(gradeEntryLockRules),
         presenceBucket: presenceBucket || remote.presenceBucket || null,
@@ -8610,18 +8666,69 @@ async function pushMainDoc(){
         // termMonthDates/examSchedules/bellTimes above), since these are single-Admin config data.
         reportCardReleases: reportCardReleases || remote.reportCardReleases || [],
         examScheduleReleases: examScheduleReleases || remote.examScheduleReleases || [],
+        migratedToClassDocs: true,
         dataVersion: newVersion,
         savedAt: new Date().toISOString()
       };
-      tx.set(FB_DOC_REF, merged);
+      tx.set(FB_META_DOC_REF, merged);
     });
-    knownDataVersion = Math.max(knownDataVersion, newVersion);
+    knownMetaVersion = Math.max(knownMetaVersion, newVersion);
     fbLastPushedAt = Date.now();
     return true;
   }catch(err){
-    console.warn('Firestore main-doc push failed', err);
+    console.warn('Firestore meta-doc push failed', err);
     return false;
   }
+}
+
+// ---- pushClassDoc(ck): one class's students/scores/attendance/approvedLeave — its own
+// small document, its own transaction. Only classes returned by computeDirtyClassKeys()
+// (i.e. that actually changed locally since the last successful sync) are ever pushed —
+// see pushDirtyClassDocs() below, which is what the manual Save button now calls instead
+// of pushMetaDocWithRetry().
+async function pushClassDoc(ck, localSlice){
+  try{
+    let newVersion = 0;
+    const ref = classDocRef(ck);
+    await fbDb.runTransaction(async (tx)=>{
+      const snap = await tx.get(ref);
+      const remote = (snap.exists ? snap.data() : null) || {};
+      newVersion = (remote.dataVersion || 0) + 1;
+      const merged = {
+        // students for this class is always a full local replace (matches the old
+        // whole-doc merge's behavior: when a classKey exists on both sides, local wins
+        // entirely — there was never a deeper per-student merge).
+        students: localSlice.students || [],
+        scores: mergeObjectField(remote.scores, localSlice.scores),
+        attendance: mergeObjectField(remote.attendance, localSlice.attendance),
+        approvedLeave: mergeObjectField(remote.approvedLeave, localSlice.approvedLeave),
+        dataVersion: newVersion,
+        savedAt: new Date().toISOString()
+      };
+      tx.set(ref, merged);
+    });
+    knownClassVersions[ck] = Math.max(knownClassVersions[ck]||0, newVersion);
+    lastSyncedClassJson[ck] = JSON.stringify(localSlice);
+    fbLastPushedAt = Date.now();
+    return true;
+  }catch(err){
+    console.warn(`Firestore class-doc push failed (${ck})`, err);
+    return false;
+  }
+}
+// Pushes only the classes that actually changed since the last successful sync (plus
+// retries each one individually via pushWithRetry) — a Save with no Grade Book edits at
+// all pushes ZERO class documents. Returns false if ANY dirty class failed to push after
+// retries, so the caller can warn the user their edits aren't fully synced yet.
+async function pushDirtyClassDocsWithRetry(maxAttemptsPerClass){
+  const { dirty, slices } = computeDirtyClassKeys();
+  if(!dirty.length) return true;
+  let allOk = true;
+  for(const ck of dirty){
+    const ok = await pushWithRetry(()=> pushClassDoc(ck, slices[ck]), maxAttemptsPerClass);
+    if(!ok) allOk = false;
+  }
+  return allOk;
 }
 
 // ---- pushTeachersDoc(): Teachers Database only, its own document, its own transaction.
@@ -8766,18 +8873,20 @@ async function pushWithRetry(pushFn, maxAttempts){
   }
   return false;
 }
-async function pushMainDocWithRetry(maxAttempts){ return pushWithRetry(pushMainDoc, maxAttempts); }
+async function pushMetaDocWithRetry(maxAttempts){ return pushWithRetry(pushMetaDoc, maxAttempts); }
 async function pushTeachersDocWithRetry(maxAttempts){ return pushWithRetry(pushTeachersDoc, maxAttempts); }
 async function pushUsersDocsWithRetry(maxAttempts){ return pushWithRetry(pushUsersDocs, maxAttempts); }
 
-// Pushes the Grade Book's own document (students/scores/attendance/config — see
-// pushMainDoc above) merged with whatever the server currently holds — but bypasses
-// the "auto-sync enabled" toggle, since this manual button IS the sync mechanism for
-// the Grade Book now, not an extra pathway running alongside the old automatic one.
-// Deliberately does NOT touch the Teachers or Users documents — Grade Book Save only
-// ever needs to persist Grade Book data.
+// Pushes ONLY the class document(s) that actually changed since the last successful sync
+// (see pushDirtyClassDocsWithRetry/computeDirtyClassKeys) plus the small shared meta
+// document (activity log, etc.) — but bypasses the "auto-sync enabled" toggle, since this
+// manual button IS the sync mechanism for the Grade Book now, not an extra pathway running
+// alongside the old automatic one. Deliberately does NOT touch the Teachers or Users
+// documents — Grade Book Save only ever needs to persist Grade Book data.
 async function pushGradeBookToFirestore(){
-  const ok = await pushMainDocWithRetry();
+  const classesOk = await pushDirtyClassDocsWithRetry();
+  const metaOk = await pushMetaDocWithRetry();
+  const ok = classesOk && metaOk;
   if(currentUser && currentUser.role==='admin') setSyncStatus(ok ? 'synced' : 'error');
   if(!ok){
     console.warn('Grade Book manual save failed after retries');
@@ -15243,6 +15352,7 @@ function loginAs(user, remember, showWelcome){
   refreshBirthdayWidgets();
   showBirthdayToastIfNeeded();
   showHelpAssistantWidget();
+  if(typeof maybeShowMigrationButton==='function') maybeShowMigrationButton();
 }
 
 function logoutUser(){
@@ -16431,10 +16541,28 @@ const firebaseConfig = {
 };
 const fbApp = firebase.initializeApp(firebaseConfig);
 const fbDb  = firebase.firestore();
-// Everything lives in a single document — simplest possible shape for a
-// small dataset like a grade book, and it lets us use one real-time
-// listener (onSnapshot) to keep every open browser in sync automatically.
+// ---- Storage layout (split, since 2026-07) ----
+// Grade Book data (students/scores/attendance/approvedLeave) used to live entirely in ONE
+// document ('gradebook/main') — every Save/pull/live-update touched the WHOLE school's data
+// at once, no matter how small the actual edit was. That made the manual Save button get
+// slower and slower as the school's data grew, since every click read + merged + rewrote
+// everything, every time.
+// It is now split by class (classKey = "section|stage|grade", the same key `students` was
+// already keyed by internally) into its own small document per class, under the
+// 'gradebook_classes' collection. A Save now only reads/writes the class(es) that actually
+// changed (see computeDirtyClassKeys() below) plus the small shared 'meta' document —
+// instead of the entire school every time.
+// FB_DOC_REF ('gradebook/main') is kept only as the OLD document, read-only, used solely by
+// migrateMainDocToClassDocs() to do a one-time split of whatever was last saved there. Nothing
+// else reads or writes it anymore — it is never deleted, so it stays as a safety-net backup.
 const FB_DOC_REF = fbDb.collection('gradebook').doc('main');
+// Small shared document: everything that ISN'T tied to one class (activity log, term/exam
+// schedule config, bell times, admin structure, blocked students, Grade 3 flexible maxima,
+// grade-entry lock rules, presence bucket id, report card / exam schedule release dates).
+const FB_META_DOC_REF = fbDb.collection('gradebook').doc('meta');
+// One document per class (id built from classKey by classDocId() below) holding just that
+// class's slice of students/scores/attendance/approvedLeave.
+const FB_CLASSES_COL = fbDb.collection('gradebook_classes');
 // Teachers Database and Manage Users (split into Staff vs Parents/Students) each live in
 // their own document now, instead of inside the single 'main' document above. This means
 // editing a Teacher, or adding/editing a Parent/Student account, no longer reads or writes
@@ -16489,8 +16617,13 @@ let fbLastPushedAt = 0;
 // the old fixed time window) and the person keeps entering grades in the meantime, the stale
 // echo/snapshot is recognized as not-newer and is ignored instead of overwriting the freshly
 // entered grades still sitting only in memory/localStorage.
-let knownDataVersion = 0;
-// Same purpose as knownDataVersion above, one per newly-split document, so each document's
+// Meta doc's own version counter (activity log / config — see pushMetaDoc/FB_META_DOC_REF).
+let knownMetaVersion = 0;
+// One version counter per classKey (see pushClassDoc/FB_CLASSES_COL) — a class's own live
+// listener recognizes "this is just an echo of my own push" independently of every other
+// class's version number.
+let knownClassVersions = {};
+// Same purpose as knownMetaVersion above, one per newly-split document, so each document's
 // live listener can independently recognize "this is just an echo of my own push" without
 // depending on the other documents' version numbers.
 let knownTeachersVersion = 0;
@@ -16637,30 +16770,36 @@ function refreshUIAfterRemoteChange(){
   updateGradeBookSaveUI();
 }
 
-// ---- applyMainPayload(): students/scores/attendance/activityLog/config — the document
-// written by pushMainDoc(). No longer touches teachers or users at all.
-function applyMainPayload(payload){
+// ---- applyClassPayload(ck, payload): one class's students/scores/attendance/
+// approvedLeave — the document written by pushClassDoc(). Only ever touches this ONE
+// classKey's slice of the global students/scores/attendance/approvedLeave objects; every
+// other class already in memory is left completely untouched.
+function applyClassPayload(ck, payload){
   if(!payload) return;
   fbApplyingRemote = true;
-  // If this device has Grade Book edits sitting locally that haven't been pushed yet
-  // (gbUnsavedChanges), blindly replacing students/scores/attendance with the incoming
-  // snapshot would silently wipe them out the moment ANY other device pushes anything —
-  // even something unrelated like a Bell Times change. Merge instead (remote as the base,
-  // local pending edits win per key) so those unsaved edits survive until Save is pressed.
+  // Same reasoning as the old single-doc version: if this device has Grade Book edits
+  // sitting locally that haven't been pushed yet ANYWHERE (gbUnsavedChanges), blindly
+  // replacing this class's data would risk silently wiping out an unsaved edit — so keep
+  // any key(s) local already has and only let remote fill in ones it's missing. With no
+  // pending edits anywhere, it's safe to just replace this class's slice wholesale.
+  const hadLocalStudents = Object.prototype.hasOwnProperty.call(students, ck);
+  let replacedWholesale;
   if(gbUnsavedChanges){
-    students = mergeObjectField(payload.students, students);
-    scores = mergeObjectField(payload.scores, scores);
-    attendance = mergeObjectField(payload.attendance, attendance);
-    approvedLeave = mergeObjectField(payload.approvedLeave, approvedLeave);
-    studentIdCounter = Math.max(payload.studentIdCounter || 1, studentIdCounter || 1);
-    grade3FlexibleMaximaBySubject = mergeObjectField(payload.grade3FlexibleMaxima, grade3FlexibleMaximaBySubject);
+    if(!hadLocalStudents){ students[ck] = payload.students || []; replacedWholesale = true; }
+    else{ replacedWholesale = false; }
   }else{
-    students = payload.students || {};
-    scores = payload.scores || {};
-    studentIdCounter = payload.studentIdCounter || 1;
-    attendance = payload.attendance || {};
-    approvedLeave = payload.approvedLeave || {};
-    grade3FlexibleMaximaBySubject = payload.grade3FlexibleMaxima || grade3FlexibleMaximaBySubject || {};
+    students[ck] = payload.students || [];
+    replacedWholesale = true;
+  }
+  mergeOrReplaceClassKeys(scores, ck, payload.scores);
+  mergeOrReplaceClassKeys(attendance, ck, payload.attendance);
+  mergeOrReplaceClassKeys(approvedLeave, ck, payload.approvedLeave);
+  knownClassVersions[ck] = Math.max(knownClassVersions[ck]||0, payload.dataVersion || 0);
+  // Only refresh this class's "known synced" cache when we just replaced it wholesale —
+  // if local edits were kept (the gbUnsavedChanges branch above), this class must stay
+  // flagged dirty so the next Save still pushes it.
+  if(replacedWholesale){
+    lastSyncedClassJson[ck] = JSON.stringify(buildAllClassSlices()[ck] || { students:[], scores:{}, attendance:{}, approvedLeave:{} });
   }
   try{
     localStorage.setItem(LS_KEY, JSON.stringify({
@@ -16668,8 +16807,25 @@ function applyMainPayload(payload){
       savedAt: new Date().toISOString()
     }));
   }catch(err){ /* localStorage full أو محظور - لا مشكلة */ }
+  refreshUIAfterRemoteChange();
+  fbApplyingRemote = false;
+  // gbUnsavedChanges is deliberately left untouched here: if this device had
+  // pending local edits, the merge above kept them in memory and they still
+  // need their own Save press; if it didn't, it was already false.
+}
+
+// ---- applyMetaPayload(): activityLog/config/studentIdCounter/etc. — the document
+// written by pushMetaDoc(). No longer touches students/scores/attendance/approvedLeave
+// (see applyClassPayload above), teachers, or users at all.
+function applyMetaPayload(payload){
+  if(!payload) return;
+  fbApplyingRemote = true;
+  studentIdCounter = Math.max(payload.studentIdCounter || 1, studentIdCounter || 1);
+  grade3FlexibleMaximaBySubject = gbUnsavedChanges
+    ? mergeObjectField(payload.grade3FlexibleMaxima, grade3FlexibleMaximaBySubject)
+    : (payload.grade3FlexibleMaxima || grade3FlexibleMaximaBySubject || {});
   try{ localStorage.setItem(GRADE3_MAXIMA_LS_KEY, JSON.stringify(grade3FlexibleMaximaBySubject)); }catch(err){}
-  knownDataVersion = Math.max(knownDataVersion, payload.dataVersion || 0);
+  knownMetaVersion = Math.max(knownMetaVersion, payload.dataVersion || 0);
   if(Array.isArray(payload.activityLog) && payload.activityLog.length){
     const map = {};
     activityLog.forEach(e=> map[e.id]=e);
@@ -16719,9 +16875,6 @@ function applyMainPayload(payload){
   }
   refreshUIAfterRemoteChange();
   fbApplyingRemote = false;
-  // gbUnsavedChanges is deliberately left untouched here: if this device had
-  // pending local edits, the merge above kept them in memory and they still
-  // need their own Save press; if it didn't, it was already false.
 }
 
 // ---- applyTeachersPayload(): the document written by pushTeachersDoc(). No longer
@@ -16826,20 +16979,28 @@ function applyUsersPayload(staffPayload, parentPayload){
   fbApplyingRemote = false;
 }
 
-/* One-off pull — used for the manual "Pull Latest" button and the initial
-   load before the live listener takes over. Fetches all three documents. */
+/* One-off pull — used for the manual "Pull Latest" button and the initial load before the
+   live listener takes over. Fetches the meta doc, every class document, and the
+   teachers/users documents. */
 async function pullFromGithub(silent){
   setSyncStatus('syncing');
   try{
-    const [mainSnap, teachersSnap, staffSnap, parentSnap] = await Promise.all([
-      FB_DOC_REF.get(), FB_TEACHERS_DOC_REF.get(), FB_STAFF_USERS_DOC_REF.get(), FB_PARENT_USERS_DOC_REF.get()
+    const [metaSnap, classesSnap, teachersSnap, staffSnap, parentSnap] = await Promise.all([
+      FB_META_DOC_REF.get(), FB_CLASSES_COL.get(), FB_TEACHERS_DOC_REF.get(), FB_STAFF_USERS_DOC_REF.get(), FB_PARENT_USERS_DOC_REF.get()
     ]);
-    if(mainSnap.exists) applyMainPayload(mainSnap.data());
+    if(metaSnap.exists) applyMetaPayload(metaSnap.data());
+    classesSnap.forEach(doc=>{
+      const data = doc.data();
+      // The class's own classKey isn't stored inside the document itself — it's recovered
+      // from the doc id (classDocId() swaps "|" for "__" to build it).
+      const ck = doc.id.replace(/__/g, '|');
+      applyClassPayload(ck, data);
+    });
     if(teachersSnap.exists) applyTeachersPayload(teachersSnap.data());
     if(staffSnap.exists || parentSnap.exists){
       applyUsersPayload(staffSnap.exists ? staffSnap.data() : null, parentSnap.exists ? parentSnap.data() : null);
     }
-    if(!mainSnap.exists && !teachersSnap.exists && !staffSnap.exists && !parentSnap.exists){ setSyncStatus('idle'); return false; }
+    if(!metaSnap.exists && classesSnap.empty && !teachersSnap.exists && !staffSnap.exists && !parentSnap.exists){ setSyncStatus('idle'); return false; }
     setSyncStatus('synced');
     return true;
   }catch(err){
@@ -16855,15 +17016,32 @@ async function pullFromGithub(silent){
    edit only ever fires the teachers listener, never touching Students/Users in memory. */
 function startFirebaseLiveSync(){
   if(fbUnsubscribe) return;
-  const unsubMain = FB_DOC_REF.onSnapshot(snap=>{
+  const unsubMeta = FB_META_DOC_REF.onSnapshot(snap=>{
     if(!snap.exists) return;
     const data = snap.data();
     const incomingVersion = data.dataVersion || 0;
-    if(incomingVersion>0 && incomingVersion<=knownDataVersion) return;
+    if(incomingVersion>0 && incomingVersion<=knownMetaVersion) return;
     if(Date.now() - fbLastPushedAt < 1500) return;
-    applyMainPayload(data);
+    applyMetaPayload(data);
     setSyncStatus('synced');
-  }, err=>{ console.warn('Firebase live sync error (main)', err); setSyncStatus('error'); });
+  }, err=>{ console.warn('Firebase live sync error (meta)', err); setSyncStatus('error'); });
+
+  // Collection-level listener: Firestore only sends the docs that actually changed since
+  // the last snapshot (snap.docChanges()), not every class every time — so this stays
+  // cheap regardless of how many classes exist, the same way the old single onSnapshot
+  // only ever fired when something in that one big document changed.
+  const unsubClasses = FB_CLASSES_COL.onSnapshot(snap=>{
+    snap.docChanges().forEach(change=>{
+      if(change.type==='removed') return;
+      const data = change.doc.data();
+      const ck = change.doc.id.replace(/__/g, '|');
+      const incomingVersion = data.dataVersion || 0;
+      if(incomingVersion>0 && incomingVersion<=(knownClassVersions[ck]||0)) return;
+      if(Date.now() - fbLastPushedAt < 1500) return;
+      applyClassPayload(ck, data);
+      setSyncStatus('synced');
+    });
+  }, err=>{ console.warn('Firebase live sync error (classes)', err); setSyncStatus('error'); });
 
   const unsubTeachers = FB_TEACHERS_DOC_REF.onSnapshot(snap=>{
     if(!snap.exists) return;
@@ -16905,19 +17083,121 @@ function startFirebaseLiveSync(){
     applyUsersIfReady();
   }, err=>{ console.warn('Firebase live sync error (parent users)', err); setSyncStatus('error'); });
 
-  fbUnsubscribe = ()=>{ unsubMain(); unsubTeachers(); unsubStaff(); unsubParent(); };
+  fbUnsubscribe = ()=>{ unsubMeta(); unsubClasses(); unsubTeachers(); unsubStaff(); unsubParent(); };
 }
 function stopFirebaseLiveSync(){
   if(fbUnsubscribe){ fbUnsubscribe(); fbUnsubscribe = null; }
 }
 
-// Pushes the main document only (Bell Times, Admin Structure, Exam Schedules, Blocked
+/* ================== ONE-TIME MIGRATION: single doc -> per-class docs ==================
+   Splits whatever is currently saved in the OLD 'gradebook/main' document into the new
+   'gradebook/meta' document plus one 'gradebook_classes/<classId>' document per class. Run
+   this exactly ONCE, by the Admin, after taking a Full Backup — see runMigrationToClassDocs()
+   below. The old document is never deleted, so it remains a safety-net copy regardless.
+   Guarded by a `migratedToClassDocs` flag written into the new meta doc, so re-running this
+   later (e.g. if the button is accidentally clicked twice) refuses to overwrite newer
+   per-class data with a stale full-doc snapshot. */
+async function runMigrationToClassDocs(){
+  if(!currentUser || currentUser.role!=='admin'){
+    alert('Only the Admin account can run this migration.');
+    return;
+  }
+  if(!confirm('This is a one-time step that splits the old single Firestore document into one document per class, so the Save button only has to sync the class you actually edited instead of the whole school every time.\n\nMake sure you have already taken a Full Backup from Configuration before continuing.\n\nContinue with the migration now?')){
+    return;
+  }
+  try{
+    const metaSnap = await FB_META_DOC_REF.get();
+    if(metaSnap.exists && metaSnap.data().migratedToClassDocs){
+      alert('This migration has already been completed — nothing more to do.');
+      hideMigrationButton();
+      return;
+    }
+    const mainSnap = await FB_DOC_REF.get();
+    if(!mainSnap.exists){
+      alert('No old data was found on Firestore to migrate — nothing to do. (This is expected if the app has never been synced before.)');
+      return;
+    }
+    const old = mainSnap.data() || {};
+    const oldStudents = old.students || {};
+    const oldScores = old.scores || {};
+    const oldAttendance = old.attendance || {};
+    const oldApprovedLeave = old.approvedLeave || {};
+    const allClassKeys = new Set([
+      ...Object.keys(oldStudents),
+      ...Object.keys(oldScores).map(classKeyOfDataKey),
+      ...Object.keys(oldAttendance).map(classKeyOfDataKey),
+      ...Object.keys(oldApprovedLeave).map(classKeyOfDataKey)
+    ]);
+    let written = 0;
+    for(const ck of allClassKeys){
+      if(!ck) continue;
+      const slice = { students: oldStudents[ck] || [], scores:{}, attendance:{}, approvedLeave:{} };
+      Object.keys(oldScores).forEach(k=>{ if(classKeyOfDataKey(k)===ck) slice.scores[k] = oldScores[k]; });
+      Object.keys(oldAttendance).forEach(k=>{ if(classKeyOfDataKey(k)===ck) slice.attendance[k] = oldAttendance[k]; });
+      Object.keys(oldApprovedLeave).forEach(k=>{ if(classKeyOfDataKey(k)===ck) slice.approvedLeave[k] = oldApprovedLeave[k]; });
+      await classDocRef(ck).set(Object.assign({}, slice, { dataVersion: 1, savedAt: new Date().toISOString() }));
+      written++;
+    }
+    await FB_META_DOC_REF.set({
+      studentIdCounter: old.studentIdCounter || 1,
+      activityLog: old.activityLog || [],
+      termMonthDates: old.termMonthDates || null,
+      examSchedules: old.examSchedules || null,
+      examSeatAssignments: old.examSeatAssignments || null,
+      bellTimes: old.bellTimes || null,
+      adminStructure: old.adminStructure || null,
+      blockedStudentIds: old.blockedStudentIds || [],
+      grade3FlexibleMaxima: old.grade3FlexibleMaxima || {},
+      gradeEntryLockRules: old.gradeEntryLockRules || [],
+      presenceBucket: old.presenceBucket || null,
+      reportCardReleases: old.reportCardReleases || [],
+      examScheduleReleases: old.examScheduleReleases || [],
+      dataVersion: 1,
+      savedAt: new Date().toISOString(),
+      migratedToClassDocs: true
+    });
+    alert(`Migration complete — ${written} class document(s) were created. The old document was left untouched as a backup copy. The page will now reload to load the new structure.`);
+    location.reload();
+  }catch(err){
+    console.error('Migration to per-class documents failed', err);
+    alert('Migration failed — check the browser console for details. Nothing was deleted, so it is safe to try again once the problem is fixed (e.g. a Firestore rules or connection issue).');
+  }
+}
+
+let migrationButtonChecked = false;
+function hideMigrationButton(){
+  const el = document.getElementById('migrateClassDocsBtn');
+  if(el) el.remove();
+}
+// Shows a small floating one-time button for the Admin only, and only until the migration
+// above has actually been completed (tracked by the meta doc's migratedToClassDocs flag) —
+// it removes itself permanently from the UI the moment that flag is set.
+async function maybeShowMigrationButton(){
+  if(!currentUser || currentUser.role!=='admin') return;
+  try{
+    const metaSnap = await FB_META_DOC_REF.get();
+    if(metaSnap.exists && metaSnap.data().migratedToClassDocs){ migrationButtonChecked = true; hideMigrationButton(); return; }
+  }catch(err){ return; } // offline/no permissions yet — just skip silently, will check again next login
+  migrationButtonChecked = true;
+  if(document.getElementById('migrateClassDocsBtn')) return;
+  const btn = document.createElement('button');
+  btn.id = 'migrateClassDocsBtn';
+  btn.textContent = '⚙️ Migrate Firestore Storage (one-time)';
+  btn.title = 'One-time: split the old single Firestore document into one document per class, so Save only syncs the class you edited.';
+  btn.style.cssText = 'position:fixed;bottom:16px;left:16px;z-index:9999;padding:10px 14px;border-radius:8px;border:1px solid #b5791b;background:#FBF0DC;color:#8a5a10;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.15);';
+  btn.onclick = runMigrationToClassDocs;
+  document.body.appendChild(btn);
+}
+
+// Pushes the meta document only (Bell Times, Admin Structure, Exam Schedules, Blocked
 // Students, Releases, activity log, etc.) — Teachers and Users each have their own push
-// path below and never go through this function.
+// path below and never go through this function. Grade Book data (students/scores/
+// attendance/approvedLeave) is pushed separately, per-class, only via the Grade Book's own
+// manual Save button (see pushGradeBookToFirestore/pushDirtyClassDocsWithRetry above).
 async function pushToGithub(){
   if(!githubReady()) return false;
   setSyncStatus('syncing');
-  const ok = await pushMainDocWithRetry();
+  const ok = await pushMetaDocWithRetry();
   setSyncStatus(ok ? 'synced' : 'error');
   if(ok) pendingFirestorePush = false; // this device's memory now matches the server — safe to close/reload
   return ok;
