@@ -4222,7 +4222,14 @@ function reportMetric(sc, type){
     if(type==='month2') return t.month2Total;
     return t.totalCoursework; // coursework & reportcard
   }
-  if(type==='month1' || type==='month2') return null; // not applicable outside Primary Stage
+  // Grade 7-8 Prep and Grade 10-11 Secondary First/Second Month certificates also have
+  // Q.1-Q.4 quiz fields (computePrimaryTotals already handles their Total 1/2 formula) —
+  // only Grade 9 (Cycle-only) and Grade 12 (no Month certs) fall through to "not applicable".
+  if((isG7G8Prep() || isG10G11Secondary()) && (type==='month1' || type==='month2')){
+    const t = computePrimaryTotals(sc);
+    return type==='month1' ? t.month1Total : t.month2Total;
+  }
+  if(type==='month1' || type==='month2') return null; // not applicable outside Primary/Prep 7-8/Secondary 10-11
   return (parseFloat(sc.m1)||0)+(parseFloat(sc.m2)||0)+(parseFloat(sc.mid)||0)+(parseFloat(sc.final)||0);
 }
 
@@ -4457,9 +4464,13 @@ function certSubjectResult(subject, studentId, type){
   return withCertState(subject, ()=>{
     const primary = isPrimary();
     const junior = isJuniorPrimary();
-    const notApplicable = !primary && (type==='month1' || type==='month2');
+    // Grade 7-8 Prep and Grade 10-11 Secondary Month certificates also have Q.1-Q.4 quiz
+    // fields (see computePrimaryTotals) — only Grade 9 (Cycle-only, no quiz fields) and
+    // Grade 12 (no Month certs at all) are genuinely not applicable here.
+    const extendedMonthGrade = isG7G8Prep() || isG10G11Secondary();
+    const notApplicable = !primary && !extendedMonthGrade && (type==='month1' || type==='month2');
     if(notApplicable) return { applicable:false };
-    const max = (type==='coursework'||type==='reportcard'||type==='endyear') ? (primary?(junior?100:40):100) : (primary?(junior?75:15):null);
+    const max = (type==='coursework'||type==='reportcard'||type==='endyear') ? (primary?(junior?100:40):100) : (primary?(junior?75:15):(extendedMonthGrade?40:null));
     const sc = (scores[subjKey()]||{})[studentId] || emptyScoreObj();
     const val = reportMetric(sc, type);
     const hasVal = val!==null && Object.keys(sc).some(k=> k!=='examPaper' && sc[k]!==null && sc[k]!==undefined && sc[k]!=='');
@@ -5443,7 +5454,7 @@ function renderCertReportsCards(){
     // functions this reuses — they were originally built for the Dashboard's Cycle/Term
     // Total views, which share the same {subject, score} + single maxScore shape).
     let aiBtnHtml = '';
-    if(aiAvailable){
+    if(aiAvailable && !(certQuizzesOnlyMode && ['month1','month2'].includes(type))){
       let aiMaxScore = null;
       const aiSubjectRows = subjects.map(sub=>{
         const r = certSubjectResult(sub, student.id, type);
