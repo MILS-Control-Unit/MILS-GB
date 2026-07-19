@@ -68,6 +68,14 @@ function g12SubjectMax(subject){ return G12_SUBJECT_MAX[subject] || 0; }
 const G12_CORE_TOTAL_SUBJECTS = ['Arabic','English','French','Physics','Chemistry','Pure Mathematics','Applied Mathematics'];
 const G12_TOTAL_MAX = 320;
 
+// Three extra columns shown at the very end of the Grade 12 table, after Total/Percentage/Grade.
+// Recorded the same way as any other Grade 12 subject (same scores bucket), but kept OUT of
+// G12_CORE_TOTAL_SUBJECTS so they never affect the Total/Percentage/Grade calculation above.
+const G12_EXTRA_SUBJECTS = ["Religion","Second Language","Civics"];
+const G12_EXTRA_SUBJECT_MAX = { 'Religion':40, 'Second Language':40, 'Civics':10 };
+// Religion has its own pass mark (out of 40) shown as a Pass/Fail hint next to the score.
+const G12_RELIGION_PASS_MARK = 28;
+
 // French Section-specific subject mappings
 const FRENCH_SECTION_SUBJECTS = {
   primary:  { label: "Primary Stage",
@@ -6496,9 +6504,21 @@ function renderMissingGradesBanner(roster, scoreMap, holder){
   const pills = missing.map(s=> `<span style="display:inline-block;background:#fff;border:1px solid #f0b429;border-radius:12px;padding:2px 9px;margin:2px;font-size:12px;">${escapeHtml(s.name)}</span>`).join('');
   const banner = document.createElement('div');
   banner.id = 'missingGradesBanner';
-  banner.style.cssText = 'margin:0 0 10px;padding:10px 14px;background:#fff8e8;border:1px solid #f0b429;border-radius:8px;';
-  banner.innerHTML = `<b>⚠️ ${missing.length} student${missing.length>1?'s':''} with nothing entered yet on this screen:</b><div style="margin-top:6px;">${pills}</div>`;
+  banner.style.cssText = 'margin:0 0 10px;padding:8px 14px;background:#fff8e8;border:1px solid #f0b429;border-radius:8px;';
+  banner.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+      <b>⚠️ ${missing.length} student${missing.length>1?'s':''} with nothing entered yet on this screen</b>
+      <button type="button" id="missingGradesToggle" style="border:1px solid #f0b429;background:#fff;color:#8a6100;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;white-space:nowrap;">Show details</button>
+    </div>
+    <div id="missingGradesDetails" style="display:none;margin-top:6px;">${pills}</div>`;
   holder.insertBefore(banner, holder.firstChild);
+  const toggleBtn = banner.querySelector('#missingGradesToggle');
+  const details = banner.querySelector('#missingGradesDetails');
+  toggleBtn.addEventListener('click', ()=>{
+    const isHidden = details.style.display === 'none';
+    details.style.display = isHidden ? 'block' : 'none';
+    toggleBtn.textContent = isHidden ? 'Hide details' : 'Show details';
+  });
 }
 
 function renderClassComparisonWidget(){
@@ -7818,6 +7838,23 @@ function renderG12ExamAllSubjectsRowHtml(s, i, subjectsList, readOnly){
   const grandTotal = g12GrandTotalFor(s.id, subjectsList);
   const pct = grandTotal===null ? null : Math.round((grandTotal/G12_TOTAL_MAX)*1000)/10;
   const g = pct===null ? null : letterGrade(pct);
+  let extraCellsHtml = '';
+  G12_EXTRA_SUBJECTS.forEach(subj=>{
+    const max = G12_EXTRA_SUBJECT_MAX[subj];
+    const val = g12ExamScoreFor(subj, s.id);
+    const v = val===null ? '' : val;
+    const input = readOnly
+      ? `<input class="score-input" type="number" value="${v}" disabled style="opacity:.65;">`
+      : `<input class="score-input" type="number" min="0" max="${max}" step="0.5" value="${v}"
+             onchange="updateG12ExamScore(this,'${s.id}','${subj}',${max})">`;
+    if(subj === 'Religion'){
+      const passed = val===null ? null : (val >= G12_RELIGION_PASS_MARK);
+      const hint = passed===null ? '' : `<div style="font-size:10px;margin-top:2px;color:${passed?'#1a7d3a':'#c0392b'};">${passed?'Pass':'Fail'} (min. ${G12_RELIGION_PASS_MARK})</div>`;
+      extraCellsHtml += `<td>${input}${hint}</td>`;
+    } else {
+      extraCellsHtml += `<td>${input}</td>`;
+    }
+  });
   return `
       <tr data-row-id="${s.id}">
         <td>${i+1}</td>
@@ -7828,6 +7865,7 @@ function renderG12ExamAllSubjectsRowHtml(s, i, subjectsList, readOnly){
         <td class="total-cell"><b>${grandTotal===null?'—':grandTotal}</b></td>
         <td class="pct-cell">${pct===null?'—':pct+'%'}</td>
         <td>${g ? `<span class="badge ${g.c}">${g.t}</span>` : '—'}</td>
+        ${extraCellsHtml}
       </tr>`;
 }
 function renderG12AllSubjectsExamScreen(roster, holder, footNote){
@@ -7844,7 +7882,7 @@ function renderG12AllSubjectsExamScreen(roster, holder, footNote){
 
   if(footNote){
     const saveLine = `Grades are saved to this browser automatically as you type — click "💾 Save" above to sync them to Firestore for every other device. You can still use "Full Backup" to save a copy to your device, or "Restore Backup" to load one later.`;
-    footNote.innerHTML = `This screen records <b>${screenLabel}</b> for every subject at once, for the whole class (Max. per subject shown in each column header). <b>Math Total</b> = Pure Mathematics + Applied Mathematics. <b>Total</b> (Max. ${G12_TOTAL_MAX}) = Arabic + ${englishOrFrench} + Physics + Chemistry + Math Total — Biology, History, Geography and Statistics are recorded here but not counted toward this Total.<br>${saveLine}`;
+    footNote.innerHTML = `This screen records <b>${screenLabel}</b> for every subject at once, for the whole class (Max. per subject shown in each column header). <b>Math Total</b> = Pure Mathematics + Applied Mathematics. <b>Total</b> (Max. ${G12_TOTAL_MAX}) = Arabic + ${englishOrFrench} + Physics + Chemistry + Math Total — Biology, History, Geography and Statistics are recorded here but not counted toward this Total. <b>Religion (Max. 40)</b>, <b>Second Language (Max. 40)</b> and <b>Civics (Max. 10)</b> are recorded at the end of the table and are also not counted toward the Total — Religion additionally shows a Pass/Fail hint (pass mark: ${G12_RELIGION_PASS_MARK}).<br>${saveLine}`;
   }
 
   if(roster.length===0){
@@ -7865,6 +7903,12 @@ function renderG12AllSubjectsExamScreen(roster, holder, footNote){
     }
   });
 
+  let extraHeaderCells = '';
+  G12_EXTRA_SUBJECTS.forEach(subj=>{
+    const noteLine = subj==='Religion' ? `Max. ${G12_EXTRA_SUBJECT_MAX[subj]} — Pass ≥ ${G12_RELIGION_PASS_MARK}` : `Max. ${G12_EXTRA_SUBJECT_MAX[subj]}`;
+    extraHeaderCells += `<th>${subjectWithIcon(subj)}<br><small>(${noteLine})</small></th>`;
+  });
+
   const rows = roster.map((s, i)=> renderG12ExamAllSubjectsRowHtml(s, i, subjectsList, readOnly)).join('');
 
   holder.innerHTML = `
@@ -7876,6 +7920,7 @@ function renderG12AllSubjectsExamScreen(roster, holder, footNote){
           <th>Total<br><small>(Max. ${G12_TOTAL_MAX})</small></th>
           <th>Percentage</th>
           <th>Grade</th>
+          ${extraHeaderCells}
         </tr>
       </thead>
       <tbody>${rows}</tbody>
