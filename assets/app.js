@@ -3460,13 +3460,26 @@ function computeExamsAnalysis(section, stage, grade, classroom, term, mode, subj
    the pass-rate-by-subject chart — so gridlines are spaced proportionally to whatever maxVal
    is passed in, and each bar can carry its own color (used to match each score band's color
    from the table above it). */
+/* Exams Analysis' own bar chart — deliberately separate from svgBarChart/svgGroupedBarChart
+   above (whose gridlines are fixed at the literal values 0,1,2,3,4,5 regardless of maxVal,
+   which only reads correctly when maxVal happens to be small) since here maxVal varies a lot
+   — a roster's total student count for the per-subject distribution chart, or a flat 100 for
+   the pass-rate-by-subject chart — so gridlines are spaced proportionally to whatever maxVal
+   is passed in, and each bar can carry its own color (used to match each score band's color
+   from the table above it).
+   Bars are drawn as pseudo-3D boxes (front + top + side face) rather than flat rectangles —
+   the top/side faces are the same fill as the front face but lightened/darkened with a CSS
+   brightness() filter, so this works whether a bar's color is a hex code (score band colors)
+   or a CSS variable like var(--blue) (subject comparison chart), without needing to actually
+   parse/compute a lighter or darker shade of either. */
 function svgExamsBarChart(items, maxVal){
-  const w = 640, h = 300, padL=40, padB=64, padT=20, padR=16;
+  const depthX = 12, depthY = -9; // 3D depth offset (up-and-right, i.e. bars appear to recede away from the viewer)
+  const w = 640, h = 300, padL=40, padB=64, padT=20+Math.abs(depthY), padR=16+depthX;
   const chartW = w-padL-padR, chartH = h-padT-padB;
   const n = items.length || 1;
   const gap = 16;
   const slot = (chartW - gap*(n-1))/n;
-  const barW = Math.max(14, slot*0.62);
+  const barW = Math.max(14, slot*0.58); // slightly narrower than the flat version, to leave visual room for the depth faces
   const safeMax = maxVal>0 ? maxVal : 1;
   let bars = '', labels = '';
   items.forEach((it,i)=>{
@@ -3474,9 +3487,18 @@ function svgExamsBarChart(items, maxVal){
     const bh = (val/safeMax) * chartH;
     const x = padL + i*(slot+gap/n) + (slot-barW)/2;
     const y = padT + chartH - bh;
+    const yBase = padT + chartH; // baseline (bottom of every bar, i.e. the zero line)
+    const color = it.color || 'var(--blue)';
     const shownVal = Number.isInteger(val) ? val : val.toFixed(1);
-    bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" rx="4" fill="${it.color||'var(--blue)'}"></rect>
-      <text x="${(x+barW/2).toFixed(1)}" y="${(y-6).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink)">${it.value==null?'—':shownVal}</text>`;
+    // Side face (right-hand face of the box) — drawn first so the front face's corner sits
+    // cleanly on top of it.
+    const side = `<polygon points="${(x+barW).toFixed(1)},${y.toFixed(1)} ${(x+barW+depthX).toFixed(1)},${(y+depthY).toFixed(1)} ${(x+barW+depthX).toFixed(1)},${(yBase+depthY).toFixed(1)} ${(x+barW).toFixed(1)},${yBase.toFixed(1)}" fill="${color}" style="filter:brightness(0.68);"></polygon>`;
+    // Top face (the "lid" of the box).
+    const top = `<polygon points="${x.toFixed(1)},${y.toFixed(1)} ${(x+barW).toFixed(1)},${y.toFixed(1)} ${(x+barW+depthX).toFixed(1)},${(y+depthY).toFixed(1)} ${(x+depthX).toFixed(1)},${(y+depthY).toFixed(1)}" fill="${color}" style="filter:brightness(1.28);"></polygon>`;
+    // Front face (the flat face directly facing the viewer, same as the original 2D bar).
+    const front = `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(bh,0).toFixed(1)}" fill="${color}"></rect>`;
+    bars += side + top + front
+      + `<text x="${(x+barW/2+depthX/2).toFixed(1)}" y="${(y+depthY-6).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink)">${it.value==null?'—':shownVal}</text>`;
     labels += `<text x="${(x+barW/2).toFixed(1)}" y="${h-padB+16}" text-anchor="middle" font-size="10.5" fill="var(--ink-soft)" transform="rotate(-18 ${(x+barW/2).toFixed(1)} ${h-padB+16})">${escapeXml(it.label)}</text>`;
   });
   const steps = 5;
