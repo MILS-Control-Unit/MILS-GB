@@ -13757,6 +13757,8 @@ function ensureRcQuizzesOnlyField(){
   if(document.getElementById('rcQuizzesOnly')) return;
   const reportTypeSel = document.getElementById('rcReportType');
   if(!reportTypeSel) return;
+  const anchor = document.getElementById('rcReportTypeCheckboxes') ||
+    reportTypeSel.closest('.form-row, .form-group') || reportTypeSel.parentElement;
   const wrap = document.createElement('div');
   wrap.id = 'rcQuizzesOnlyWrap';
   wrap.style.display = 'none';
@@ -13766,21 +13768,19 @@ function ensureRcQuizzesOnlyField(){
       <input type="checkbox" id="rcQuizzesOnly" style="width:16px;height:16px;margin-top:2px;">
       <span>Quizzes Only — release Q. 1 - Q. 4 &amp; Quizzes Av. only, without the rest of the certificate</span>
     </label>`;
-  const fieldContainer = reportTypeSel.closest('.form-row, .form-group') || reportTypeSel.parentElement;
-  fieldContainer.insertAdjacentElement('afterend', wrap);
-  reportTypeSel.addEventListener('change', toggleRcQuizzesOnlyVisibility);
+  anchor.insertAdjacentElement('afterend', wrap);
 }
 
-// Shows the Quizzes Only checkbox only when the selected Report Card Type is a Month
+// Shows the Quizzes Only checkbox only when at least one CHECKED Report Card Type is a Month
 // certificate (Grade 9's Month cert has no quiz columns, but it's harmless to offer the
 // option there too — isReportCardQuizzesOnly() simply has no quiz columns to trim for it).
 function toggleRcQuizzesOnlyVisibility(){
-  const reportTypeSel = document.getElementById('rcReportType');
   const wrap = document.getElementById('rcQuizzesOnlyWrap');
-  if(!reportTypeSel || !wrap) return;
-  const isMonthCert = reportTypeSel.value==='month1' || reportTypeSel.value==='month2';
-  wrap.style.display = isMonthCert ? '' : 'none';
-  if(!isMonthCert){
+  if(!wrap) return;
+  const selectedTypes = getSelectedRcReportTypes();
+  const hasMonthCert = selectedTypes.some(t=> t==='month1' || t==='month2');
+  wrap.style.display = hasMonthCert ? '' : 'none';
+  if(!hasMonthCert){
     const cb = document.getElementById('rcQuizzesOnly');
     if(cb) cb.checked = false;
   }
@@ -13802,9 +13802,10 @@ function reportCardReleaseLabel(rc){
   return `${sectionLabel} — ${termLabel} — ${gradeLabel} — ${typeLabel}${quizzesSuffix}`;
 }
 
-// Repopulates the Grade select with every Grade across all Stages (flat list — Report Card
-// Release isn't scoped to a single Stage). Leaving it on "All Grades" (empty value) makes the
-// release apply to every Grade in the chosen Section, same as before this field existed.
+// Replaces the (now hidden) Grade <select> with a checkbox group so Admin can release to
+// several specific Grades at once instead of picking exactly one, or leave "All Grades"
+// checked (the default) to apply to every Grade in the Section — same meaning as before this
+// field existed. "All Grades" and specific Grades are mutually exclusive.
 function populateRcGradeOptions(){
   const sel = document.getElementById('rcGrade');
   if(!sel) return;
@@ -13812,19 +13813,81 @@ function populateRcGradeOptions(){
   sel.innerHTML = `<option value="">All Grades</option>` +
     ALL_GRADE_IDS.map(gid=> `<option value="${gid}">${escapeHtml(GRADE_LABEL_BY_ID[gid])}</option>`).join('');
   if(ALL_GRADE_IDS.includes(prevVal)) sel.value = prevVal;
+  sel.style.display = 'none'; // replaced by checkboxes below
+  renderRcGradeCheckboxes();
 }
 
-// Repopulates the Report Card Type select with only the types that actually exist for the
-// chosen Academic Term (reuses the same certReportTypeOptions() the real Certificates
-// stepper uses, so this list can never drift out of sync with it).
+function renderRcGradeCheckboxes(){
+  const sel = document.getElementById('rcGrade');
+  if(!sel) return;
+  let box = document.getElementById('rcGradeCheckboxes');
+  const isNew = !box;
+  if(isNew){
+    box = document.createElement('div');
+    box.id = 'rcGradeCheckboxes';
+    box.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;';
+    sel.insertAdjacentElement('afterend', box);
+  }
+  const prevChecked = new Set(Array.from(box.querySelectorAll('.rc-grade-cb:checked')).map(cb=>cb.value));
+  const prevAllChecked = box.querySelector('#rcGradeAll') ? box.querySelector('#rcGradeAll').checked : true;
+  box.innerHTML = `
+    <label style="display:flex;align-items:center;gap:6px;font-weight:700;">
+      <input type="checkbox" id="rcGradeAll" ${(prevChecked.size===0 || prevAllChecked) ? 'checked' : ''}> All Grades
+    </label>` +
+    ALL_GRADE_IDS.map(gid=> `
+    <label style="display:flex;align-items:center;gap:6px;">
+      <input type="checkbox" class="rc-grade-cb" value="${gid}" ${prevChecked.has(gid) ? 'checked' : ''}> ${escapeHtml(GRADE_LABEL_BY_ID[gid])}
+    </label>`).join('');
+  const allCb = document.getElementById('rcGradeAll');
+  const gradeCbs = Array.from(box.querySelectorAll('.rc-grade-cb'));
+  allCb.addEventListener('change', ()=>{ if(allCb.checked) gradeCbs.forEach(cb=> cb.checked=false); });
+  gradeCbs.forEach(cb=> cb.addEventListener('change', ()=>{
+    if(cb.checked) allCb.checked = false;
+    if(gradeCbs.every(c=>!c.checked)) allCb.checked = true;
+  }));
+}
+
+// Returns the checked Grade ids, or [''] (meaning "All Grades") when none of the specific
+// Grade checkboxes are checked.
+function getSelectedRcGrades(){
+  const box = document.getElementById('rcGradeCheckboxes');
+  if(!box){
+    const sel = document.getElementById('rcGrade');
+    return [sel ? sel.value : ''];
+  }
+  const checked = Array.from(box.querySelectorAll('.rc-grade-cb:checked')).map(cb=>cb.value);
+  return checked.length ? checked : [''];
+}
+
+function setSelectedRcGrades(gradeIds){
+  const box = document.getElementById('rcGradeCheckboxes');
+  if(!box) return;
+  const allCb = document.getElementById('rcGradeAll');
+  const cbs = Array.from(box.querySelectorAll('.rc-grade-cb'));
+  if(!gradeIds || !gradeIds.length){
+    if(allCb) allCb.checked = true;
+    cbs.forEach(cb=> cb.checked = false);
+  } else {
+    if(allCb) allCb.checked = false;
+    cbs.forEach(cb=> cb.checked = gradeIds.includes(cb.value));
+  }
+}
+
+// Repopulates the (now hidden) Report Card Type select with only the types that actually
+// exist for the chosen Academic Term (reuses the same certReportTypeOptions() the real
+// Certificates stepper uses, so this list can never drift out of sync with it), then renders
+// the same options as a checkbox group so Admin can release several Report Card types in one
+// go instead of adding one Release Schedule at a time.
 function populateRcReportTypeOptions(){
   const sel = document.getElementById('rcReportType');
   if(!sel) return;
   const term = document.getElementById('rcTermPeriod').value;
   const prevVal = sel.value;
+  sel.style.display = 'none'; // replaced by checkboxes below
   if(!term){
     sel.innerHTML = `<option value="">Select Academic Term first</option>`;
     sel.disabled = true;
+    renderRcReportTypeCheckboxes([]);
     return;
   }
   sel.disabled = false;
@@ -13832,6 +13895,48 @@ function populateRcReportTypeOptions(){
   sel.innerHTML = `<option value="">Select Report Card</option>` +
     opts.map(o=> `<option value="${o.id}">${escapeHtml(o.label)}</option>`).join('');
   if(opts.some(o=>o.id===prevVal)) sel.value = prevVal;
+  renderRcReportTypeCheckboxes(opts);
+}
+
+function renderRcReportTypeCheckboxes(opts){
+  const sel = document.getElementById('rcReportType');
+  if(!sel) return;
+  let box = document.getElementById('rcReportTypeCheckboxes');
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'rcReportTypeCheckboxes';
+    box.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;';
+    sel.insertAdjacentElement('afterend', box);
+  }
+  const prevChecked = new Set(Array.from(box.querySelectorAll('.rc-type-cb:checked')).map(cb=>cb.value));
+  if(!opts || !opts.length){
+    box.innerHTML = `<span style="color:var(--ink-soft);">Select Academic Term first</span>`;
+  } else {
+    box.innerHTML = opts.map(o=> `
+      <label style="display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" class="rc-type-cb" value="${o.id}" ${prevChecked.has(o.id) ? 'checked' : ''}> ${escapeHtml(o.label)}
+      </label>`).join('');
+    Array.from(box.querySelectorAll('.rc-type-cb')).forEach(cb=> cb.addEventListener('change', toggleRcQuizzesOnlyVisibility));
+  }
+  ensureRcQuizzesOnlyField();
+  toggleRcQuizzesOnlyVisibility();
+}
+
+// Returns the checked Report Card Type ids (may be empty — caller must validate at least one
+// is required before saving).
+function getSelectedRcReportTypes(){
+  const box = document.getElementById('rcReportTypeCheckboxes');
+  if(!box){
+    const sel = document.getElementById('rcReportType');
+    return sel && sel.value ? [sel.value] : [];
+  }
+  return Array.from(box.querySelectorAll('.rc-type-cb:checked')).map(cb=>cb.value);
+}
+
+function setSelectedRcReportTypes(typeIds){
+  const box = document.getElementById('rcReportTypeCheckboxes');
+  if(!box) return;
+  Array.from(box.querySelectorAll('.rc-type-cb')).forEach(cb=> cb.checked = (typeIds||[]).includes(cb.value));
   toggleRcQuizzesOnlyVisibility();
 }
 
@@ -13888,10 +13993,8 @@ function addReportCardReleaseRow(){
 function saveReportCardRelease(){
   const section = document.getElementById('rcSection').value.trim();
   const termPeriod = document.getElementById('rcTermPeriod').value.trim();
-  const gradeSel = document.getElementById('rcGrade');
-  const grade = gradeSel ? gradeSel.value.trim() : ''; // optional — blank = applies to All Grades
-  const reportTypeSel = document.getElementById('rcReportType');
-  const reportType = reportTypeSel.value.trim();
+  const grades = getSelectedRcGrades(); // array of grade ids, or [''] for "All Grades"
+  const reportTypes = getSelectedRcReportTypes(); // array of report type ids
   const releaseDate = document.getElementById('rcReleaseDate').value.trim();
   const releaseTime = document.getElementById('rcReleaseTime').value.trim();
   const endDate = document.getElementById('rcEndDate').value.trim();
@@ -13900,7 +14003,7 @@ function saveReportCardRelease(){
   
   if(!section){ alert('Please select a Section.'); return; }
   if(!termPeriod){ alert('Please select an Academic Term.'); return; }
-  if(!reportType){ alert('Please select a Report Card type.'); return; }
+  if(!reportTypes.length){ alert('Please select at least one Report Card type.'); return; }
   if(!releaseDate){ alert('Please select a Release Date.'); return; }
   if(!releaseTime){ alert('Please select a Release Time.'); return; }
   
@@ -13914,16 +14017,28 @@ function saveReportCardRelease(){
   }
   
   const quizzesOnlyCb = document.getElementById('rcQuizzesOnly');
-  const quizzesOnly = !!(quizzesOnlyCb && quizzesOnlyCb.checked && (reportType==='month1' || reportType==='month2'));
-  const rc = { section, termPeriod, grade, reportType, releaseDate, releaseTime, endDate, endTime, notes, quizzesOnly };
-  reportCardReleases.push(rc);
+  const quizzesOnlyChecked = !!(quizzesOnlyCb && quizzesOnlyCb.checked);
+
+  // One flattened release record per Grade x Report Type combination selected — keeps every
+  // existing consumer (isReportCardVisible, activeReportCardReleaseFor, the release table,
+  // the notification bell, etc.) working unchanged, since each record still has exactly one
+  // grade and one reportType, same shape as before checkboxes existed.
+  const added = [];
+  reportTypes.forEach(reportType=>{
+    const quizzesOnly = quizzesOnlyChecked && (reportType==='month1' || reportType==='month2');
+    grades.forEach(grade=>{
+      const rc = { section, termPeriod, grade, reportType, releaseDate, releaseTime, endDate, endTime, notes, quizzesOnly };
+      reportCardReleases.push(rc);
+      added.push(rc);
+    });
+  });
   reportCardReleases.sort((a,b) => (a.releaseDate + a.releaseTime).localeCompare(b.releaseDate + b.releaseTime));
   
   saveReportCardReleases();
   renderReportCardReleaseTable();
   resetReportCardForm();
   
-  logActivity('add', `Added Report Card Release: ${reportCardReleaseLabel(rc)} on ${releaseDate} at ${releaseTime}`);
+  added.forEach(rc=> logActivity('add', `Added Report Card Release: ${reportCardReleaseLabel(rc)} on ${releaseDate} at ${releaseTime}`));
   refreshHeaderQuickWidgets();
 }
 
@@ -13934,10 +14049,9 @@ function editReportCardRelease(idx){
   document.getElementById('rcSection').value = rc.section || '';
   document.getElementById('rcTermPeriod').value = rc.termPeriod || '';
   populateRcGradeOptions();
-  const gradeSel = document.getElementById('rcGrade');
-  if(gradeSel) gradeSel.value = rc.grade || '';
+  setSelectedRcGrades(rc.grade ? [rc.grade] : []);
   populateRcReportTypeOptions();
-  document.getElementById('rcReportType').value = rc.reportType || '';
+  setSelectedRcReportTypes(rc.reportType ? [rc.reportType] : []);
   ensureRcQuizzesOnlyField();
   toggleRcQuizzesOnlyVisibility();
   const quizzesOnlyCb = document.getElementById('rcQuizzesOnly');
@@ -13979,7 +14093,8 @@ function resetReportCardForm(){
   document.getElementById('rcSection').value = '';
   document.getElementById('rcTermPeriod').value = '';
   populateRcGradeOptions();
-  populateRcReportTypeOptions();
+  setSelectedRcGrades([]); // back to "All Grades"
+  populateRcReportTypeOptions(); // term is blank here, so this also clears the type checkboxes
   const quizzesOnlyCb = document.getElementById('rcQuizzesOnly');
   if(quizzesOnlyCb) quizzesOnlyCb.checked = false;
   toggleRcQuizzesOnlyVisibility();
