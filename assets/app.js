@@ -1459,8 +1459,162 @@ function perfCycleLabel(term, cycle){
   return PERF_CYCLE_LABELS[cycle] || 'Cycle 1';
 }
 
+/* ================== Top & At-Risk: "Top 10" (Term 1 / Term 2) ==================
+   A separate ranking view from the Cycle/Exam alert lists above — for each Stage-bucket
+   below, ranks every student in that bucket (combining every Grade in it) by ONE metric for
+   the chosen Term, and shows the top 10 by rank (ties at the 10th place are ALL included, so
+   the list can run longer than 10 rows — "مراعاة المراكز المكررة"). Section (English/French)
+   is kept separate, same as everywhere else in the app, since the two sections don't
+   necessarily share the same student cohort or subjects.
+   - Primary Stage (Grade 1-6): ranked by Total Term — the same "Total" percentage shown as
+     the subtotal row on the Primary Report Card certificate (summed across its core subjects
+     for Grade 3-6; averaged across every subject for Grade 1-2, which have no such subtotal
+     on their own certificate).
+   - Prep Stage (Grade 7-9) and Grade 10 Secondary specifically (not Grade 11/12, which use a
+     different certificate/grading system): ranked by Actual Mark — the same conversion of
+     each core subject's Term Total onto its own Max./Min. scale used on their Report Card
+     certificates (PREP_ACTUAL_MARK_MAP / SEC_ACTUAL_MARK_MAP), summed and expressed as a
+     percentage of that bucket's own core-subject maximum for a fair, comparable ranking. */
+const PERF_TOP10_BUCKETS = [
+  { key:'primary', label:'Primary Stage',       stage:'primary',   grades:['g1','g2','g3','g4','g5','g6'], metricLabel:'Total Term' },
+  { key:'prep',    label:'Prep Stage',          stage:'prep',      grades:['g7','g8','g9'],                 metricLabel:'Actual Mark' },
+  { key:'grade10', label:'Grade 10 (Secondary)', stage:'secondary', grades:['g10'],                          metricLabel:'Actual Mark' }
+];
+
+// One subject's Term Total (Total Coursework + Exam Paper, junior Primary has no Exam Paper)
+// for one student — reuses computePrimaryTotals the same way computeExamsAnalysis's Term
+// Total mode does, and falls back to emptyScoreObj() the same way certificates do, so a
+// subject nobody has entered scores for yet doesn't just silently disappear from the sum.
+function subjectTermFigureFor(section, stage, grade, term, subject, studentId){
+  return withExamsAnalysisState(section, stage, grade, term, subject, ()=>{
+    const sc = (scores[subjKey()]||{})[studentId] || emptyScoreObj();
+    const t = computePrimaryTotals(sc);
+    const examVal = (sc.examPaper===null||sc.examPaper===undefined||sc.examPaper==='') ? 0 : (parseFloat(sc.examPaper)||0);
+    const junior = stage==='primary' && (grade==='g1'||grade==='g2');
+    return junior ? { total:t.totalCoursework, max:t.maxTotal } : { total:t.totalCoursework+examVal, max:100 };
+  });
+}
+// Primary Stage's Total Term, as a percentage — see the block comment above for why Grade
+// 1-2 (junior) is handled differently from Grade 3-6.
+function perfTop10PrimaryPct(section, grade, student, term){
+  const subjectsList = certApplicableSubjects('primary', student, section, grade);
+  const junior = grade==='g1' || grade==='g2';
+  if(junior){
+    let sum=0, count=0;
+    subjectsList.forEach(sub=>{
+      const r = subjectTermFigureFor(section,'primary',grade,term,sub,student.id);
+      if(r.max){ sum += (r.total/r.max)*100; count++; }
+    });
+    return count ? sum/count : null;
+  }
+  // Same subtotal cutoff the Report Card certificate itself uses (see isG3G6ReportCardCert):
+  // Arabic → Mathematics for Grade 3 (whose subject list already excludes Social Studies/ICT
+  // via certApplicableSubjects above), Arabic → Social Studies for Grade 4-6.
+  const cutoff = grade==='g3' ? 'Mathematics' : 'Social Studies';
+  let sum=0, cnt=0, reachedCutoff=false;
+  for(const sub of subjectsList){
+    const r = subjectTermFigureFor(section,'primary',grade,term,sub,student.id);
+    sum += r.total; cnt++;
+    if(sub===cutoff){ reachedCutoff=true; break; }
+  }
+  return (reachedCutoff && cnt) ? sum/cnt : null; // each subject's total is already out of 100, so sum/count IS the percentage
+}
+// Prep / Grade 10 Secondary's Actual Mark total, expressed as a percentage of that bucket's
+// own core-subject maximum (see PREP_ACTUAL_MARK_MAP/SEC_ACTUAL_MARK_MAP above) — returns the
+// raw Actual Mark total too, for display alongside the percentage.
+function perfTop10ActualMark(section, stage, grade, student, term, coreSubjects, actualMap){
+  let sum=0, coreMax=0, any=false;
+  coreSubjects.forEach(sub=>{
+    const range = actualMap[sub];
+    if(!range) return;
+    const r = subjectTermFigureFor(section, stage, grade, term, sub, student.id);
+    sum += (r.total/100)*range.max;
+    coreMax += range.max;
+    any = true;
+  });
+  return any && coreMax ? { pct:(sum/coreMax)*100, raw:sum, max:coreMax } : null;
+}
+// Ranks every student across every Grade in the bucket by that bucket's metric, then keeps
+// every row with rank<=10 using standard competition ranking (ties share a rank, and the next
+// distinct value's rank skips ahead accordingly) — so a tie sitting exactly on the 10th place
+// keeps every tied student rather than arbitrarily cutting the list at a fixed row count.
+function computeTop10ForBucket(section, bucket, term){
+  const rows = [];
+  bucket.grades.forEach(grade=>{
+    const ck = `${section}|${bucket.stage}|${grade}`;
+    const roster = visibleRoster(students[ck]);
+    roster.forEach(s=>{
+      let pct=null, raw=null, max=null;
+      if(bucket.key==='primary'){
+        pct = perfTop10PrimaryPct(section, grade, s, term);
+      }else{
+        const coreSubjects = bucket.stage==='prep' ? PREP_ACTUAL_MARK_CORE_SUBJECTS : SEC_ACTUAL_MARK_CORE_SUBJECTS;
+        const actualMap = bucket.stage==='prep' ? PREP_ACTUAL_MARK_MAP : SEC_ACTUAL_MARK_MAP;
+        const r = perfTop10ActualMark(section, bucket.stage, grade, s, term, coreSubjects, actualMap);
+        if(r){ pct = r.pct; raw = r.raw; max = r.max; }
+      }
+      if(pct===null || isNaN(pct)) return;
+      rows.push({ id:s.id, displayId:s.displayId||'—', name:s.name, grade, classroom:s.classroom||'', pct, raw, max });
+    });
+  });
+  if(!rows.length) return [];
+  rows.sort((a,b)=> b.pct-a.pct || a.name.localeCompare(b.name));
+  rows.forEach((r,i)=>{ r.rank = (i>0 && rows[i-1].pct===r.pct) ? rows[i-1].rank : i+1; });
+  const cutoffRank = rows.length>=10 ? rows[9].rank : rows[rows.length-1].rank;
+  return rows.filter(r=> r.rank<=cutoffRank);
+}
+
+function renderPerfTop10(term){
+  const area = document.getElementById('perfTableArea');
+  if(!area) return;
+  const crumbs = document.getElementById('perfCrumbs');
+  const termLabel = TERM_LABELS[term] || 'Term 1';
+  if(crumbs) crumbs.innerHTML = `<span class="crumb subj">${escapeHtml(termLabel)}</span><span class="crumb subj">Top 10</span>`;
+  if(!term){
+    area.innerHTML = `<div class="empty-state"><div class="seal-lg">🏆</div><h3>Choose a Term</h3><p>Use the "Top &amp; At-Risk" menu above to pick "🏆 Top 10" under First Term or Second Term.</p></div>`;
+    return;
+  }
+  let html = '';
+  Object.keys(SECTIONS).forEach(section=>{
+    const sectionLabel = (SECTIONS[section] && SECTIONS[section].label) || section;
+    html += `<h3 style="margin:18px 0 8px;">${escapeHtml(sectionLabel)}</h3>`;
+    PERF_TOP10_BUCKETS.forEach(bucket=>{
+      const rows = computeTop10ForBucket(section, bucket, term);
+      html += `<div class="table-card" style="margin-bottom:14px;">
+        <h4 style="margin:0 0 8px;">${escapeHtml(bucket.label)} — Top 10 (${escapeHtml(bucket.metricLabel)})</h4>`;
+      if(!rows.length){
+        html += `<p class="foot-note">No scores recorded yet for this Section/Stage.</p></div>`;
+        return;
+      }
+      const bodyRows = rows.map(r=>`
+        <tr>
+          <td class="range-cell">${r.rank}</td>
+          <td>${escapeHtml(r.displayId)}</td>
+          <td>${escapeHtml(r.name)}</td>
+          <td>${escapeHtml(GRADE_LABEL_BY_ID[r.grade]||r.grade)}</td>
+          <td>${escapeHtml(r.classroom||'—')}</td>
+          <td><b>${r.pct.toFixed(1)}%</b>${r.raw!=null ? ` <small>(${Math.round(r.raw*10)/10}/${r.max})</small>` : ''}</td>
+        </tr>`).join('');
+      html += `
+        <div class="grade-table-scroll">
+          <table class="exam-analysis-table">
+            <thead><tr><th class="range-cell">Rank</th><th>ID</th><th>Name</th><th>Grade</th><th>Class</th><th>${escapeHtml(bucket.metricLabel)}</th></tr></thead>
+            <tbody>${bodyRows}</tbody>
+          </table>
+        </div>
+      </div>`;
+    });
+  });
+  html += `<p class="foot-note">Ties sitting exactly on the 10th place are all included — so a list may show more than 10 rows.</p>`;
+  area.innerHTML = html;
+}
+function openPerfTop10(term){
+  openPerfAlert(term, 'top10', null);
+}
+
 function renderPerfAlerts(){
   const { perfTerm:term, perfCycle:cycle, perfCategory:category } = state;
+  if(cycle==='top10'){ renderPerfTop10(term); return; }
   const crumbs = document.getElementById('perfCrumbs');
   const termLabel = TERM_LABELS[term] || 'Term 1';
   const cycleLabel = perfCycleLabel(term, cycle);
@@ -1549,6 +1703,18 @@ const GROQ_VISION_MODEL = 'qwen/qwen3.6-27b';
 function aiTeacherAssistantAvailable(){
   return !!(HELP_ASSISTANT_WORKER_URL && HELP_ASSISTANT_WORKER_URL.indexOf('REPLACE_WITH') !== 0);
 }
+
+// One-time style injection: the "🤖 AI Analysis" buttons added to Certificates and Exams
+// Analysis use the .ai-no-print class so they never show up in a printed/PDF certificate or
+// exams table. Injected from JS (rather than relying on the main HTML file's own print
+// stylesheet) so this works even if that stylesheet was never touched.
+(function injectAINoPrintStyle(){
+  if(document.getElementById('aiNoPrintStyle')) return;
+  const style = document.createElement('style');
+  style.id = 'aiNoPrintStyle';
+  style.textContent = '@media print{ .ai-no-print{ display:none !important; } }';
+  document.head.appendChild(style);
+})();
 
 // Max score for one row's subject list — Cycle rows use the stage/grade's Cycle
 // scale (Max. 5, or Max. 15 for Grade 7/8 Prep & Grade 10/11 Secondary), Exam
@@ -1739,6 +1905,99 @@ ${context}`;
   }
 }
 
+/* ---------- Exams Analysis: whole-class AI Analysis ---------- */
+// Same idea as openAIClassAnalysis above, but built for the Exams Analysis table's
+// `columns` shape ({subject, total, bandCounts, max, avg}) instead of a plain
+// {subject, score} + single maxScore pair — Grade 12's End-of-Year Exam Paper gives every
+// subject its OWN maximum mark, so each subject's max travels alongside its average rather
+// than being assumed uniform across the whole class.
+function buildExamsClassAIContext(scopeLabel, columns){
+  const lines = columns.map(c=>{
+    const pct = c.max ? Math.round((c.avg/c.max)*1000)/10 : 0;
+    const passRate = c.total ? Math.round((100 - (c.bandCounts[0]/c.total*100))*10)/10 : 0;
+    return `- ${c.subject}: class average ${Math.round(c.avg*10)/10} / ${c.max} (${pct}%), pass rate ${passRate}% of ${c.total} student${c.total===1?'':'s'}`;
+  });
+  return `Class scope: ${scopeLabel || ''}\nPer-subject results:\n${lines.join('\n')}`;
+}
+
+// Stash for the Exams Analysis "🤖 AI Analysis" button — rebuilt every renderExamsTable()
+// call, mirroring certAIRowStash/perfAIRowStash's pattern of keeping raw data out of
+// onclick="" attributes.
+let examsAIStash = null;
+function openAIExamsClassAnalysisFromStash(){
+  if(!examsAIStash) return;
+  openAIExamsClassAnalysis(examsAIStash.scopeLabel, examsAIStash.columns);
+}
+
+async function openAIExamsClassAnalysis(scopeLabel, columns){
+  if(!aiTeacherAssistantAvailable()){
+    alert('AI analysis isn\'t configured yet. Deploy the Cloudflare Worker (worker.js or your existing mils-ai-proxy) and paste its URL into HELP_ASSISTANT_WORKER_URL near the top of app.js.');
+    return;
+  }
+  if(!columns || !columns.length){
+    alert('No recorded scores to analyze yet.');
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay show';
+  overlay.innerHTML = `
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Exams Class Analysis">
+      <h3>🤖 AI Analysis — ${escapeHtml(scopeLabel)}</h3>
+      <div id="aiExamsAnalysisBody" style="min-height:80px;">
+        <p style="color:var(--ink-soft);">⏳ Analyzing the class's overall result with AI — this can take a few seconds…</p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" id="aiExamsAnalysisClose">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  function close(){ overlay.remove(); }
+  overlay.querySelector('#aiExamsAnalysisClose').addEventListener('click', close);
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) close(); });
+
+  const context = buildExamsClassAIContext(scopeLabel, columns);
+  const prompt = `You are a supportive school academic advisor reading a class's overall exam result across every subject. Based ONLY on the data below, return STRICT JSON (no markdown fences, no commentary) with exactly two keys:
+"classInsight": a concise 3-4 sentence analytical note on this class's overall result — which subjects are strongest, which are weakest, any subjects with a low pass rate, and any notable overall pattern.
+"recommendations": 2-3 short, concrete, actionable next steps the teacher/HOD/department could take to raise the weaker subjects, as a single string with each step on its own line (start each line with "- ").
+
+${context}`;
+
+  try{
+    const raw = await callGroqChat(prompt);
+    const cleaned = raw.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'').trim();
+    let parsed;
+    try{ parsed = JSON.parse(cleaned); }
+    catch(e){ parsed = { classInsight: raw, recommendations: '' }; }
+    const body = overlay.querySelector('#aiExamsAnalysisBody');
+    if(body){
+      body.innerHTML = `
+        <div style="margin-bottom:14px;">
+          <div style="font-weight:600;margin-bottom:4px;">📊 Insight</div>
+          <p style="white-space:pre-line;margin:0 0 6px;">${escapeHtml(parsed.classInsight||'—')}</p>
+          <button type="button" class="btn btn-outline" style="font-size:12px;padding:4px 10px;" data-copy-text="${escapeHtml(parsed.classInsight||'')}">Copy</button>
+        </div>
+        ${parsed.recommendations ? `
+        <div>
+          <div style="font-weight:600;margin-bottom:4px;">✅ Recommendations</div>
+          <p style="white-space:pre-line;margin:0 0 6px;">${escapeHtml(parsed.recommendations)}</p>
+          <button type="button" class="btn btn-outline" style="font-size:12px;padding:4px 10px;" data-copy-text="${escapeHtml(parsed.recommendations)}">Copy</button>
+        </div>` : ''}
+        <p style="font-size:11px;color:var(--ink-soft);margin-top:12px;">⚠ AI-generated — please review before acting on it.</p>`;
+      body.querySelectorAll('[data-copy-text]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          navigator.clipboard.writeText(btn.getAttribute('data-copy-text')||'');
+          const old = btn.textContent; btn.textContent = 'Copied ✓';
+          setTimeout(()=>{ btn.textContent = old; }, 1200);
+        });
+      });
+    }
+  }catch(err){
+    console.error(err);
+    const body = overlay.querySelector('#aiExamsAnalysisBody');
+    if(body) body.innerHTML = `<p style="color:var(--red);">Could not get an AI analysis right now (${escapeHtml(err.message||'network error')}). Please try again in a moment.</p>`;
+  }
+}
+
 // Adds a "First Term Exam" item under Term 1 and a "Second Term Exam" item under Term 2 of the
 // "Top & At-Risk" nav dropdown, each opening a 3-way Top Performance / At Risk / Critical submenu
 // (see computePerfAlertList's 'exam' mode above). Built by cloning the existing Cycle 1
@@ -1788,6 +2047,28 @@ function injectPerfExamMenuItems(){
 }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', injectPerfExamMenuItems);
 else injectPerfExamMenuItems();
+
+// Adds a single "🏆 Top 10" button per Term (no Top/At-Risk/Critical submenu needed — it's
+// one destination, see openPerfTop10/renderPerfTop10 above) — cloned from the Cycle 1 button
+// the same way injectPerfExamMenuItems clones it above, so it automatically matches the
+// dropdown's real styling without touching the HTML file directly.
+function injectPerfTop10MenuItems(){
+  ['term1','term2'].forEach(term=>{
+    const btnId = 'perfTop10Btn_'+term;
+    if(document.getElementById(btnId)) return; // already injected
+    const templateBtn = document.getElementById('perfCycleGroupBtn_'+term+'_cycle1');
+    const container = document.getElementById('perfTermGroup_'+term);
+    if(!templateBtn || !container) return; // menu not in the DOM yet
+    const btn = templateBtn.cloneNode(true);
+    btn.id = btnId;
+    btn.classList.remove('selected','expanded');
+    btn.innerHTML = btn.innerHTML.replace(/Cycle\s*1/i, '🏆 Top 10');
+    btn.onclick = ()=> openPerfTop10(term);
+    container.appendChild(btn);
+  });
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', injectPerfTop10MenuItems);
+else injectPerfTop10MenuItems();
 
 /* ================== IN-APP HELP ASSISTANT (Groq via Cloudflare Worker) ==================
    Floating chat widget so any logged-in user can ask "how do I do X in this app?" and get
@@ -3236,14 +3517,22 @@ function getExamModeLabel(term, mode){
 }
 
 // Which raw score field feeds each exam mode and which stages actually record that field.
-// Cycle 1 / Cycle 2 only exist for the Primary Stage (non-junior grades). The First Term /
-// End-of-Year Exam Paper is recorded once for the whole Grade via the "examPaper" Mark Entry
-// screen, for every stage — its maximum grade is 60 for Primary and 30 for Prep/Secondary
+// Cycle 1 / Cycle 2 are recorded for every Stage except Grade 1/2 Primary (junior) and Grade
+// 12 Secondary (which has no Mark Entry other than its End-of-Year Exam Paper) — see
+// EXAM_FIELD_INFO below, whose max is grade-aware (perfCycleMaxFor) since Grade 7/8 Prep and
+// Grade 10/11 Secondary use an extended Max.15 scale instead of the standard Max.5. The First
+// Term / End-of-Year Exam Paper is recorded once for the whole Grade via the "examPaper" Mark
+// Entry screen, for every stage — its maximum grade is 60 for Primary and 30 for Prep/Secondary
 // (same as examPaperMax() on the Grade Book screen), so max is resolved per-stage rather than
 // being a single fixed number here.
 const EXAM_FIELD_INFO = {
-  cycle1:    { field:'m1Cycle',   max:5,                      appliesToStage: st => st==='primary' },
-  cycle2:    { field:'m2Cycle',   max:5,                      appliesToStage: st => st==='primary' },
+  // Cycle scores are recorded everywhere except Grade 1/2 Primary (handled separately by the
+  // junior check below) and Grade 12 Secondary (redirected to 'finalexam' before this is ever
+  // consulted — see the isG12 block above) — Grade 7/8 Prep and Grade 10/11 Secondary use
+  // their own extended Max.15 scale (perfCycleMaxFor, shared with Top Performance/At-Risk),
+  // every other grade uses the standard Max.5.
+  cycle1:    { field:'m1Cycle',   max: perfCycleMaxFor, appliesToStage: st => true },
+  cycle2:    { field:'m2Cycle',   max: perfCycleMaxFor, appliesToStage: st => true },
   finalexam: { field:'examPaper', max: st => st==='primary' ? 60 : 30, appliesToStage: st => true }
 };
 
@@ -3401,7 +3690,8 @@ function computeExamsAnalysis(section, stage, grade, classroom, term, mode, subj
       if(!vals.length) return;
       const bandCounts = SCORE_BANDS.map(()=>0);
       vals.forEach(v=> bandCounts[bandIndexForPct(v)]++); // Term Total is already out of 100, so the value IS the percentage.
-      columns.push({ subject, total: vals.length, bandCounts, max:100 });
+      const avg = vals.reduce((a,b)=>a+b,0)/vals.length;
+      columns.push({ subject, total: vals.length, bandCounts, max:100, avg });
     });
     return { invalid:false, columns, max:100 };
   }
@@ -3417,7 +3707,7 @@ function computeExamsAnalysis(section, stage, grade, classroom, term, mode, subj
   if(junior){
     return { invalid:true, reason:'Cycle scores are not recorded for Grade 1 & Grade 2 Primary.' };
   }
-  const stageMax = typeof info.max === 'function' ? info.max(stage) : info.max;
+  const stageMax = typeof info.max === 'function' ? info.max(stage, grade) : info.max;
 
   const columns = [];
   subjects.forEach(subject=>{
@@ -3445,7 +3735,8 @@ function computeExamsAnalysis(section, stage, grade, classroom, term, mode, subj
       const pct = max ? (v/max)*100 : 0;
       bandCounts[bandIndexForPct(pct)]++;
     });
-    columns.push({ subject, total:vals.length, bandCounts, max });
+    const avg = vals.reduce((a,b)=>a+b,0)/vals.length;
+    columns.push({ subject, total:vals.length, bandCounts, max, avg });
   });
   // `max` at the top level is only meaningful when every column shares the same maximum
   // (true everywhere except Grade 12's End-of-Year Exam Paper, where it varies per subject —
@@ -3590,7 +3881,22 @@ function renderExamsTable(){
       ${chartSvg}
     </div>`;
 
-  area.innerHTML = `
+  // "🤖 AI Analysis" button — whole-class overall result across every subject shown in this
+  // exact table (mirrors the Certificates "AI Analysis — Full Result" button's approach, just
+  // scoped to a class instead of one student). Reuses the same columns already computed above
+  // (with their per-subject class average), no extra querying needed.
+  let aiBtnHtml = '';
+  if(aiTeacherAssistantAvailable()){
+    const gradeLabel2 = STAGES[stage].grades.find(g=>g.id===grade).label;
+    const scopeLabel = `${SECTIONS[section].label} • ${gradeLabel2}${classroom ? ' • '+classroom : ''} • ${TERM_LABELS[term]||''} • ${escapeHtml(getExamModeLabel(term, effectiveMode))}`;
+    examsAIStash = { scopeLabel, columns: result.columns };
+    aiBtnHtml = `
+    <div class="ai-no-print" style="display:flex;justify-content:flex-end;margin:0 0 10px;">
+      <button type="button" class="ai-action-btn ai-action-btn--pro" onclick="openAIExamsClassAnalysisFromStash()"><span class="ai-action-btn__icon">🤖</span><span class="ai-action-btn__text"><span class="ai-action-btn__title">AI Analysis</span><span class="ai-action-btn__sub">Overall result for this class</span></span></button>
+    </div>`;
+  }
+
+  area.innerHTML = aiBtnHtml + `
     <div class="table-card">
       <div class="grade-table-scroll">
         <table class="exam-analysis-table">
@@ -3926,6 +4232,17 @@ function reportMetric(sc, type){
 // studentId (set from the "Student" dropdown in the workspace, not the stepper) narrows it down
 // further to a single certificate instead of the whole scope.
 let certState = { termPeriod:null, section:null, stage:null, grade:null, reportType:null, term:null, studentId:null, generated:false, __isCert:true };
+
+// Stash for each rendered certificate card's per-student AI context (mirrors perfAIRowStash's
+// pattern above) — keeps the "🤖 AI Analysis" button's onclick="" free of raw student names/
+// subject data, which could contain quotes or special characters that would break an inline
+// HTML attribute. Rebuilt every time renderCertReportsCards() runs.
+let certAIRowStash = [];
+function openAIStudentAnalysisFromCert(idx){
+  const row = certAIRowStash[idx];
+  if(!row) return;
+  openAIStudentAnalysis(row.name, row.meta, row.subjectRows, row.maxScore);
+}
 
 const CERT_REPORT_TITLES = {
   month1: 'First Month Report Card',
@@ -4287,6 +4604,8 @@ function renderCertReportsCards(){
       </div>`;
     return;
   }
+  certAIRowStash = [];
+  const aiAvailable = aiTeacherAssistantAvailable();
   const gradeLabel = STAGES[certState.stage].grades.find(g=>g.id===certState.grade).label;
   const type = certState.reportType;
   const cardTitle = (CERT_REPORT_TITLES[type] || 'Report Card').toUpperCase();
@@ -5076,7 +5395,37 @@ function renderCertReportsCards(){
     const CERT_SEAL_STAR_SVG = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2.5 L14.6 9 L21.5 9.4 L16 13.8 L17.9 20.5 L12 16.6 L6.1 20.5 L8 13.8 L2.5 9.4 L9.4 9 Z" fill="currentColor"/></svg>`;
     const CERT_DIVIDER_ORNAMENT_SVG = `<svg viewBox="0 0 22 14" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="2" cy="7" r="1.6" fill="currentColor"/><path d="M11 1 L17 7 L11 13 L5 7 Z" fill="currentColor"/><circle cx="20" cy="7" r="1.6" fill="currentColor"/></svg>`;
 
-    return `
+    // Full-result AI Analysis button — uses certSubjectResult() (the same type-aware helper
+    // the plain cert2-table layout above uses) to pull EVERY applicable subject's score for
+    // this exact certificate, regardless of which grade-specific header/branch rendered the
+    // visible table. certSubjectResult's max is uniform across subjects for any one
+    // Stage/Grade/Report-Type combo, so a single maxScore is safe here (see the openAI*
+    // functions this reuses — they were originally built for the Dashboard's Cycle/Term
+    // Total views, which share the same {subject, score} + single maxScore shape).
+    let aiBtnHtml = '';
+    if(aiAvailable){
+      let aiMaxScore = null;
+      const aiSubjectRows = subjects.map(sub=>{
+        const r = certSubjectResult(sub, student.id, type);
+        if(r.applicable && aiMaxScore===null) aiMaxScore = r.max;
+        return (r.applicable && r.hasVal) ? { subject: sub, score: r.val } : null;
+      }).filter(Boolean);
+      if(aiSubjectRows.length && aiMaxScore){
+        const stashIdx = certAIRowStash.length;
+        certAIRowStash.push({
+          name: student.name,
+          meta: `${gradeLabel}${student.classroom ? ' • '+student.classroom : ''} • ${CERT_REPORT_TITLES[type]||'Report Card'}`,
+          subjectRows: aiSubjectRows,
+          maxScore: aiMaxScore
+        });
+        aiBtnHtml = `
+    <div class="cert-ai-btn-row ai-no-print" style="display:flex;justify-content:flex-end;max-width:820px;margin:0 auto 6px;">
+      <button type="button" class="ai-action-btn ai-action-btn--mini ai-action-btn--accent" onclick="openAIStudentAnalysisFromCert(${stashIdx})"><span class="ai-action-btn__icon">🤖</span> AI Analysis — Full Result</button>
+    </div>`;
+      }
+    }
+
+    return aiBtnHtml + `
     <div class="cert2-outer cert2-print-page">
       <div class="cert2-card">
         <div class="cert2-refno">CERT NO. ${certRefNo}</div>
