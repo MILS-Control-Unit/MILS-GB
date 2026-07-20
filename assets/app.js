@@ -1086,19 +1086,8 @@ function positionFixedNavMenu(wrap, menu){
       const wrap = document.getElementById(wrapId);
       const menu = document.getElementById(menuId);
       if(!wrap || !menu) return;
-      const openNow = ()=>{
-        clearTimeout(closeTimers[wrapId]);
-        positionFixedNavMenu(wrap, menu);
-        menu.classList.add('open');
-      };
-      const scheduleClose = ()=>{
-        clearTimeout(closeTimers[wrapId]);
-        closeTimers[wrapId] = setTimeout(()=>{ menu.classList.remove('open'); }, 650);
-      };
-      wrap.addEventListener('mouseenter', openNow);
-      wrap.addEventListener('mouseleave', scheduleClose);
-      menu.addEventListener('mouseenter', openNow);
-      menu.addEventListener('mouseleave', scheduleClose);
+      // Click-only: each trigger button already calls toggle*Menu(event) on click,
+      // and the global document click handler closes menus on an outside click.
     });
     // Keep an open menu's position in sync with its button if the page scrolls/resizes
     // while it's open (e.g. the horizontally-scrolling nav row itself).
@@ -1153,13 +1142,6 @@ function positionFixedNavMenu(wrap, menu){
   if(mq.addEventListener) mq.addEventListener('change', e=> applyState(e.matches));
   else mq.addListener(e=> applyState(e.matches)); // Safari <14 fallback
 
-  let closeTimer;
-  const openNow = ()=>{ clearTimeout(closeTimer); positionFixedNavMenu(moreWrap, moreMenu); moreMenu.classList.add('open'); };
-  const scheduleClose = ()=>{ clearTimeout(closeTimer); closeTimer = setTimeout(()=> moreMenu.classList.remove('open'), 650); };
-  moreWrap.addEventListener('mouseenter', openNow);
-  moreWrap.addEventListener('mouseleave', scheduleClose);
-  moreMenu.addEventListener('mouseenter', openNow);
-  moreMenu.addEventListener('mouseleave', scheduleClose);
   document.getElementById('navMoreBtn').addEventListener('click', (e)=>{
     e.stopPropagation();
     if(!moreMenu.classList.contains('open')) positionFixedNavMenu(moreWrap, moreMenu);
