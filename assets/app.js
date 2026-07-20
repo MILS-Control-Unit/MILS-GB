@@ -2175,14 +2175,17 @@ function buildHelpAssistantWidget(){
   fab.id = 'helpAssistantFab';
   fab.type = 'button';
   fab.setAttribute('aria-label', 'AI Help Assistant');
-  fab.textContent = '💬';
+  fab.innerHTML = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z"/><circle cx="8.5" cy="11.5" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="11.5" r="1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="11.5" r="1" fill="currentColor" stroke="none"/></svg>';
   Object.assign(fab.style, {
     position:'fixed', bottom:'22px', insetInlineEnd:'22px', zIndex:'9998',
-    width:'56px', height:'56px', borderRadius:'50%', border:'none',
-    background:'linear-gradient(135deg,#4f46e5,#7c3aed)', color:'#fff',
-    fontSize:'26px', cursor:'pointer', boxShadow:'0 6px 18px rgba(0,0,0,.25)',
-    display:'none', alignItems:'center', justifyContent:'center' // hidden until showHelpAssistantWidget() runs (post-login)
+    width:'56px', height:'56px', borderRadius:'50%', border:'2px solid rgba(201,162,39,0.55)',
+    background:'linear-gradient(135deg,#1B2A4A,#28395F)', color:'#F2E2A8',
+    cursor:'pointer', boxShadow:'0 6px 18px rgba(27,42,74,.35), 0 0 0 4px rgba(201,162,39,0.12)',
+    display:'none', alignItems:'center', justifyContent:'center',
+    transition:'transform .18s ease, box-shadow .18s ease'
   });
+  fab.addEventListener('mouseenter', ()=>{ fab.style.transform='translateY(-3px) scale(1.06)'; fab.style.boxShadow='0 10px 26px rgba(27,42,74,.4), 0 0 0 5px rgba(201,162,39,0.22)'; });
+  fab.addEventListener('mouseleave', ()=>{ fab.style.transform='none'; fab.style.boxShadow='0 6px 18px rgba(27,42,74,.35), 0 0 0 4px rgba(201,162,39,0.12)'; });
 
   const panel = document.createElement('div');
   panel.id = 'helpAssistantPanel';
@@ -2193,14 +2196,14 @@ function buildHelpAssistantWidget(){
     display:'none', flexDirection:'column', overflow:'hidden', fontFamily:'inherit'
   });
   panel.innerHTML = `
-    <div style="padding:12px 14px;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;display:flex;align-items:center;justify-content:space-between;">
+    <div style="padding:12px 14px;background:linear-gradient(135deg,#1B2A4A,#28395F);color:#F2E2A8;display:flex;align-items:center;justify-content:space-between;">
       <strong style="font-size:14px;">🤖 المساعد الذكي</strong>
-      <button type="button" id="helpAssistantClose" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;line-height:1;">×</button>
+      <button type="button" id="helpAssistantClose" style="background:none;border:none;color:#F2E2A8;font-size:18px;cursor:pointer;line-height:1;">×</button>
     </div>
     <div id="helpAssistantMessages" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;background:#f8f9fb;"></div>
     <div style="padding:10px;border-top:1px solid #eee;display:flex;gap:8px;background:#fff;">
       <input id="helpAssistantInput" type="text" placeholder="اسأل عن أي حاجة في التطبيق..." style="flex:1;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;" />
-      <button type="button" id="helpAssistantSend" style="background:#4f46e5;color:#fff;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;">إرسال</button>
+      <button type="button" id="helpAssistantSend" style="background:#C9A227;color:#1B2A4A;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700;">إرسال</button>
     </div>`;
 
   document.body.appendChild(fab);
@@ -2213,8 +2216,8 @@ function buildHelpAssistantWidget(){
     const isUser = role === 'user';
     Object.assign(bubble.style, {
       alignSelf: isUser ? 'flex-end' : 'flex-start',
-      background: isUser ? '#4f46e5' : '#fff',
-      color: isUser ? '#fff' : '#222',
+      background: isUser ? '#1B2A4A' : '#fff',
+      color: isUser ? '#F2E2A8' : '#222',
       border: isUser ? 'none' : '1px solid #e3e3e8',
       padding:'8px 12px', borderRadius:'12px', maxWidth:'85%',
       fontSize:'13px', lineHeight:'1.5', whiteSpace:'pre-line', wordBreak:'break-word'
@@ -4205,21 +4208,37 @@ function escapeXml(str){
 }
 
 /* ================== WORKSPACE ================== */
-// Updates an empty-state panel's numbered seal and heading to describe whichever step
-// the user needs to complete next, instead of a fixed "1".
+// Builds the "step checklist" markup: every step the user must complete, with a
+// checkmark for the ones already set, a highlighted dot for the one they need to
+// do next, and empty circles for the ones still ahead — plus an arrow pointing
+// back up at the real stepper controls above.
+function buildStepChecklistHTML(cfgs){
+  let currentIdx = cfgs.findIndex(c=>!c.getLabel());
+  if(currentIdx === -1) currentIdx = cfgs.length - 1;
+  const itemsHtml = cfgs.map((c,i)=>{
+    const cls = i < currentIdx ? 'done' : (i === currentIdx ? 'current' : 'upcoming');
+    const dot = cls === 'done' ? '✓' : '';
+    return `<div class="step-item ${cls}"><span class="step-dot">${dot}</span><span class="step-label">${escapeXml(c.title)}</span></div>`;
+  }).join('');
+  const currentTitle = cfgs[currentIdx] ? cfgs[currentIdx].title : '';
+  return `
+    <div class="step-checklist">${itemsHtml}</div>
+    <div class="step-checklist-arrow">
+      <span class="step-arrow-icon">⬆</span>
+      <h3>Next: select the ${escapeXml(currentTitle)}</h3>
+      <p>This view appears once all the steps above are set.</p>
+    </div>
+  `;
+}
+// Updates an empty-state panel to show the step checklist above, matching whichever
+// step the user needs to complete next.
 function updateIntroState(introId, cfgs){
   const intro = document.getElementById(introId);
   if(!intro) return;
-  const seal = intro.querySelector('.seal-lg');
-  const heading = intro.querySelector('h3');
-  if(!seal || !heading) return;
-  for(let i=0;i<cfgs.length;i++){
-    if(!cfgs[i].getLabel()){
-      seal.textContent = i+1;
-      heading.textContent = `Next: select the ${cfgs[i].title}`;
-      return;
-    }
-  }
+  const container = intro.querySelector('.empty-state');
+  if(!container) return;
+  container.classList.add('step-checklist-state');
+  container.innerHTML = buildStepChecklistHTML(cfgs);
 }
 
 function renderWorkspace(){
