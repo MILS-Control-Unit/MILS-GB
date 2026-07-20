@@ -6805,6 +6805,42 @@ function scoreInputHtml(studentId, field, value, max, lockedReason){
              onchange="handleScoreChange(this,'${studentId}','${field}',${max})">`;
 }
 
+// Excel-style Tab navigation for every Mark Entry table (Primary/Prep/Secondary,
+// Grade 9 Cycle, Standard, Exam Paper): pressing Tab on a score cell moves DOWN to
+// the same column in the next student's row instead of sideways to the next column;
+// Shift+Tab moves up. Delegated on document (rather than attached per-input) so it
+// keeps working after renderTable()/patchScoreRowInPlace() re-render rows. Falls back
+// to the browser's normal Tab behavior at the top/bottom of a column, or if no row in
+// that direction has a focusable/editable cell in the same column (e.g. all locked).
+document.addEventListener('keydown', (e)=>{
+  if(e.key!=='Tab') return;
+  const el = e.target;
+  if(!el.classList || !el.classList.contains('score-input')) return;
+  const cell = el.closest('td, th');
+  const row = el.closest('tr[data-row-id]');
+  if(!cell || !row) return;
+  const table = row.closest('table');
+  if(!table) return;
+  const bodyRows = Array.from(table.querySelectorAll('tbody > tr[data-row-id]'));
+  const rowIdx = bodyRows.indexOf(row);
+  if(rowIdx===-1) return;
+  const colIdx = cell.cellIndex;
+  const step = e.shiftKey ? -1 : 1;
+  for(let r = rowIdx+step; r>=0 && r<bodyRows.length; r+=step){
+    const targetCell = bodyRows[r].cells[colIdx];
+    const targetInput = targetCell && targetCell.querySelector('input.score-input:not([disabled]):not(.score-input-locked)');
+    if(targetInput){
+      e.preventDefault();
+      targetInput.focus();
+      if(typeof targetInput.select==='function') targetInput.select();
+      return;
+    }
+    // That row's cell in this column is locked/disabled (e.g. Cycle-Absent, or Set-Max-
+    // First) — keep scanning further rows in the same direction instead of stopping dead.
+  }
+  // No focusable target found in this column in that direction — let Tab do its default thing.
+});
+
 // Fires when a teacher clicks/taps a locked Q.n cell before its maximum score has
 // been entered: shows a red "Set Max Score First" badge and nudges attention up to
 // the max-score box (which itself pulses red while incomplete).
