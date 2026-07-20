@@ -30,10 +30,13 @@
 
 <!-- ================= LOGIN SCREEN ================= -->
 <div class="login-overlay" id="loginOverlay">
-  <div class="login-card" style="position:relative;">
-    <button type="button" class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleDarkMode()" title="Toggle dark mode">🌙 Dark</button>
-    <div class="seal"><img src="assets/images/mils-seal.jpg" alt="MILS Logo"></div>
-    <h2>MILS Grade Book</h2>
+  <div class="login-split">
+    <div class="login-image-panel">
+      <img src="assets/images/mils-seal.jpg" alt="MILS">
+    </div>
+    <div class="login-card" style="position:relative;">
+      <button type="button" class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleDarkMode()" title="Toggle dark mode">🌙 Dark</button>
+      <h2>MILS Grade Book</h2>
     <div class="title-flourish"><span class="line"></span><span class="dot"></span><span class="line right"></span></div>
     <p class="sub">Please sign in to continue</p>
     <p class="login-quote" id="loginQuote"></p>
@@ -62,6 +65,7 @@
     <a href="https://github.com/MILS-Control-Unit/MILS-GB/releases/download/v1.0/MILS.GB.apk" download style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;padding:10px 18px;background-color:#2ea44f;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-family:'Tajawal',sans-serif;font-size:13.5px;">
       ⬇ Download Android App (APK)
     </a>
+    </div>
   </div>
 </div>
 
