@@ -2376,7 +2376,7 @@ body.dark-mode .stats-table tbody tr.stats-grand-total{
 }
 /* ---------- Split layout: real photo fills the left panel, form sits on the right ---------- */
 .login-split{
-  position:relative;z-index:1;width:100%;max-width:1280px;
+  position:relative;z-index:1;width:100%;max-width:1500px;
   display:grid;grid-template-columns:1.4fr 1fr;
   border-radius:calc(var(--radius) + 6px);overflow:hidden;
   background:var(--glass-bg);
