@@ -2226,10 +2226,11 @@ body.dark-mode .stats-table tbody tr.stats-grand-total{
 
 @media print{
   @page{ size:A4 portrait; margin:0; }
-  .masthead, .main-nav, #markEntryStepper, #attendanceStepper, #certReportsStepper, .cert-report-toolbar, .att-add-month, .att-excl-chips, .cert-toolbar, .classbar button, .gb-save-fab, .gb-toast, .class-alert-bar, .rc-countdown, .birthday-topbar{ display:none !important; }
+  .masthead, .main-nav, #markEntryStepper, #attendanceStepper, #certReportsStepper, .cert-report-toolbar, .att-add-month, .att-excl-chips, .cert-toolbar, .classbar button, .gb-save-fab, .gb-toast, .class-alert-bar, .rc-countdown, .birthday-topbar, #helpAssistantFab, #helpAssistantPanel{ display:none !important; }
   .cert2-print-page{ page-break-after:always; break-after:page; }
   .cert2-print-page:last-child{ page-break-after:auto; break-after:auto; }
   .wrap{ max-width:none; padding:0; }
+  #appWrap.wrap{ margin-left:0 !important; }
   .cert-outer{ box-shadow:none; padding:0; background:none; }
   .cert-outer, .certificate, .cert-inner, .cert-frame{ -webkit-print-color-adjust:exact; print-color-adjust:exact; color-adjust:exact; }
   .certificate{
