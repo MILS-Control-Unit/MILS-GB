@@ -121,6 +121,81 @@ const ALL_GRADE_IDS = [];
   });
 })();
 
+/* ================== UI PERFORMANCE SCAFFOLD ==================
+   Additive enhancements: they use existing render/switch functions and do not alter
+   persistence, permissions, or view markup owned by the established application. */
+(function setupUiPerformanceScaffold(){
+  const ui = Object.create(null);
+  const byId = id => ui[id] || (ui[id] = document.getElementById(id));
+  const debounce = (fn, wait=180) => { let timer; return (...args)=>{ clearTimeout(timer); timer=setTimeout(()=>fn(...args), wait); }; };
+  const lazyViews = new Map();
+  window.registerLazyView = (view, initializer) => lazyViews.set(view, { initializer, initialized:false });
+  window.runLazyView = view => {
+    const item = lazyViews.get(view);
+    if(item && !item.initialized){ item.initialized=true; item.initializer(); }
+  };
+
+  function attachSearch(){
+    const host = document.querySelector('.masthead-right-row:last-of-type');
+    if(!host || byId('globalCommandSearch')) return;
+    const shell = document.createElement('div');
+    shell.className = 'command-search';
+    shell.innerHTML = '<input id="globalCommandSearch" type="search" placeholder="Search students or teachers" aria-label="Global search"><kbd>Ctrl K</kbd><div class="command-results" id="globalCommandResults" hidden></div>';
+    host.prepend(shell);
+    const input = byId('globalCommandSearch'), results = byId('globalCommandResults');
+    const showResults = debounce(()=>{
+      const term = input.value.trim().toLowerCase();
+      results.replaceChildren();
+      if(!term){ results.hidden=true; return; }
+      const matches = [];
+      Object.values(students).flat().forEach(student=>{
+        if((student.name+' '+(student.displayId||'')).toLowerCase().includes(term)) matches.push({ label:student.name, detail:student.displayId || 'Student', view:'database' });
+      });
+      teachers.forEach(teacher=>{
+        if((teacher.name+' '+(teacher.displayId||'')).toLowerCase().includes(term)) matches.push({ label:teacher.name, detail:teacher.subject ? `Teacher · ${teacher.subject}` : 'Teacher', view:'teachers' });
+      });
+      matches.slice(0,8).forEach(match=>{
+        const button = document.createElement('button'); button.type='button'; button.className='command-result';
+        const label=document.createElement('span'); label.textContent=match.label;
+        const detail=document.createElement('small'); detail.textContent=match.detail;
+        button.append(label, detail); button.addEventListener('click',()=>{ switchView(match.view); input.value=''; results.hidden=true; }); results.append(button);
+      });
+      if(!results.childElementCount){ const empty=document.createElement('div'); empty.className='command-result'; empty.textContent='No matching students or teachers.'; results.append(empty); }
+      results.hidden=false;
+    });
+    input.addEventListener('input', showResults);
+    input.addEventListener('keydown', event=>{ if(event.key==='Escape'){ results.hidden=true; input.blur(); } });
+    document.addEventListener('keydown', event=>{ if((event.ctrlKey || event.metaKey) && event.key.toLowerCase()==='k'){ event.preventDefault(); input.focus(); input.select(); } });
+    document.addEventListener('click', event=>{ if(!shell.contains(event.target)) results.hidden=true; });
+  }
+
+  function attachQuickActions(){
+    if(byId('quickActions')) return;
+    const shell=document.createElement('div'); shell.id='quickActions'; shell.className='quick-actions';
+    shell.innerHTML='<div class="quick-actions-menu" aria-label="Quick actions"><button class="quick-action" data-action="student">Add student</button><button class="quick-action" data-action="teacher">Add teacher</button><button class="quick-action" data-action="attendance">Take attendance</button><button class="quick-action" data-action="marks">Enter marks</button></div><button class="quick-actions-fab" type="button" aria-label="Open quick actions" aria-expanded="false">+</button>';
+    document.body.append(shell);
+    const fab=shell.querySelector('.quick-actions-fab'); fab.addEventListener('click',()=>{ const open=shell.classList.toggle('open'); fab.setAttribute('aria-expanded',String(open)); });
+    shell.addEventListener('click',event=>{ const action=event.target.dataset.action; if(!action) return; shell.classList.remove('open'); fab.setAttribute('aria-expanded','false');
+      if(action==='student'){ switchView('database'); setTimeout(()=>{ if(typeof toggleAddForm==='function') toggleAddForm(true); },0); }
+      if(action==='teacher'){ switchView('teachers'); setTimeout(()=>{ if(typeof toggleAddTeacherForm==='function') toggleAddTeacherForm(true); },0); }
+      if(action==='attendance') switchView('attendance');
+      if(action==='marks') switchView('grades');
+    });
+  }
+
+  function boot(){
+    attachSearch(); attachQuickActions();
+    registerLazyView('dashboard', ()=>{ /* reserved for dashboard-only expensive enhancements */ });
+    registerLazyView('examsAnalysis', ()=>{ /* reserved for charts loaded only when needed */ });
+    const baseSwitchView=window.switchView;
+    if(typeof baseSwitchView==='function' && !baseSwitchView.__lazyWrapped){
+      const wrapped=function(view){ const result=baseSwitchView.apply(this,arguments); runLazyView(view); return result; };
+      wrapped.__lazyWrapped=true; window.switchView=wrapped;
+    }
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot, {once:true}); else boot();
+})();
+
 // Absence tab keeps its OWN independent copies of the Section/Stage/Grade lists.
 // These start out identical to SECTIONS/STAGES above, but editing one set (e.g. adding a
 // section/stage/grade here or in the Grade Book lists) will NOT affect the other — they are
@@ -223,7 +298,8 @@ let attSubView = 'absence';
 // exist in the HTML. The sidebar's own colors/fonts live in the HTML file's stylesheet, not
 // here, so `.att-subtabs-sidebar`'s dark navy is a close approximation of the active nav
 // button's color rather than a shared variable.
-(function injectApprovedLeaveStyles(){
+// CSS moved to style.css. Kept disabled temporarily for backwards-compatible source history.
+if(false){ (function injectApprovedLeaveStyles(){
   const css = `
     .att-subtabs{ display:flex; gap:8px; margin:0 0 14px 0; }
     .att-subtabs-sidebar{ display:block; margin:2px 14px 10px; }
@@ -244,11 +320,11 @@ let attSubView = 'absence';
   style.textContent = css;
   if(document.head) document.head.appendChild(style);
   else document.addEventListener('DOMContentLoaded', ()=> document.head.appendChild(style));
-})();
+})(); }
 // Animation styles for the Dashboard tab (Cycle Dashboard): staggered card/chart
 // entrances, animated bar growth, pie-slice reveal, and radar fade-in. Pure CSS,
 // no external animation library — keeps the single-file app dependency-free.
-(function injectDashboardAnimStyles(){
+if(false){ (function injectDashboardAnimStyles(){
   const css = `
     #dashboardChartsArea{ animation: dbFadeSlideIn .35s ease both; }
     .db-student-banner, .db-motivation-badge, .db-stat-card, .db-chart-card, .db-strength-alert,
@@ -287,13 +363,13 @@ let attSubView = 'absence';
   style.textContent = css;
   if(document.head) document.head.appendChild(style);
   else document.addEventListener('DOMContentLoaded', ()=> document.head.appendChild(style));
-})();
+})(); }
 
 // Styles for the "Slipping below their usual level" proactive decline-trend banner
 // (see renderDeclineTrendBanner) and the "Score Timeline Across Terms & Cycles" line
 // chart (see renderScoreTimelineChart) on the Cycle Dashboard — kept in their own
 // injected block, same pattern as injectDashboardAnimStyles above.
-(function injectDeclineTrendAndTimelineStyles(){
+if(false){ (function injectDeclineTrendAndTimelineStyles(){
   const css = `
     .db-decline-banner{ display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px;
       background:#fff7ed; border:1px solid #fdba74; border-radius:10px; padding:10px 14px;
@@ -309,13 +385,14 @@ let attSubView = 'absence';
   style.textContent = css;
   if(document.head) document.head.appendChild(style);
   else document.addEventListener('DOMContentLoaded', ()=> document.head.appendChild(style));
-})();
+})(); }
 
 // Styles for the Parent/Student Dashboard's "My child's certificate" quick-access
 // card (see renderParentQuickCertCard) — a one-tap shortcut straight to the most
 // recently released report card, shown above the sibling switcher so a linked
 // parent never has to walk the Term -> Report Type stepper just to see it again.
 (function injectParentQuickCertCardStyles(){
+  return; // Moved to style.css.
   const css = `
     .parent-quick-cert-card{ display:flex; align-items:center; gap:14px; margin:0 0 16px;
       padding:16px 18px; border-radius:14px; cursor:pointer; user-select:none;
@@ -346,6 +423,7 @@ let attSubView = 'absence';
 // of every report card released so far, plus the "NEW" badge reused on the quick-cert card
 // and the sibling switchers to flag a report released in the last few days.
 (function injectParentReportsFeedStyles(){
+  return; // Moved to style.css.
   const css = `
     .parent-reports-feed{ margin:0 0 16px; }
     .prf-heading{ font-weight:800; font-size:13px; color:var(--ink-soft,#667085); text-transform:uppercase;
@@ -1711,6 +1789,7 @@ function aiTeacherAssistantAvailable(){
 // exams table. Injected from JS (rather than relying on the main HTML file's own print
 // stylesheet) so this works even if that stylesheet was never touched.
 (function injectAINoPrintStyle(){
+  return; // Moved to style.css.
   if(document.getElementById('aiNoPrintStyle')) return;
   const style = document.createElement('style');
   style.id = 'aiNoPrintStyle';
@@ -9682,6 +9761,7 @@ function renderBirthdayWidget(){
 // than touching the original .birthday-chip rule, whose definition lives in the HTML
 // file rather than here.
 function ensureBirthdayListStyles(){
+  return; // Moved to style.css.
   if(document.getElementById('birthdayListStyles')) return;
   const style = document.createElement('style');
   style.id = 'birthdayListStyles';
@@ -13856,6 +13936,7 @@ function reportCardReleaseLabel(rc){
 // reads cleanly regardless of how narrow the column it's injected into is, and forces itself
 // to span the full form width via grid-column:1/-1 even inside the 3-column field row.
 (function injectRcCheckboxStyle(){
+  return; // Moved to style.css.
   if(document.getElementById('rcCheckboxStyle')) return;
   const style = document.createElement('style');
   style.id = 'rcCheckboxStyle';
@@ -16254,6 +16335,7 @@ function openUsersModal(){
 // from its scroll parent and breaks it. Only the height ceiling is raised a bit (90vh)
 // so there's more room before that inner scroll ever kicks in.
 function widenUsersModalBox(){
+  return; // Moved to style.css.
   if(document.getElementById('ufWideModalStyle')) return;
   const style = document.createElement('style');
   style.id = 'ufWideModalStyle';
