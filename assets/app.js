@@ -89,12 +89,25 @@ const FRENCH_SECTION_SUBJECTS = {
   }
 };
 
-// Helper function to get correct subjects based on section
-function getSubjectsForStageAndSection(stageKey, sectionId){
-  if(sectionId === 'fr'){
-    return FRENCH_SECTION_SUBJECTS[stageKey] ? FRENCH_SECTION_SUBJECTS[stageKey].subjects : STAGES[stageKey].subjects;
-  }
-  return STAGES[stageKey].subjects;
+// Primary Grades 1 & 2 don't take Social Studies or ICT (unlike Grades 3-6, which share
+// the standard Primary Stage subject list) — dropped from every subject list wherever a
+// grade is known (grading, certificates, attendance, dashboards, permissions, bulk import).
+function isJuniorPrimaryGrade(stageKey, gradeId){
+  return stageKey==='primary' && (gradeId==='g1' || gradeId==='g2');
+}
+function filterSubjectsForGrade(subjects, stageKey, gradeId){
+  if(!isJuniorPrimaryGrade(stageKey, gradeId)) return subjects;
+  return subjects.filter(sub=> sub!=='Social Studies' && sub!=='ICT');
+}
+
+// Helper function to get correct subjects based on section. gradeId is optional — pass it
+// whenever the calling context already knows the grade so Grade 1/2 Primary can drop
+// Social Studies/ICT; omitted call sites keep returning the full Stage-level list.
+function getSubjectsForStageAndSection(stageKey, sectionId, gradeId){
+  const subjects = sectionId === 'fr'
+    ? (FRENCH_SECTION_SUBJECTS[stageKey] ? FRENCH_SECTION_SUBJECTS[stageKey].subjects : STAGES[stageKey].subjects)
+    : STAGES[stageKey].subjects;
+  return gradeId ? filterSubjectsForGrade(subjects, stageKey, gradeId) : subjects;
 }
 
 // Get subjects for a specific grade (handles Grade 12 separately)
@@ -102,7 +115,7 @@ function getSubjectsForGrade(stageKey, gradeId, sectionId){
   if(stageKey === 'secondary' && gradeId === 'g12'){
     return sectionId === 'fr' ? G12_SUBJECTS_FR : G12_SUBJECTS_EN;
   }
-  return getSubjectsForStageAndSection(stageKey, sectionId);
+  return getSubjectsForStageAndSection(stageKey, sectionId, gradeId);
 }
 
 // Used to order the Student Database list: English Section before French Section,
@@ -747,7 +760,7 @@ function makeStepConfig(st, sectionsData, stagesData){
     },
     requires:['termPeriod','section','stage','grade','term'] };
   const subjectStep = { key:'subject', title:'Subject', state: st, getLabel:()=> st.subject ? subjectWithIcon(st.subject) : null,
-    options: ()=> st.stage ? getSubjectsForStageAndSection(st.stage, st.section).filter(s=>scopeSubjectAllowedForClassroom(s, st.term)).map(s=>({id:s,label:subjectWithIcon(s)})) : [], requires:['termPeriod','section','stage','grade','term','academicTerm'] };
+    options: ()=> st.stage ? getSubjectsForStageAndSection(st.stage, st.section, st.grade).filter(s=>scopeSubjectAllowedForClassroom(s, st.term)).map(s=>({id:s,label:subjectWithIcon(s)})) : [], requires:['termPeriod','section','stage','grade','term','academicTerm'] };
 
   // Grade 12 End-of-Year Mark Entry records EVERY subject at once, in one class-level table
   // (see renderG12AllSubjectsExamScreen) — so there's no separate "Subject" step to click
@@ -823,7 +836,7 @@ function attStepConfig(){
   const subjectStep = {
     key:'subject', title:'Subject', state: attState,
     getLabel:()=> attState.subject ? subjectWithIcon(attState.subject) : null,
-    options: ()=> attState.stage ? getSubjectsForStageAndSection(attState.stage, attState.section).filter(s=>scopeSubjectAllowedForClassroom(s, attState.term)).map(s=>({id:s,label:subjectWithIcon(s)})) : [],
+    options: ()=> attState.stage ? getSubjectsForStageAndSection(attState.stage, attState.section, attState.grade).filter(s=>scopeSubjectAllowedForClassroom(s, attState.term)).map(s=>({id:s,label:subjectWithIcon(s)})) : [],
     requires:['termPeriod','section','stage','grade','term']
   };
   const monthStep = {
@@ -1409,7 +1422,7 @@ function computePerfAlertList(term, cycle, category, filter){
         const threshold = isExam
           ? (category==='critical' ? max*0.5 : category==='risk' ? max*0.6 : max*0.95)
           : (category==='risk' ? max*0.6 : max*0.95);
-        getSubjectsForStageAndSection(stage, section).forEach(subject=>{
+        getSubjectsForStageAndSection(stage, section, grade).forEach(subject=>{
           const sk = `${ck}|${term}|${subject}`;
           const subjScores = scores[sk] || {};
           roster.forEach(s=>{
@@ -2563,7 +2576,7 @@ function resetDashboardFilters(){
 /* ---------- Cycle Dashboard: data ---------- */
 function computeCycleStats(section, stage, grade, term, studentId){
   const junior = stage==='primary' && (grade==='g1' || grade==='g2');
-  const subjects = getSubjectsForStageAndSection(stage, section);
+  const subjects = getSubjectsForStageAndSection(stage, section, grade);
   const ck = `${section}|${stage}|${grade}`;
   const roster = visibleRoster(students[ck]);
   // Defense in depth: even if a stale/tampered studentId ever reaches this function,
@@ -2654,7 +2667,7 @@ const CYCLE_BANDS = [
    average) so the existing generic chart helpers (svgGroupedBarChart/svgPieChart/
    svgGaugeArc/svgRadarChart) work unchanged with max=100 instead of CYCLE_MAX. */
 function computeTermTotalStats(section, stage, grade, term, studentId){
-  const subjects = getSubjectsForStageAndSection(stage, section);
+  const subjects = getSubjectsForStageAndSection(stage, section, grade);
   const ck = `${section}|${stage}|${grade}`;
   const roster = visibleRoster(students[ck]);
   const student = (studentId && scopeStudentAllowed(studentId)) ? roster.find(s=>s.id===studentId) : null;
@@ -4503,7 +4516,7 @@ function certSubjectResult(subject, studentId, type){
 // Religion/Ch-Religion are mutually exclusive per student, so only one of each pair shows).
 function certApplicableSubjects(stage, student, section, grade){
   section = section || 'en';
-  let subjects = getSubjectsForStageAndSection(stage, section);
+  let subjects = getSubjectsForStageAndSection(stage, section, grade);
   // Grade 3 Primary certificates only: Social Studies and ICT are dropped, and Science
   // is moved to the end of the subject list, ahead of every other Primary Stage grade
   // which keeps the standard STAGES/FRENCH_SECTION_SUBJECTS subject order untouched.
@@ -6994,7 +7007,7 @@ function getAllAttClassTargets(subject){
     const [section, stage, grade] = classKey_.split('|');
     if(!ATT_SECTIONS[section] || !ATT_STAGES[stage]) return;
     if(!scopeSectionAllowed(section) || !scopeStageAllowed(stage)) return;
-    if(subject && !getSubjectsForStageAndSection(stage, section).includes(subject)) return;
+    if(subject && !getSubjectsForStageAndSection(stage, section, grade).includes(subject)) return;
     const classes = [...new Set(roster.map(s=>s.classroom).filter(c=>c && c!==''))];
     classes.filter(c=>scopeClassroomAllowed(c)).forEach(term=>{
       targets.push({ section, stage, grade, term });
@@ -7408,7 +7421,7 @@ function renderAbsenceSummaryTable(){
     return;
   }
 
-  const subjects = getSubjectsForStageAndSection(attState.stage, attState.section);
+  const subjects = getSubjectsForStageAndSection(attState.stage, attState.section, attState.grade);
   const leaveRecords = (approvedLeave[attClassLevelKey()] && approvedLeave[attClassLevelKey()].records) || {};
 
   function studentTakesSubject(s, subject){
@@ -10984,7 +10997,7 @@ function renderTeachersAndClasses(){
 
   const classKey = `${section}|${stage}|${grade}`;
   const classrooms = classesForKey(classKey);
-  const subjects = getSubjectsForStageAndSection(stage, section);
+  const subjects = getSubjectsForStageAndSection(stage, section, grade);
   const sectionLabel = section==='en' ? 'English' : 'French';
   count.textContent = `${subjects.length} subjects · ${classrooms.length} classes`;
 
@@ -14746,7 +14759,7 @@ function getMonthlyAbsenceWarningsForCurrentUser(flat){
   const out = [];
   (flat || allStudentsFlat()).filter(s=> scopeStudentAllowed(s.id)).forEach(student=>{
     if(!STAGES[student.stage]) return;
-    const subjects = getSubjectsForStageAndSection(student.stage, student.section);
+    const subjects = getSubjectsForStageAndSection(student.stage, student.section, student.grade);
     windows.forEach(w=>{
       const seenKey = `${student.id}__${w.termPeriod}__${w.monthKey}`;
       if(seen[seenKey]) return;
@@ -18423,7 +18436,7 @@ function getAvailableSubjects(){
   // Get all subjects that apply to the current stage (same list used to
   // build the subject stepper/breadcrumb elsewhere in the app).
   if(!state.stage || !STAGES[state.stage]) return [];
-  return getSubjectsForStageAndSection(state.stage, state.section).slice().sort();
+  return getSubjectsForStageAndSection(state.stage, state.section, state.grade).slice().sort();
 }
 
 function populateBulkImportSubjectDropdowns(){
