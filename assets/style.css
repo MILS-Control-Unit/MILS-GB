@@ -2225,7 +2225,7 @@ body.dark-mode .stats-table tbody tr.stats-grand-total{
 }
 
 @media print{
-  @page{ size:A4 portrait; margin:10mm; }
+  @page{ size:A4 portrait; margin:0; }
   .masthead, .main-nav, #markEntryStepper, #attendanceStepper, #certReportsStepper, .cert-report-toolbar, .att-add-month, .att-excl-chips, .cert-toolbar, .classbar button, .gb-save-fab, .gb-toast, .class-alert-bar, .rc-countdown, .birthday-topbar{ display:none !important; }
   .cert2-print-page{ page-break-after:always; break-after:page; }
   .cert2-print-page:last-child{ page-break-after:auto; break-after:auto; }
