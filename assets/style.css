@@ -2376,15 +2376,22 @@ body.dark-mode .stats-table tbody tr.stats-grand-total{
 }
 /* ---------- Split layout: real photo fills the left panel, form sits on the right ---------- */
 .login-split{
-  position:relative;z-index:1;width:100%;max-width:1500px;
+  position:relative;z-index:1;width:100%;max-width:1650px;
   display:grid;grid-template-columns:1.4fr 1fr;
   border-radius:calc(var(--radius) + 6px);overflow:hidden;
   background:var(--glass-bg);
   -webkit-backdrop-filter:blur(22px) saturate(160%);backdrop-filter:blur(22px) saturate(160%);
-  border:1px solid var(--glass-border);
-  box-shadow:var(--glass-shadow);
-  animation:loginCardIn .7s cubic-bezier(.16,1,.3,1) both;
+  border:1px solid var(--gold);
+  box-shadow:var(--glass-shadow), 0 0 0 1px rgba(201,162,39,0.35), 0 0 55px 10px rgba(201,162,39,0.30);
+  animation:loginCardIn .7s cubic-bezier(.16,1,.3,1) both, loginSplitGlow 3.5s ease-in-out infinite alternate;
   min-height:560px;
+}
+@keyframes loginSplitGlow{
+  from{ box-shadow:var(--glass-shadow), 0 0 0 1px rgba(201,162,39,0.30), 0 0 40px 6px rgba(201,162,39,0.22); }
+  to{ box-shadow:var(--glass-shadow), 0 0 0 1px rgba(201,162,39,0.55), 0 0 70px 16px rgba(201,162,39,0.40); }
+}
+@media (prefers-reduced-motion: reduce){
+  .login-split{ animation:none; }
 }
 .login-image-panel{ position:relative; }
 .login-image-panel img{ width:100%; height:100%; object-fit:cover; display:block; }
