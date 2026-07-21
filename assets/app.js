@@ -7728,7 +7728,7 @@ function renderAbsenceTable(){
         return `<td class="att-day-col${weekEndCls} att-closed-cell" title="Day not opened yet">–</td>`;
       }
       return `<td class="att-day-col${weekEndCls}"><input type="checkbox" class="att-check" ${checked?'checked':''} ${(canEdit&&isOpen)?'':'disabled'}
-                onchange="flashInlineSaved(this);toggleAttendance('${s.id}','${ds}',this.checked)"></td>`;
+                onchange="flashInlineSaved(this);toggleAttendance('${s.id}','${ds}',this.checked)">${misbehaviorNoteBtn(s.id, ds, checked)}</td>`;
     }).join('');
     const fullName = escapeHtml(s.name);
     return `
@@ -7951,6 +7951,38 @@ function toggleAttDayOpen(dateStr, checked){
   logActivity('edit', `${checked?'Opened':'Closed'} ${dateStr} for Absence recording (${openLogNote})`);
 }
 
+// Small "add a comment" button shown under a checked Misbehavior checkbox only (General
+// Absence/Late/Absence(Subjects) don't get this — comments only make sense for a specific
+// misbehavior incident). Shows a filled icon + the comment as a tooltip once one's been saved.
+function misbehaviorNoteBtn(studentId, dateStr, checked){
+  if(attCategory!=='misbehavior' || !checked) return '';
+  const ck = attClassKey();
+  const month = attendance[ck];
+  const comment = (month && month.comments && month.comments[studentId] && month.comments[studentId][dateStr]) || '';
+  return `<button type="button" class="att-note-btn${comment?' has-note':''}" title="${comment?escapeHtml(comment):'Add a comment'}" onclick="editMisbehaviorComment('${studentId}','${dateStr}')">${comment?'💬':'✎'}</button>`;
+}
+
+function editMisbehaviorComment(studentId, dateStr){
+  if(attCategory!=='misbehavior') return;
+  const canEdit = !!(currentUser && currentUser.effective && currentUser.effective.edit) && !isCurrentUserGradeEntryLocked(attState.academicTerm);
+  if(!canEdit) return;
+  const ck = attClassKey();
+  const month = attendance[ck];
+  if(!month || !month.records || !month.records[studentId] || !month.records[studentId][dateStr]) return;
+  if(!month.comments) month.comments = {};
+  if(!month.comments[studentId]) month.comments[studentId] = {};
+  const existing = month.comments[studentId][dateStr] || '';
+  const next = prompt('Comment for this Misbehavior entry:', existing);
+  if(next===null) return;
+  const trimmed = next.trim();
+  if(trimmed) month.comments[studentId][dateStr] = trimmed;
+  else delete month.comments[studentId][dateStr];
+  saveState();
+  renderAttendanceTable();
+  const stu = getAttRoster().find(s=>s.id===studentId);
+  logActivity('edit', `${trimmed?'Added':'Cleared'} a Misbehavior comment for ${stu?stu.name:'a student'} on ${dateStr}`);
+}
+
 function toggleAttendance(studentId, dateStr, checked){
   if(isCurrentUserGradeEntryLocked(attState.academicTerm)){ gradeEntryLockAlert(attState.academicTerm); renderAttendanceTable(); return; }
   const ck = attClassKey();
@@ -7964,7 +7996,12 @@ function toggleAttendance(studentId, dateStr, checked){
   if(!month.records) month.records = {};
   if(!month.records[studentId]) month.records[studentId] = {};
   if(checked) month.records[studentId][dateStr] = true;
-  else delete month.records[studentId][dateStr];
+  else {
+    delete month.records[studentId][dateStr];
+    // A comment only makes sense for a currently-checked Misbehavior entry — drop it once the
+    // box is unchecked rather than leaving an orphaned comment behind.
+    if(month.comments && month.comments[studentId]) delete month.comments[studentId][dateStr];
+  }
 
   const total = Object.keys(month.records[studentId]).length;
   const cell = document.getElementById('attTotal-'+studentId);
@@ -7975,6 +8012,9 @@ function toggleAttendance(studentId, dateStr, checked){
   }
 
   saveState();
+  // Misbehavior's comment button needs to appear/disappear right alongside the checkbox, so
+  // re-render the whole table for this category instead of just patching the Total cell above.
+  if(attCategory==='misbehavior') renderAttendanceTable();
   const stu = getAttRoster().find(s=>s.id===studentId);
   const categoryNote = attCategory==='subject' ? ` — auto-updated Beh. & Attend. (${subjectWithIcon(attState.subject)})` : ` (${ATT_CATEGORY_LABELS[attCategory]})`;
   logActivity('edit', `Marked ${stu?stu.name:'a student'} as ${checked?'absent':'present'} on ${dateStr}${categoryNote}`);

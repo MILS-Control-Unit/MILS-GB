@@ -1590,6 +1590,14 @@ body.dark-mode .att-table tbody tr:hover .att-name-col{ background:var(--paper-2
   border:solid #fff; border-width:0 2.5px 2.5px 0; transform:rotate(45deg);
 }
 .att-check:disabled{ cursor:not-allowed; opacity:.55; }
+.att-note-btn{
+  display:block; margin:4px auto 0; width:20px; height:20px; line-height:18px;
+  border-radius:6px; border:1px solid var(--border); background:var(--paper);
+  font-size:11px; cursor:pointer; padding:0; color:var(--ink-soft);
+  transition:border-color .15s ease, background .15s ease;
+}
+.att-note-btn:hover{ border-color:var(--gold); }
+.att-note-btn.has-note{ background:var(--amber-bg); border-color:var(--amber); color:var(--amber); }
 @media print{
   .att-add-month, .att-month-del, .att-excl-chips{ display:none !important; }
 }
