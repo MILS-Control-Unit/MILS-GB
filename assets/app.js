@@ -1311,6 +1311,7 @@ function toggleBirthdayDropdown(e){
     dd.style.zIndex = '9999';
     ensureHeaderDropdownBackdrop();
     renderBirthdayWidget();
+    positionFixedNavMenu(document.getElementById('birthdayWidget'), dd);
   } else {
     removeHeaderDropdownBackdrop();
   }
@@ -14965,6 +14966,7 @@ function toggleNotifDropdown(e){
     setNotifLastSeen(Date.now());
     markBirthdayNotifSeenToday();
     updateNotifBadge(flat);
+    positionFixedNavMenu(document.getElementById('notifBellWrap'), dd);
   } else {
     removeHeaderDropdownBackdrop();
   }
