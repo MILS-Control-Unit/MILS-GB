@@ -230,10 +230,13 @@ let attendance = {};
 //   2) if that student already had an absence (checkbox) recorded for that exact day,
 //      marking it as Approved Leave cancels that absence for that day.
 let approvedLeave = {};
-// Which sub-tab of the "Absence & Approved Leave" tab is currently showing — 'absence' (the
-// original attendance-taking table) or 'leave' (the new Approved Leave table). Both sub-tabs
-// share the same stepper/class/subject/month selection (attState) and the same table shell,
-// only what's written into each cell differs.
+// Which sub-tab of the "Absence (Subjects)" tab is currently showing — 'absence' (the
+// original attendance-taking table) or 'summary'. 'leave' (the Approved Leave table) used to
+// live here too as a third sub-tab, but Approved Leave now has its own separate top-level nav
+// item (see ensureApprovedLeaveNavTab/openApprovedLeaveTab below) — attSubView can still be set
+// to 'leave' internally (renderAttendanceTable() still dispatches on it) since that's what
+// openApprovedLeaveTab() sets before rendering, it's just no longer reachable from the
+// Absence (Subjects) tab's own dropdown.
 let attSubView = 'absence';
 
 // Styling for the Absence/Approved Leave/Summary sidebar submenu and the locked "L" cells
@@ -830,7 +833,7 @@ function stepConfig(){
 // picks out one independent attendance table, the same way Mark Entry does for the Grade Book.
 function attStepConfig(){
   const base = stepConfigThroughClass(makeStepConfig(attState, ATT_SECTIONS, ATT_STAGES));
-  // The Absence & Approved Leave tab's Class list must always be sorted A→Z (unlike the Grade
+  // The Absence (Subjects) tab's Class list must always be sorted A→Z (unlike the Grade
   // Book's own Class step, which keeps insertion order) — wrap the shared 'term' step's options
   // in an alphabetical sort here, without touching makeStepConfig() itself so no other tab that
   // reuses it is affected.
@@ -7333,28 +7336,22 @@ function pushAttendanceChangeNow(){
 function canUseApprovedLeave(){
   return !!(currentUser && currentUser.effective && currentUser.effective.approvedLeave);
 }
-// Creates (or refreshes) the "Absence" / "Approved Leave" / "Summary" sub-tab dropdown,
-// anchored right above the breadcrumb/stepper bar (#attendanceStepper) — i.e. directly under
-// the "Absence & Approved Leave" tab itself — so it's visible whether or not the stepper has
-// been completed yet; it is NOT inside #attendanceWorkspace, which is hidden via display:none
-// until every step is picked. Rebuilt on every call (cheap) so a role switch (e.g. re-login as
-// a Teacher) removes the dropdown immediately rather than leaving a stale one in the DOM.
-// Recording Approved Leave is restricted to Admin and HOS/Deputy — Teachers, Heads of
-// Department, and Parent/Student accounts only ever see the plain Absence table, no sub-tabs.
-// Creates (or refreshes) the "Absence" / "Approved Leave" / "Summary" sub-tab dropdown as a
-// small submenu in the SIDEBAR, directly under the "Absence & Approved Leave" nav button itself
-// (#navTabAttendance) — not in the tab's content area — matching the collapsible-group look of
-// the sidebar's other nav items. Only shown while the Attendance tab is the active view (so it
-// doesn't clutter the sidebar while some other tab is open), and only for roles that can use
-// Approved Leave/Summary (Admin/HOS-Deputy) — everyone else just gets the plain Absence table,
-// no submenu, exactly as before. Rebuilt on every call (cheap) so a role switch (e.g. re-login
-// as a Teacher) or a tab switch removes the dropdown immediately rather than leaving a stale one
-// in the DOM — called both from renderAttendanceWorkspace() and from the end of switchView().
+// Creates (or refreshes) the "Absence" / "Summary" sub-tab dropdown as a small submenu in the
+// SIDEBAR, directly under the "Absence (Subjects)" nav button itself (#navTabAttendance) — not
+// in the tab's content area — matching the collapsible-group look of the sidebar's other nav
+// items. Only shown while the Absence (Subjects) tab is the active view (so it doesn't clutter
+// the sidebar while some other tab is open), and only for roles that can use Approved
+// Leave/Summary (Admin/HOS-Deputy) — everyone else just gets the plain Absence table, no
+// submenu, exactly as before. Approved Leave itself is no longer an option here — it has its
+// own separate top-level nav item now (see ensureApprovedLeaveNavTab/openApprovedLeaveTab).
+// Rebuilt on every call (cheap) so a role switch (e.g. re-login as a Teacher) or a tab switch
+// removes the dropdown immediately rather than leaving a stale one in the DOM — called both
+// from renderAttendanceWorkspace() and from the end of switchView().
 function ensureAttSubTabsBar(){
   const navTab = document.getElementById('navTabAttendance');
   if(!navTab || !navTab.parentNode) return;
   const canLeave = canUseApprovedLeave();
-  if(!canLeave && (attSubView==='leave' || attSubView==='summary')) attSubView = 'absence';
+  if(!canLeave && attSubView==='summary') attSubView = 'absence';
   let bar = document.getElementById('attSubTabsBar');
   const show = canLeave && currentView==='attendance';
   if(!show){
@@ -7374,7 +7371,6 @@ function ensureAttSubTabsBar(){
   bar.innerHTML = `
     <select id="attSubTabsSelect" class="att-subtab-select" onchange="switchAttSubView(this.value)">
       <option value="absence">Absence</option>
-      <option value="leave">Approved Leave</option>
       <option value="summary">Summary</option>
     </select>
   `;
@@ -7385,10 +7381,78 @@ function updateAttSubTabsActive(){
   if(sel) sel.value = attSubView;
 }
 function switchAttSubView(view){
-  if((view==='leave' || view==='summary') && !canUseApprovedLeave()) return;
+  if(view==='summary' && !canUseApprovedLeave()) return;
   attSubView = view;
   updateAttSubTabsActive();
   renderAttendanceTable();
+  // Selecting Absence/Summary from this dropdown always means we're on the Absence (Subjects)
+  // side, not Approved Leave — make sure the separate Approved Leave nav button isn't left
+  // showing active from a previous visit there.
+  const leaveTab = document.getElementById('navTabApprovedLeave');
+  if(leaveTab) leaveTab.classList.remove('active');
+}
+
+// Approved Leave now lives as its own separate top-level sidebar nav item instead of a sub-tab
+// under "Absence (Subjects)". Since its markup isn't in this file (the sidebar HTML lives in
+// the main HTML file, not app.js — see renameAttendanceNavTab's comment below for the same
+// constraint), it's built here by cloning the existing #navTabAttendance button so it inherits
+// the exact same styling/icon, then re-pointed at its own click handler. Called once at
+// startup (see the bottom of this file) — idempotent, so safe to call again if ever needed.
+function ensureApprovedLeaveNavTab(){
+  if(document.getElementById('navTabApprovedLeave')) return;
+  const src = document.getElementById('navTabAttendance');
+  if(!src || !src.parentNode) return;
+  const clone = src.cloneNode(true);
+  clone.id = 'navTabApprovedLeave';
+  clone.removeAttribute('onclick');
+  // A distinct (non-view) dataset.view value keeps switchView()'s generic
+  // `.nav-tab[data-view===view]` active-class toggle from ever touching this button — its
+  // active state is managed by hand in openApprovedLeaveTab()/the reset listener below instead.
+  clone.dataset.view = 'approvedLeave';
+  clone.classList.remove('active');
+  clone.title = 'Approved Leave';
+  clone.querySelectorAll('[id]').forEach(el=> el.removeAttribute('id'));
+  let textNode = null;
+  for(let i=clone.childNodes.length-1;i>=0;i--){
+    const n = clone.childNodes[i];
+    if(n.nodeType===3 && n.textContent.trim()){ textNode = n; break; }
+  }
+  if(textNode) textNode.textContent = (textNode.textContent.match(/^\s*/)||[''])[0] + 'Approved Leave';
+  else clone.textContent = 'Approved Leave';
+  clone.addEventListener('click', openApprovedLeaveTab);
+  src.insertAdjacentElement('afterend', clone);
+
+  // Clicking back onto the main "Absence (Subjects)" tab should always land on the Absence
+  // sub-view (never leave Approved Leave's active-highlight stuck on) — the inline onclick
+  // already on #navTabAttendance runs switchView('attendance') first; this listener, attached
+  // after, runs next and fixes up attSubView + the two buttons' active state.
+  if(!src.dataset.leaveResetBound){
+    src.dataset.leaveResetBound = '1';
+    src.addEventListener('click', ()=>{
+      if(attSubView==='leave') attSubView = 'absence';
+      updateAttSubTabsActive();
+      const leaveTab = document.getElementById('navTabApprovedLeave');
+      if(leaveTab) leaveTab.classList.remove('active');
+      if(currentView==='attendance') renderAttendanceTable();
+    });
+  }
+}
+
+// Click handler for the separate "Approved Leave" nav button: opens the same underlying
+// Absence (Subjects) view/stepper (attendance data is shared — see attState/attClassKey) but
+// pre-selects the 'leave' sub-view, and manages the two buttons' active-highlight by hand since
+// they share one underlying currentView==='attendance'.
+function openApprovedLeaveTab(){
+  switchView('attendance');
+  attSubView = canUseApprovedLeave() ? 'leave' : 'absence';
+  updateAttSubTabsActive();
+  renderAttendanceTable();
+  const mainTab = document.getElementById('navTabAttendance');
+  const leaveTab = document.getElementById('navTabApprovedLeave');
+  if(attSubView==='leave'){
+    if(mainTab) mainTab.classList.remove('active');
+    if(leaveTab) leaveTab.classList.add('active');
+  }
 }
 
 // Dispatcher — kept under the original name since it's called from many places (workspace
@@ -16527,6 +16591,11 @@ function applyPermissionsUI(){
   document.getElementById('teachersDropdownWrap').style.display = ((eff.settings && currentUser.role==='admin') || currentUser.role==='hos') ? '' : 'none';
   document.getElementById('navTabGrades').style.display = eff.grades ? '' : 'none';
   document.getElementById('navTabAttendance').style.display = eff.attendance ? '' : 'none';
+  // Approved Leave's own separate nav button (see ensureApprovedLeaveNavTab) follows the same
+  // "attendance" permission as Absence (Subjects), plus the extra Admin/HOS-Deputy-only
+  // approvedLeave permission that already gated it as a sub-tab.
+  const leaveTab = document.getElementById('navTabApprovedLeave');
+  if(leaveTab) leaveTab.style.display = (eff.attendance && canUseApprovedLeave()) ? '' : 'none';
   // Certificates and Mark Entry Report both share the "reports" permission (see
   // canAccessTab()) but were never actually hidden here, so an account with that
   // permission off could still see and click into both tabs.
@@ -18594,13 +18663,16 @@ loadLastGradebookSelection();
 // opened (see the 'database'/'teachers' cases above). Removing them here noticeably
 // speeds up the time the login screen becomes responsive.
 renameAttendanceNavTab();
-// Renames the "Absence" nav tab button to "Absence & Approved Leave", preserving any leading
-// icon element inside the button (only the trailing text node is replaced) since the button's
-// exact markup lives in the HTML file, not here.
+ensureApprovedLeaveNavTab();
+// Renames the "Absence" nav tab button to "Absence (Subjects)" — Approved Leave used to be
+// bundled into this same tab's name/dropdown, but now has its own separate nav item (built by
+// ensureApprovedLeaveNavTab() above) — preserving any leading icon element inside the button
+// (only the trailing text node is replaced) since the button's exact markup lives in the HTML
+// file, not here.
 function renameAttendanceNavTab(){
   const tab = document.getElementById('navTabAttendance');
   if(!tab) return;
-  const NEW_LABEL = 'Absence & Approved Leave';
+  const NEW_LABEL = 'Absence (Subjects)';
   let textNode = null;
   for(let i=tab.childNodes.length-1; i>=0; i--){
     const n = tab.childNodes[i];
