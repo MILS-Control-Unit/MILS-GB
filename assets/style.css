@@ -318,7 +318,7 @@ body.dark-mode .masthead-text h1{
   animation:birthdayWiggle 1.6s ease-in-out infinite;
 }
 .birthday-dropdown{
-  display:block;position:absolute;top:100%;right:0;margin-top:10px;min-width:260px;max-width:340px;
+  display:block;position:absolute;top:0;left:100%;right:auto;margin-top:0;margin-inline-start:10px;min-width:260px;max-width:340px;
   max-height:360px;overflow-y:auto;
   background:var(--paper);border:1px solid var(--border);border-radius:10px;
   box-shadow:0 12px 30px rgba(0,0,0,0.14);padding:10px;z-index:250;cursor:default;
@@ -376,7 +376,7 @@ body.dark-mode .masthead-text h1{
   box-shadow:0 0 0 2px var(--paper);
 }
 .notif-dropdown{
-  display:block;position:absolute;top:100%;right:0;margin-top:10px;min-width:300px;max-width:330px;
+  display:block;position:absolute;top:0;left:100%;right:auto;margin-top:0;margin-inline-start:10px;min-width:300px;max-width:330px;
   background:var(--paper);border:1px solid var(--border);border-radius:10px;
   box-shadow:0 12px 30px rgba(0,0,0,0.14);padding:10px;z-index:9999;cursor:default;
   opacity:0;visibility:hidden;transform:translateY(-8px);pointer-events:none;
@@ -2646,6 +2646,19 @@ body.dark-mode .login-quote{ background:rgba(0,0,0,0.18); }
   width:100%;max-width:760px;max-height:88vh;overflow:auto;background:var(--paper);
   border-radius:var(--radius);box-shadow:0 18px 50px rgba(27,42,74,0.2);
   border-top:5px solid var(--gold);padding:26px 28px;position:relative;
+}
+.parent-birthday-modal{
+  width:100%;max-width:420px;background:var(--paper);border-radius:var(--radius);
+  box-shadow:0 18px 50px rgba(27,42,74,0.25);border-top:5px solid var(--gold);
+  padding:34px 28px 28px;position:relative;text-align:center;
+}
+.parent-birthday-emoji{ font-size:44px;line-height:1;margin-bottom:10px;animation:birthdayWiggle 1.6s ease-in-out infinite; }
+.parent-birthday-modal h2{ font-family:'Tajawal';color:var(--purple);margin:0 0 10px;font-size:22px; }
+.parent-birthday-modal .sub{ font-size:14.5px;color:var(--ink);font-weight:600;line-height:1.6;margin-bottom:20px; }
+.parent-birthday-modal .btn-primary{
+  background:linear-gradient(135deg, var(--purple) 0%, var(--gold-deep) 100%);
+  color:#fff;border:none;border-radius:10px;padding:11px 26px;font-family:'Tajawal';
+  font-weight:800;font-size:14.5px;cursor:pointer;
 }
 .users-modal h2{font-family:'Aref Ruqaa',serif;margin:0 0 4px;color:var(--ink);font-size:22px;}
 .users-modal p.sub{margin:0 0 18px;color:var(--ink-soft);font-size:13px;}

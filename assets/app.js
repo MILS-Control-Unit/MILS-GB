@@ -16132,6 +16132,38 @@ function syncTeacherScopeFromDb(user){
   }
 }
 
+/* ---------- Parent sign-in greeting: "It's your child's birthday today!" ---------- */
+// Shown once per day per account (not per device), reusing the already-scoped
+// getTodaysBirthdaysForCurrentUser() so a parent only ever sees THEIR OWN linked
+// child(ren) here — never another family's child, even though the underlying
+// student list covers the whole school.
+function parentBirthdayGreetSeenKey(){
+  return 'parentBirthdayGreetSeen_v1_' + (currentUser ? currentUser.username : '') + '_' + birthdayTodayKey();
+}
+function showParentChildBirthdayGreetingIfNeeded(){
+  if(!currentUser || currentUser.role!=='parent') return;
+  let alreadySeenToday = false;
+  try{ alreadySeenToday = localStorage.getItem(parentBirthdayGreetSeenKey()) === '1'; }catch(err){}
+  if(alreadySeenToday) return;
+  const list = getTodaysBirthdaysForCurrentUser(allStudentsFlat());
+  if(!list.length) return;
+  const titleEl = document.getElementById('parentBirthdayGreetTitle');
+  const msgEl = document.getElementById('parentBirthdayGreetMsg');
+  const overlay = document.getElementById('parentBirthdayGreetOverlay');
+  if(!titleEl || !msgEl || !overlay) return;
+  const names = list.map(b=> b.name).join(' & ');
+  titleEl.textContent = list.length===1 ? `Happy Birthday, ${list[0].name}!` : `Happy Birthday!`;
+  msgEl.innerHTML = list.length===1
+    ? `Today is <b>${names}</b>'s birthday! 🎂 The whole MILS Grade Book team wishes them a wonderful year ahead full of happiness and success.`
+    : `Today is the birthday of <b>${names}</b>! 🎂 The whole MILS Grade Book team wishes them a wonderful year ahead full of happiness and success.`;
+  overlay.classList.add('show');
+  try{ localStorage.setItem(parentBirthdayGreetSeenKey(), '1'); }catch(err){}
+}
+function closeParentBirthdayGreeting(){
+  const overlay = document.getElementById('parentBirthdayGreetOverlay');
+  if(overlay) overlay.classList.remove('show');
+}
+
 function loginAs(user, remember, showWelcome){
   currentUser = user;
   syncTeacherScopeFromDb(currentUser);
@@ -16179,6 +16211,7 @@ function loginAs(user, remember, showWelcome){
   refreshHeaderQuickWidgets();
   refreshBirthdayWidgets();
   showBirthdayToastIfNeeded();
+  showParentChildBirthdayGreetingIfNeeded();
   showHelpAssistantWidget();
   if(typeof maybeShowMigrationButton==='function') maybeShowMigrationButton();
 }
