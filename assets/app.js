@@ -16305,7 +16305,7 @@ function canAccessTab(tab){
   if(tab==='teacherClasses') return currentUser.role === 'admin'; // Teachers and Classes only for Admin
   if(tab==='teacherStatistics') return currentUser.role === 'admin'; // Teachers Statistics only for Admin
   if(tab==='statistics') return currentUser.role === 'admin' || currentUser.role === 'hod'; // Statistics for Admin & HOD
-  if(tab==='certReports') return currentUser.role!=='hod' && !!currentUser.effective.reports; // Certificates tab shares the Reports permission, but is not available to HOD
+  if(tab==='certReports') return currentUser.role!=='hod' && currentUser.role!=='hos' && !!currentUser.effective.reports; // Certificates tab shares the Reports permission, but is not available to HOD or HOS/Deputy
   if(tab==='markEntryReport') return currentUser.role!=='parent' && !!currentUser.effective.reports; // Mark Entry Report shares the Reports permission, but is staff-only
   return !!currentUser.effective[tab];
 }
@@ -16339,7 +16339,7 @@ function applyPermissionsUI(){
   // canAccessTab()) but were never actually hidden here, so an account with that
   // permission off could still see and click into both tabs.
   const certReportsTab = document.getElementById('navTabCertReports');
-  if(certReportsTab) certReportsTab.style.display = (eff.reports && currentUser.role!=='hod') ? '' : 'none';
+  if(certReportsTab) certReportsTab.style.display = (eff.reports && currentUser.role!=='hod' && currentUser.role!=='hos') ? '' : 'none';
   const markEntryReportTab = document.getElementById('navTabMarkEntryReport');
   if(markEntryReportTab) markEntryReportTab.style.display = (eff.reports && currentUser.role!=='parent') ? '' : 'none';
   document.getElementById('dashboardDropdownWrap').style.display = eff.dashboard ? '' : 'none';
