@@ -3047,3 +3047,36 @@ table tbody tr:hover td{background:#f5f8ff!important;}
   .nav-row-tabs{overflow:visible!important;width:100%!important;justify-content:space-around;}
   .nav-tab{flex:0 0 42px!important;width:42px!important;}
 }
+
+/* Keep the header compact: its two content zones share one horizontal layout
+   instead of wrapping into a large empty second row. */
+.masthead{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:center!important;
+  gap:28px;
+  min-height:0!important;
+  height:auto!important;
+  flex-wrap:nowrap!important;
+}
+.masthead > div:first-of-type{
+  min-width:0;
+  display:flex!important;
+  align-items:center!important;
+  gap:16px!important;
+}
+.masthead-text{min-width:0;}
+.masthead-text p{white-space:normal;}
+.masthead-right{
+  width:max-content;
+  flex:none!important;
+  align-items:flex-end!important;
+  justify-content:center;
+  gap:7px!important;
+}
+.masthead-right-row{min-height:30px;}
+@media (max-width:1180px){
+  .masthead{grid-template-columns:1fr;gap:12px;}
+  .masthead-right{width:100%;align-items:flex-start!important;}
+  .masthead-right-row{justify-content:flex-start!important;}
+}
