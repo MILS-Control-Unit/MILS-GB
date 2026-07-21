@@ -1177,7 +1177,7 @@
         <span id="birthdayCount">0</span>
         <span class="birthday-label">Birthdays Today</span>
         <div class="birthday-dropdown" id="birthdayDropdown">
-          <div class="birthday-dropdown-title">🎉 Birthdays Today</div>
+          <div class="birthday-dropdown-title" style="display:flex;align-items:center;justify-content:space-between;">🎉 Birthdays Today <span onclick="closeBirthdayDropdown(event)" style="cursor:pointer;font-weight:900;padding:0 4px;">✕</span></div>
           <div id="birthdayList"><span class="birthday-chip-empty">Loading…</span></div>
         </div>
       </div>
@@ -1186,7 +1186,7 @@
           🔔<span class="notif-badge" id="notifBadge" style="display:none;">0</span>
         </button>
         <div class="notif-dropdown" id="notifDropdown">
-          <div class="notif-dropdown-title">Notifications</div>
+          <div class="notif-dropdown-title" style="display:flex;align-items:center;justify-content:space-between;">Notifications <span onclick="closeNotifDropdown(event)" style="cursor:pointer;font-weight:900;padding:0 4px;">✕</span></div>
           <div id="notifList"><span class="notif-empty">Loading…</span></div>
         </div>
       </div>
