@@ -1263,7 +1263,17 @@ function ensureHeaderDropdownBackdrop(){
       closeSiblingHeaderDropdowns(null);
       bd.remove();
     });
-    document.body.appendChild(bd);
+    // Appended inside #mainNav (not document.body): .main-nav has its own
+    // position:fixed + z-index:120, which starts a NEW stacking context. A
+    // backdrop appended to <body> gets compared against that whole nav as one
+    // z-index:120 layer — so the backdrop (z-index:9998 in the root context)
+    // ends up on top of the entire nav, including the dropdown's "9999", and
+    // silently eats every click/scroll over it even though it still renders
+    // visibly underneath. Nesting the backdrop inside #mainNav puts both it and
+    // the dropdown in the SAME local stacking context, where 9999 correctly
+    // beats 9998 again.
+    const nav = document.getElementById('mainNav') || document.body;
+    nav.appendChild(bd);
   }
 }
 function removeHeaderDropdownBackdrop(){
