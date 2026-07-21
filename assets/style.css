@@ -3022,3 +3022,28 @@ table tbody tr:hover td{background:#f5f8ff!important;}
   .toolbar,.db-filters,.add-form{padding:12px;}.btn{flex:1 1 auto;}.classbar{padding:14px;}
 }
 @media (prefers-reduced-motion:reduce){.nav-tab,.btn,table tbody tr{transition:none!important;}}
+
+/* Sidebar should read as a single app rail, never as a scrollable panel. */
+.main-nav{
+  overflow:visible!important;
+  scrollbar-width:none;
+}
+.main-nav::-webkit-scrollbar{display:none;}
+.nav-row-tabs{flex:0 1 auto!important;gap:2px!important;}
+.main-nav::before{padding-bottom:12px;}
+.nav-group-label{margin:7px 8px 5px;}
+.nav-tab{height:36px;}
+.birthday-widget{min-height:36px!important;margin-top:4px!important;}
+.gb-save-fab{padding-top:7px!important;margin-bottom:5px!important;}
+.gb-save-status{padding:3px 5px;font-size:9.5px;}
+.gb-save-btn{height:34px;}
+.nav-row-config{margin-top:6px!important;padding-top:8px!important;}
+@media (max-width:1100px){
+  .main-nav{overflow:visible!important;}
+  .nav-tab{height:40px;}
+}
+@media (max-width:640px){
+  .main-nav{overflow:visible!important;}
+  .nav-row-tabs{overflow:visible!important;width:100%!important;justify-content:space-around;}
+  .nav-tab{flex:0 0 42px!important;width:42px!important;}
+}
