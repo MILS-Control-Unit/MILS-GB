@@ -4143,6 +4143,22 @@ function svgGroupedBarChart(items, maxVal, seriesNames, colors, targetVal, targe
   return `<div style="margin-bottom:6px;">${legend}</div><svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;">${gridLines}${bars}${targetLine}${labels}</svg>`;
 }
 
+// A single ring-style doughnut with the percentage lettered in its center — used by the
+// Student Discipline Tracker to show each category's share of the class's combined discipline
+// count. `percent` is 0-100; `color` fills the ring for that share, the remainder stays a
+// neutral track color.
+function svgDoughnut(percent, color){
+  const size = 180, r = 68, stroke = 22, cx = size/2, cy = size/2;
+  const pct = Math.max(0, Math.min(100, percent||0));
+  const circumference = 2*Math.PI*r;
+  const dash = (pct/100)*circumference;
+  return `<svg viewBox="0 0 ${size} ${size}" style="width:100%;max-width:190px;display:block;margin:0 auto;">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--border)" stroke-width="${stroke}"></circle>
+    <circle class="db-anim-slice" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${dash.toFixed(1)} ${circumference.toFixed(1)}" transform="rotate(-90 ${cx} ${cy})"></circle>
+    <text x="${cx}" y="${cy+8}" text-anchor="middle" font-size="26" font-weight="800" fill="var(--ink)">${Math.round(pct)}%</text>
+  </svg>`;
+}
+
 function svgPieChart(data){
   const total = data.reduce((a,d)=>a+d.value,0);
   const cx=110, cy=110, r=100;
@@ -7559,10 +7575,27 @@ function renderDisciplineTrackerChart(){
     return { student: s, general, late, misbehavior, total: general+late+misbehavior };
   });
 
-  const items = rows.map(r=>({ label: r.student.name, values: [r.general, r.late, r.misbehavior] }));
-  const peak = Math.max(1, ...rows.map(r=>Math.max(r.general, r.late, r.misbehavior)));
-  const maxVal = Math.ceil(peak/5)*5 || 5;
-  const chartHtml = svgGroupedBarChart(items, maxVal, ['General Absence','Late','Misbehavior'], ['var(--red)','var(--amber)','var(--purple)']);
+  const totals = {
+    general: rows.reduce((a,r)=>a+r.general,0),
+    late: rows.reduce((a,r)=>a+r.late,0),
+    misbehavior: rows.reduce((a,r)=>a+r.misbehavior,0)
+  };
+  const grandTotal = totals.general + totals.late + totals.misbehavior;
+  const DOUGHNUT_DEFS = [
+    { key:'general', label:'General Absence', color:'var(--red)' },
+    { key:'late', label:'Late', color:'var(--amber)' },
+    { key:'misbehavior', label:'Misbehavior', color:'var(--purple)' }
+  ];
+  const doughnutsHtml = DOUGHNUT_DEFS.map(d=>{
+    const pct = grandTotal>0 ? (totals[d.key]/grandTotal)*100 : 0;
+    return `
+      <div class="db-chart-card" style="text-align:center;">
+        <h4>${d.label}</h4>
+        ${svgDoughnut(pct, d.color)}
+        <div style="margin-top:8px;font-size:12.5px;font-weight:600;color:var(--ink-soft);">${totals[d.key]} of ${grandTotal||0} recorded ${grandTotal===1?'day':'days'}</div>
+      </div>`;
+  }).join('');
+  const chartHtml = `<div class="db-charts-grid" style="grid-template-columns:repeat(3,1fr);">${doughnutsHtml}</div>`;
 
   const tableRows = rows.map((r,i)=>`
     <tr>
