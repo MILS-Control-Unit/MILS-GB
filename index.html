@@ -1088,6 +1088,14 @@
       </div>
       <button class="nav-tab" data-view="attendance" id="navTabAttendance" title="Absence (Subjects)" onclick="switchView('attendance')"><svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-attendance"/></svg> Absence (Subjects)</button>
       <button class="nav-tab" data-view="approvedLeave" id="navTabApprovedLeave" title="Approved Leave" onclick="openApprovedLeaveTab()"><svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-attendance"/></svg> Approved Leave</button>
+      <div class="nav-dropdown" id="disciplineDropdownWrap">
+        <button class="nav-tab" data-view="discipline" id="navTabDiscipline" title="General Absence, Late and Misbehavior" onclick="toggleDisciplineMenu(event)"><svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-attendance"/></svg> General Absence, Late and Misbehavior ▾</button>
+        <div class="nav-dropdown-menu" id="disciplineMenu">
+          <button class="opt-btn" onclick="openDisciplineCategory('general');closeDisciplineMenu();">General Absence</button>
+          <button class="opt-btn" onclick="openDisciplineCategory('late');closeDisciplineMenu();">Late</button>
+          <button class="opt-btn" onclick="openDisciplineCategory('misbehavior');closeDisciplineMenu();">Misbehavior</button>
+        </div>
+      </div>
       <span class="nav-row-tick" aria-hidden="true"></span>
       <span class="nav-group-label nav-group-academics">Academics</span>
       <button class="nav-tab" data-view="grades" id="navTabGrades" title="Grade Book" onclick="switchView('grades')"><svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-gradebook"/></svg> Grade Book</button>
@@ -1320,7 +1328,7 @@
       <div class="table-card">
         <div id="attTableHolder" class="grade-table-scroll"></div>
       </div>
-      <p class="foot-note">
+      <p class="foot-note" id="attFootNote">
         Friday and Saturday are automatically excluded from every attendance table, along with any holiday dates you add above. Absence is recorded separately for each Subject — tick a box to mark a student absent on that day — the Total column adds up all recorded absence days for this Month, and automatically updates that student's "Beh. &amp; Attend." grade for that same Subject, for the matching Term and Month in the Grade Book. You can still edit that grade by hand afterwards at any time. Checking "Apply to ALL Sections, Stages, Grades &amp; Classes" before creating/updating the table sets the same date range and excluded days for every class that teaches this Subject at once, instead of one class at a time.
       </p>
     </div>
