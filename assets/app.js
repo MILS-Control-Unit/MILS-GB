@@ -1216,19 +1216,70 @@ document.addEventListener('click', (e)=>{
     const bd = document.getElementById('birthdayDropdown');
     if(bd) bd.classList.remove('open');
   }
+  if(!e.target.closest('#notifBellWrap') && !e.target.closest('.notif-dropdown')){
+    const nd = document.getElementById('notifDropdown');
+    if(nd) nd.classList.remove('open');
+  }
+  if(!e.target.closest('#visitorsWidget') && !e.target.closest('#birthdayWidget') && !e.target.closest('#notifBellWrap') && !e.target.closest('.notif-dropdown')){
+    removeHeaderDropdownBackdrop();
+  }
   if(!e.target.closest('#ufClassroomsDD')){
     const cp = document.getElementById('ufClassroomsPanel');
     if(cp) cp.classList.remove('open');
   }
 });
 
+// Closes the other header dropdowns (birthday / notifications / visitors) so
+// only one of these floating panels is ever open at once. Without this, opening
+// a second one while the first is still open made them stack on top of each
+// other and on top of the classbar/students header underneath — which is what
+// read as a "broken" overlapping layout.
+// A single full-screen dimmer shown behind whichever header dropdown (Birthdays /
+// Notifications / Active Visitors) is currently open. Without it, the dropdown floats
+// directly over the classbar/students-count bar and table underneath with nothing
+// visually separating them, so it reads as an overlapping/broken layout even when only
+// one dropdown is open at a time. The backdrop sits just below the dropdown's z-index,
+// dims the rest of the page, and closes the dropdown on click.
+function ensureHeaderDropdownBackdrop(){
+  let bd = document.getElementById('headerDropdownBackdrop');
+  if(!bd){
+    bd = document.createElement('div');
+    bd.id = 'headerDropdownBackdrop';
+    bd.style.cssText = 'position:fixed;inset:0;background:rgba(15,20,35,0.28);z-index:9998;';
+    bd.addEventListener('click', ()=>{
+      closeSiblingHeaderDropdowns(null);
+      bd.remove();
+    });
+    document.body.appendChild(bd);
+  }
+}
+function removeHeaderDropdownBackdrop(){
+  const bd = document.getElementById('headerDropdownBackdrop');
+  if(bd) bd.remove();
+}
+
+function closeSiblingHeaderDropdowns(exceptId){
+  ['visitorsDropdown','birthdayDropdown','notifDropdown'].forEach(id=>{
+    if(id===exceptId) return;
+    const el = document.getElementById(id);
+    if(el) el.classList.remove('open');
+  });
+}
+
 function toggleVisitorsDropdown(e){
   e.stopPropagation();
   const dd = document.getElementById('visitorsDropdown');
   if(!dd) return;
   const opening = !dd.classList.contains('open');
-  dd.classList.toggle('open');
-  if(opening) refreshActiveVisitorsWidget();
+  closeSiblingHeaderDropdowns('visitorsDropdown');
+  dd.classList.toggle('open', opening);
+  if(opening){
+    dd.style.zIndex = '9999';
+    ensureHeaderDropdownBackdrop();
+    refreshActiveVisitorsWidget();
+  } else {
+    removeHeaderDropdownBackdrop();
+  }
 }
 
 function toggleBirthdayDropdown(e){
@@ -1236,7 +1287,8 @@ function toggleBirthdayDropdown(e){
   const dd = document.getElementById('birthdayDropdown');
   if(!dd) return;
   const opening = !dd.classList.contains('open');
-  dd.classList.toggle('open');
+  closeSiblingHeaderDropdowns('birthdayDropdown');
+  dd.classList.toggle('open', opening);
   if(opening){
     // Keep the stylesheet's own position:absolute behavior (switching this to
     // position:fixed broke the dropdown's width, since its sizing is computed
@@ -1244,7 +1296,10 @@ function toggleBirthdayDropdown(e){
     // order so it reliably draws above sibling header widgets (quick-stats,
     // Notify Parents) instead of underneath them.
     dd.style.zIndex = '9999';
+    ensureHeaderDropdownBackdrop();
     renderBirthdayWidget();
+  } else {
+    removeHeaderDropdownBackdrop();
   }
 }
 
@@ -14885,8 +14940,11 @@ function toggleNotifDropdown(e){
   const dd = document.getElementById('notifDropdown');
   if(!dd) return;
   const opening = !dd.classList.contains('open');
-  dd.classList.toggle('open');
+  closeSiblingHeaderDropdowns('notifDropdown');
+  dd.classList.toggle('open', opening);
   if(opening){
+    dd.style.zIndex = '9999';
+    ensureHeaderDropdownBackdrop();
     // Computed once here (instead of separately inside renderNotifDropdown and
     // updateNotifBadge) since both need the same full student list at this instant.
     const flat = allStudentsFlat();
@@ -14894,6 +14952,8 @@ function toggleNotifDropdown(e){
     setNotifLastSeen(Date.now());
     markBirthdayNotifSeenToday();
     updateNotifBadge(flat);
+  } else {
+    removeHeaderDropdownBackdrop();
   }
 }
 
