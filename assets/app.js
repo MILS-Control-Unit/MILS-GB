@@ -15543,7 +15543,7 @@ function getEffectivePermissions(user){
   if(role==='hos'){
     // HOS/Deputy: Can View their relevant Section and Stage - Can View or edit Grade Book, Can View or Edit Absence, Can View Certificates, Can View Dashboard, Can View Exam Analysis
     // HOS/Deputy is also one of only two roles (with Admin) allowed to record Approved Leave.
-    return { database:false, grades:true, attendance:true, approvedLeave:true, reports:true, dashboard:true, examsAnalysis:false, examSchedule:true, perfAlerts:true, classLists:false, settings:false, edit:true,
+    return { database:false, grades:true, attendance:true, approvedLeave:true, reports:true, dashboard:true, examsAnalysis:false, examSchedule:true, perfAlerts:true, classLists:true, settings:false, edit:true,
       sectionScope:user.section||null, stageScope:user.stages||[], gradeScope:null, classroomScope:null };
   }
   if(role==='hod'){
@@ -16302,7 +16302,7 @@ function canAccessTab(tab){
   if(!currentUser || !currentUser.effective) return false;
   if(isViewerAccountBlocked()) return false; // blocked accounts can't open ANY tab
   if(tab==='teachers') return currentUser.role === 'admin'; // Teachers Database only for Admin
-  if(tab==='teacherClasses') return currentUser.role === 'admin'; // Teachers and Classes only for Admin
+  if(tab==='teacherClasses') return currentUser.role === 'admin' || currentUser.role === 'hos'; // Teachers and Classes: Admin & HOS/Deputy
   if(tab==='teacherStatistics') return currentUser.role === 'admin'; // Teachers Statistics only for Admin
   if(tab==='statistics') return currentUser.role === 'admin' || currentUser.role === 'hod'; // Statistics for Admin & HOD
   if(tab==='certReports') return currentUser.role!=='hod' && currentUser.role!=='hos' && !!currentUser.effective.reports; // Certificates tab shares the Reports permission, but is not available to HOD or HOS/Deputy
@@ -16329,10 +16329,10 @@ function applyPermissionsUI(){
   const eff = currentUser.effective;
   document.getElementById('userBadgeName').textContent = currentUser.displayName || currentUser.username;
   document.getElementById('userBadgeRole').textContent = ROLE_LABELS[currentUser.role] || 'User';
-  // Student Database is only for Admin
-  document.getElementById('navTabDatabase').style.display = (eff.database && currentUser.role==='admin') ? '' : 'none';
-  // Teachers Database is only for Admin
-  document.getElementById('teachersDropdownWrap').style.display = (eff.settings && currentUser.role==='admin') ? '' : 'none';
+  // Student Database is only for Admin; the Students tab itself also opens for HOS/Deputy (Class Lists)
+  document.getElementById('navTabDatabase').style.display = ((eff.database && currentUser.role==='admin') || eff.classLists) ? '' : 'none';
+  // Teachers Database is only for Admin; the Teachers dropdown itself also opens for HOS/Deputy (Teachers and Classes)
+  document.getElementById('teachersDropdownWrap').style.display = ((eff.settings && currentUser.role==='admin') || currentUser.role==='hos') ? '' : 'none';
   document.getElementById('navTabGrades').style.display = eff.grades ? '' : 'none';
   document.getElementById('navTabAttendance').style.display = eff.attendance ? '' : 'none';
   // Certificates and Mark Entry Report both share the "reports" permission (see
@@ -16348,11 +16348,22 @@ function applyPermissionsUI(){
   if(examSchedWrap) examSchedWrap.style.display = eff.examSchedule ? '' : 'none';
   const perfWrap = document.getElementById('perfDropdownWrap');
   if(perfWrap) perfWrap.style.display = eff.perfAlerts ? '' : 'none';
+  const teachersMenu = document.getElementById('teachersMenu');
+  if(teachersMenu){
+    const teachersDbBtn = teachersMenu.querySelector('[onclick*="switchView(\'teachers\')"]');
+    if(teachersDbBtn) teachersDbBtn.style.display = currentUser.role==='admin' ? '' : 'none';
+    const teacherClassesBtn = teachersMenu.querySelector('[onclick*="teacherClasses"]');
+    if(teacherClassesBtn) teacherClassesBtn.style.display = (currentUser.role==='admin' || currentUser.role==='hos') ? '' : 'none';
+    const teacherStatsBtn = teachersMenu.querySelector('[onclick*="teacherStatistics"]');
+    if(teacherStatsBtn) teacherStatsBtn.style.display = currentUser.role==='admin' ? '' : 'none';
+  }
   // Class Lists and Statistics should be visible for admin (since it's under Students database)
   const databaseMenu = document.getElementById('databaseMenu');
   if(databaseMenu){
+    const studentsDbBtn = databaseMenu.querySelector('[onclick*="switchView(\'database\')"]');
+    if(studentsDbBtn) studentsDbBtn.style.display = (eff.database && currentUser.role==='admin') ? '' : 'none';
     const classListsBtn = databaseMenu.querySelector('[onclick*="classLists"]');
-    if(classListsBtn) classListsBtn.style.display = eff.database ? '' : 'none';
+    if(classListsBtn) classListsBtn.style.display = eff.classLists ? '' : 'none';
     const statsBtn = databaseMenu.querySelector('[onclick*="statistics"]');
     if(statsBtn) statsBtn.style.display = (eff.database && (currentUser.role==='admin' || currentUser.role==='hod')) ? '' : 'none';
   }
