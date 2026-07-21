@@ -2939,7 +2939,7 @@ body.dark-mode{
   --bg:#111827;--paper:#182235;--paper-2:#1e2b42;--ink:#f4f7fc;--ink-2:#d8e2f4;--ink-soft:#9aaac2;--ink-solid:#1d2b45;--border:#2c3b55;
   background-image:radial-gradient(circle at 92% -10%,rgba(73,129,255,.18),transparent 28%),radial-gradient(circle at 14% 100%,rgba(243,184,63,.08),transparent 25%);
 }
-.wrap{max-width:1440px;}
+.wrap{max-width:1500px;}
 #appWrap.wrap{margin-left:268px!important;margin-right:auto!important;}
 
 /* Header becomes a compact command centre rather than a decorative banner. */
@@ -3116,5 +3116,8 @@ table tbody tr:hover td{background:#f5f8ff!important;}
   .user-badge{padding:6px 10px!important;}
   .quick-stats{gap:4px!important;}
   .qs-item{padding:4px 7px;}
-  .save-indicator{padding:6px 8px!important;font-size:12px!important;}
+  .masthead-text h1{font-size:30px!important;}
+  .masthead-text p{font-size:15px!important;}
+  .school-logo{height:60px!important;}
+  .logo-divider{height:48px!important;}
 }
