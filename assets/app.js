@@ -257,6 +257,12 @@ let attSubView = 'absence';
     .att-subtabs-sidebar .att-subtab-select:hover{ background-color:#2a3b6e; }
     td.att-leave-cell{ text-align:center; font-weight:800; color:#b54708; background:#fffaeb; }
     td.att-na-cell{ text-align:center; color:#98a2b3; background:#f8f9fb; }
+    th.att-day-col{ vertical-align:top; }
+    .att-day-open-toggle{ display:block; margin:0 0 3px; cursor:pointer; line-height:1; }
+    .att-day-open-toggle input{ cursor:pointer; width:15px; height:15px; accent-color:#12b76a; vertical-align:middle; }
+    th.att-day-open{ background:#ecfdf3; }
+    th.att-day-closed{ background:#f8f9fb; }
+    td.att-closed-cell{ text-align:center; color:#c4c9d4; background:#f8f9fb; font-weight:700; }
   `;
   const style = document.createElement('style');
   style.textContent = css;
@@ -5563,6 +5569,11 @@ function renderCertReportsCards(){
     // Quizzes Only mode — the teacher sign-off belongs with the full certificate, not the
     // early quiz-only preview.
     if(['month1','month2','coursework'].includes(type) && !(certQuizzesOnlyMode && ['month1','month2'].includes(type))){
+      if(['month1','month2'].includes(type)){
+        const attCol = appendAttendancePctColumnToReportMarkup(tableHeadHtml, tableBodyHtml, student, subjects, type);
+        tableHeadHtml = attCol.headHtml;
+        tableBodyHtml = attCol.bodyHtml;
+      }
       const teacherColumn = appendTeacherSignatureColumnToReportMarkup(tableHeadHtml, tableBodyHtml, student, subjects, type);
       tableHeadHtml = teacherColumn.headHtml;
       tableBodyHtml = teacherColumn.bodyHtml;
@@ -5685,6 +5696,60 @@ function renderCertReportsCards(){
       </div>
     </div>`;
   }).join('');
+}
+
+// Computes a student's attendance percentage for one subject, built on top of the Absence
+// table's open/closed-day feature (see toggleAttDayOpen/renderAbsenceTable): only days the
+// teacher explicitly OPENED for this subject count as actual class sessions, so
+//   Attendance % = (opened days − days marked absent) / opened days × 100
+// A day that was never opened is simply not a class session yet and neither helps nor hurts
+// the percentage. Only shown on Month 1 and Month 2 certificates (not Coursework), each using
+// just its own month's Absence table. Returns null when there's nothing to base a percentage
+// on yet (e.g. no day has been opened for this subject/month combination).
+function certSubjectAttendancePct(subject, student, reportType){
+  if(!['month1','month2'].includes(reportType) || !student.classroom) return null;
+  const ck = `${certState.section}|${certState.stage}|${certState.grade}|${certState.termPeriod}|${student.classroom}|${subject}|${reportType}`;
+  const month = attendance[ck];
+  if(!month || !month.openDays) return null;
+  const openDates = Object.keys(month.openDays).filter(d=> month.openDays[d]);
+  if(!openDates.length) return null;
+  const rec = (month.records && month.records[student.id]) || {};
+  const absentTotal = openDates.filter(d=> rec[d]).length;
+  return Math.round(((openDates.length-absentTotal)/openDates.length)*1000)/10;
+}
+
+// Adds the "Attendance %" column to the HTML fragments before a report card is inserted into
+// the document — always placed immediately before the Teacher signature column (see the call
+// site above, which runs this first). All grade-specific table designs stay in sync.
+function appendAttendancePctColumnToReportMarkup(headHtml, bodyHtml, student, subjects, reportType){
+  if(!['month1','month2'].includes(reportType)) return { headHtml, bodyHtml };
+  const template = document.createElement('template');
+  template.innerHTML = `<table><thead>${headHtml}</thead><tbody>${bodyHtml}</tbody></table>`;
+  const table = template.content.querySelector('table');
+  const headerRow = table && table.tHead && table.tHead.rows[0];
+  if(!table || !headerRow) return { headHtml, bodyHtml };
+
+  const header = document.createElement('th');
+  header.className = 'attendance-pct-th';
+  header.textContent = 'Attendance %';
+  headerRow.appendChild(header);
+
+  Array.from(table.tBodies[0].rows).forEach(row=>{
+    const cell = document.createElement('td');
+    cell.className = 'attendance-pct-cell';
+    const isTotal = row.classList.contains('cert-subtotal-row') || row.classList.contains('cert2-total-row');
+    const firstCellText = row.cells[0] ? row.cells[0].textContent : '';
+    const subject = !isTotal ? subjects.find(s=> firstCellText.includes(s)) : null;
+    const pct = subject ? certSubjectAttendancePct(subject, student, reportType) : null;
+    if(pct!==null && pct!==undefined){
+      const badgeCls = pct>=90 ? 'excellent' : pct>=75 ? 'vgood' : pct>=60 ? 'good' : 'fail';
+      cell.innerHTML = `<span class="badge ${badgeCls}">${pct}%</span>`;
+    } else if(!isTotal){
+      cell.innerHTML = '<span class="teacher-signature-empty">—</span>';
+    }
+    row.appendChild(cell);
+  });
+  return { headHtml: table.tHead.innerHTML, bodyHtml: table.tBodies[0].innerHTML };
 }
 
 // Adds the Teacher signature column to the HTML fragments before a report card is
@@ -7150,7 +7215,27 @@ function applyAttendanceDateRangeToClass(section, stage, grade, term, subject, t
     });
     if(Object.keys(kept).length) newRecords[studentId] = kept;
   });
-  attendance[ck] = { start, end, dates, excluded: excludedList, records: newRecords };
+
+  // Keep whichever days were already opened, dropping any that fell outside the new range.
+  // Migration for tables that existed before the open/close feature: if this table has never
+  // had an `openDays` field at all, derive it from its existing records (any day with at least
+  // one recorded absence counts as already-open) rather than starting it fully closed and
+  // orphaning old data behind a closed day.
+  let prevOpenDays;
+  if(attendance[ck] && attendance[ck].openDays){
+    prevOpenDays = attendance[ck].openDays;
+  } else if(attendance[ck] && !attendance[ck].openDays){
+    prevOpenDays = {};
+    Object.values(prevRecords).forEach(rec=>{
+      Object.keys(rec||{}).forEach(d=>{ prevOpenDays[d] = true; });
+    });
+  } else {
+    prevOpenDays = {};
+  }
+  const newOpenDays = {};
+  Object.keys(prevOpenDays).forEach(d=>{ if(dateSet.has(d)) newOpenDays[d] = true; });
+
+  attendance[ck] = { start, end, dates, excluded: excludedList, records: newRecords, openDays: newOpenDays };
 
   const classKey_ = `${section}|${stage}|${grade}`;
   let roster = visibleRoster(students[classKey_]).filter(s=>(s.classroom||'')===term);
@@ -7354,6 +7439,25 @@ function renderAbsenceTable(){
   // locked right along with it — there's only one underlying figure being protected.
   const canEdit = !!(currentUser && currentUser.effective && currentUser.effective.edit) && !isCurrentUserGradeEntryLocked(attState.academicTerm);
   if(!month.records) month.records = {};
+
+  // Each day starts CLOSED (inactive) until the teacher/admin explicitly opens it — an "open"
+  // day means the class actually met for this subject that day, so absence can be recorded for
+  // it. Migration for tables that already existed before this feature: auto-open any day that
+  // already has at least one recorded absence, so pre-existing data stays visible/editable
+  // without forcing a retroactive re-open of every day. This only runs once per table (the
+  // `openDays` field, once set, is never regenerated), and is persisted immediately so it
+  // doesn't get recomputed differently across sessions.
+  let openDaysMigrated = false;
+  if(!month.openDays){
+    month.openDays = {};
+    Object.values(month.records).forEach(rec=>{
+      Object.keys(rec||{}).forEach(ds=>{ month.openDays[ds] = true; });
+    });
+    openDaysMigrated = true;
+  }
+  const openDays = month.openDays;
+  if(openDaysMigrated) saveState();
+
   const leaveRecords = (approvedLeave[attClassLevelKey()] && approvedLeave[attClassLevelKey()].records) || {};
 
   const headerCols = month.dates.map((ds,idx)=>{
@@ -7361,7 +7465,11 @@ function renderAbsenceTable(){
     const dd = String(d.getDate()).padStart(2,'0');
     const mm = String(d.getMonth()+1).padStart(2,'0');
     const weekEndCls = attColWeekEndCls(month.dates, idx);
-    return `<th class="att-day-col${weekEndCls}">${ATT_DAY_NAMES[d.getDay()]}<br><small>${dd}/${mm}</small></th>`;
+    const isOpen = !!openDays[ds];
+    const openToggle = `<label class="att-day-open-toggle" title="${isOpen ? 'This day is open — click to close it again' : 'This day is closed — click to open attendance for it'}">
+        <input type="checkbox" ${isOpen?'checked':''} ${canEdit?'':'disabled'} onchange="toggleAttDayOpen('${ds}', this.checked)">
+      </label>`;
+    return `<th class="att-day-col${weekEndCls}${isOpen?' att-day-open':' att-day-closed'}">${openToggle}${ATT_DAY_NAMES[d.getDay()]}<br><small>${dd}/${mm}</small></th>`;
   }).join('');
 
   const rows = roster.map((s,i)=>{
@@ -7377,7 +7485,15 @@ function renderAbsenceTable(){
       }
       const checked = !!rec[ds];
       if(checked) total++;
-      return `<td class="att-day-col${weekEndCls}"><input type="checkbox" class="att-check" ${checked?'checked':''} ${canEdit?'':'disabled'}
+      const isOpen = !!openDays[ds];
+      // A day that hasn't been opened yet AND has no existing record is inactive — no checkbox,
+      // just a placeholder — until it's opened from the header toggle above. If it somehow has a
+      // record already (e.g. migrated data) but got closed again, keep showing it as a disabled
+      // checked checkbox rather than hiding the data.
+      if(!isOpen && !checked){
+        return `<td class="att-day-col${weekEndCls} att-closed-cell" title="Day not opened yet">–</td>`;
+      }
+      return `<td class="att-day-col${weekEndCls}"><input type="checkbox" class="att-check" ${checked?'checked':''} ${(canEdit&&isOpen)?'':'disabled'}
                 onchange="flashInlineSaved(this);toggleAttendance('${s.id}','${ds}',this.checked)"></td>`;
     }).join('');
     const fullName = escapeHtml(s.name);
@@ -7577,6 +7693,27 @@ function renderAbsenceSummaryTable(){
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+}
+
+// Opens or closes a single day in the current class/subject/month's Absence table. A CLOSED
+// day has no working checkboxes for any student (it's simply not an attendance-taking day yet
+// for this subject); an OPEN day is one the teacher has confirmed the class actually met, so
+// absence can be recorded for it. Closing a day again does NOT delete any absences already
+// recorded on it — see renderAbsenceTable, which keeps those visible as disabled checked boxes.
+function toggleAttDayOpen(dateStr, checked){
+  if(isCurrentUserGradeEntryLocked(attState.academicTerm)){ gradeEntryLockAlert(attState.academicTerm); renderAttendanceTable(); return; }
+  const canEdit = !!(currentUser && currentUser.effective && currentUser.effective.edit);
+  if(!canEdit) return;
+  const ck = attClassKey();
+  const month = attendance[ck];
+  if(!month) return;
+  if(!month.openDays) month.openDays = {};
+  if(checked) month.openDays[dateStr] = true;
+  else delete month.openDays[dateStr];
+
+  saveState();
+  renderAttendanceTable();
+  logActivity('edit', `${checked?'Opened':'Closed'} ${dateStr} for Absence recording (${subjectWithIcon(attState.subject)})`);
 }
 
 function toggleAttendance(studentId, dateStr, checked){
