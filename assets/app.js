@@ -1240,6 +1240,19 @@ document.addEventListener('click', (e)=>{
 // visually separating them, so it reads as an overlapping/broken layout even when only
 // one dropdown is open at a time. The backdrop sits just below the dropdown's z-index,
 // dims the rest of the page, and closes the dropdown on click.
+function closeBirthdayDropdown(e){
+  if(e) e.stopPropagation();
+  const dd = document.getElementById('birthdayDropdown');
+  if(dd) dd.classList.remove('open');
+  removeHeaderDropdownBackdrop();
+}
+function closeNotifDropdown(e){
+  if(e) e.stopPropagation();
+  const dd = document.getElementById('notifDropdown');
+  if(dd) dd.classList.remove('open');
+  removeHeaderDropdownBackdrop();
+}
+
 function ensureHeaderDropdownBackdrop(){
   let bd = document.getElementById('headerDropdownBackdrop');
   if(!bd){
