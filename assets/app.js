@@ -168,7 +168,7 @@ let attState = { termPeriod:null, section:null, stage:null, grade:null, term:nul
 // unprefixed for backward compatibility with existing saved data), so each category keeps
 // its own fully independent set of tables instead of colliding with Absence (Subjects).
 let attCategory = 'subject';
-const ATT_CATEGORY_LABELS = { subject:'Absence (Subjects)', general:'General Absence', late:'Late', misbehavior:'Misbehavior' };
+const ATT_CATEGORY_LABELS = { subject:'Absence (Subjects)', general:'General Absence', late:'Late', misbehavior:'Misbehavior', tracker:'Student Discipline Tracker' };
 let openStep = null;
 let currentView = 'database';
 
@@ -7497,10 +7497,105 @@ function openDisciplineCategory(category){
   if(disciplineTab) disciplineTab.classList.add('active');
 }
 
+// "Student Discipline Tracker" — a read-only chart combining General Absence, Late and
+// Misbehavior counts per student for the currently selected Class/Month. It doesn't have its
+// own attendance data: attCategory is set to 'tracker' just so attStepConfig() picks the
+// no-Subject stepper (same as General Absence/Late/Misbehavior), and renderAttendanceTable()
+// below routes it straight to renderDisciplineTrackerChart() instead of any records table.
+function openDisciplineTracker(){
+  attCategory = 'tracker';
+  attState.subject = null;
+  attSubView = 'absence';
+  switchView('attendance');
+  updateAttSubTabsActive();
+  renderAttendanceTable();
+  const mainTab = document.getElementById('navTabAttendance');
+  const leaveTab = document.getElementById('navTabApprovedLeave');
+  const disciplineTab = document.getElementById('navTabDiscipline');
+  if(mainTab) mainTab.classList.remove('active');
+  if(leaveTab) leaveTab.classList.remove('active');
+  if(disciplineTab) disciplineTab.classList.add('active');
+}
+
+// Reads the same General Absence / Late / Misbehavior tables the three dropdown items above
+// write to (see attClassKey()), but directly by key rather than via attCategory/attClassKey(),
+// since attCategory here is 'tracker' rather than one of those three.
+function disciplineTrackerCountFor(studentId, category){
+  const base = `${attState.section}|${attState.stage}|${attState.grade}|${attState.termPeriod}|${attState.term}||${attState.academicTerm}`;
+  const month = attendance[`${base}|${category}`];
+  if(!month || !month.records || !month.records[studentId]) return 0;
+  return Object.keys(month.records[studentId]).length;
+}
+
+function renderDisciplineTrackerChart(){
+  const holder = document.getElementById('attTableHolder');
+  if(!holder) return;
+
+  if(!attState.academicTerm){
+    holder.innerHTML = `
+      <div class="empty-state">
+        <div class="seal-lg">—</div>
+        <h3>Pick a Month</h3>
+        <p>Select this Term's Month above to see the Discipline chart for this class.</p>
+      </div>`;
+    return;
+  }
+
+  const roster = getAttClassRosterFull();
+  if(roster.length===0){
+    holder.innerHTML = `
+      <div class="empty-state">
+        <div class="seal-lg">?</div>
+        <h3>No students in this class yet</h3>
+        <p>Add students from the "Grade Book" tab first.</p>
+      </div>`;
+    return;
+  }
+
+  const rows = roster.map(s=>{
+    const general = disciplineTrackerCountFor(s.id, 'general');
+    const late = disciplineTrackerCountFor(s.id, 'late');
+    const misbehavior = disciplineTrackerCountFor(s.id, 'misbehavior');
+    return { student: s, general, late, misbehavior, total: general+late+misbehavior };
+  });
+
+  const items = rows.map(r=>({ label: r.student.name, values: [r.general, r.late, r.misbehavior] }));
+  const peak = Math.max(1, ...rows.map(r=>Math.max(r.general, r.late, r.misbehavior)));
+  const maxVal = Math.ceil(peak/5)*5 || 5;
+  const chartHtml = svgGroupedBarChart(items, maxVal, ['General Absence','Late','Misbehavior'], ['var(--red)','var(--amber)','var(--purple)']);
+
+  const tableRows = rows.map((r,i)=>`
+    <tr>
+      <td>${i+1}</td>
+      <td class="name-col att-name-col" title="${escapeHtml(r.student.name)}">${escapeHtml(r.student.name)}</td>
+      <td class="att-day-col">${r.general}</td>
+      <td class="att-day-col">${r.late}</td>
+      <td class="att-day-col">${r.misbehavior}</td>
+      <td class="total-cell att-total-col">${r.total}</td>
+    </tr>`).join('');
+
+  holder.innerHTML = `
+    <div class="table-container">
+      <p style="margin:0 0 10px;font-size:12.5px;font-weight:600;color:#667085;">Combined General Absence / Late / Misbehavior counts recorded so far for this Term's Month, per student.</p>
+      <div style="margin-bottom:20px;">${chartHtml}</div>
+      <table class="att-table">
+        <thead>
+          <tr>
+            <th>#</th><th class="name-col att-name-col">Name</th>
+            <th class="att-day-col">General Absence</th><th class="att-day-col">Late</th><th class="att-day-col">Misbehavior</th>
+            <th class="att-total-col">Grand Total</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>`;
+}
+
 // Dispatcher — kept under the original name since it's called from many places (workspace
 // render, the Grade Entry Lock alert, etc.). Renders whichever sub-tab is currently active,
 // falling back to Absence if the current user isn't allowed to see Approved Leave / Summary.
 function renderAttendanceTable(){
+  if(attCategory==='tracker'){ renderDisciplineTrackerChart(); return; }
   if((attSubView==='leave' || attSubView==='summary') && !canUseApprovedLeave()) attSubView = 'absence';
   updateAttSubTabsActive();
   if(attSubView==='leave') renderApprovedLeaveTable();
