@@ -211,6 +211,11 @@ function visibleRoster(list){
 }
 // scores[subjKey] = { studentId: {...} } — subjKey includes the term, so each term keeps its own scores
 let scores = {};
+// Auditable grade changes and scheduled report definitions.  They live beside the
+// rest of the shared school data and are synced through the meta document below.
+let gradeChangeHistory = [];
+let scheduledReports = [];
+const GRADE_HISTORY_MAX = 5000;
 let studentIdCounter = 1;
 // attendance[classKey|classroom|termPeriod|term|subject|academicTerm] = { start, end, dates:[...], records:{studentId:{dateStr:true}} }
 // Each Term (1st/2nd) x Month (1st/2nd) combination is its own independent attendance table —
@@ -6757,7 +6762,10 @@ function updateScore(studentId, field, value, max){
   if(isCurrentUserGradeEntryLocked()) return;
   const map = getScoreMap();
   if(!map[studentId]) map[studentId]=emptyScoreObj();
-  map[studentId][field] = (value===''||value===null||value===undefined) ? null : clamp(value, max);
+  const previousValue = map[studentId][field];
+  const nextValue = (value===''||value===null||value===undefined) ? null : clamp(value, max);
+  map[studentId][field] = nextValue;
+  recordGradeChange(studentId, field, previousValue, nextValue, state.subject || 'Subject', getScoreMapKeyForHistory());
   if(!patchScoreRowInPlace(studentId)) renderTable(true);
   saveState();
   const stu = getRoster().find(s=>s.id===studentId);
@@ -7949,7 +7957,9 @@ function updateG12ExamScore(el, studentId, subject, max){
   if(!scores[sk][studentId]) scores[sk][studentId] = emptyScoreObj();
   const raw = el.value;
   const val = raw==='' ? null : clamp(raw, max);
+  const previousValue = scores[sk][studentId].examPaper;
   scores[sk][studentId].examPaper = val;
+  recordGradeChange(studentId, 'examPaper', previousValue, val, subject, sk);
   renderTable(true);
   saveState();
   const stu = subjectFilteredGradeRoster().find(s=>s.id===studentId);
@@ -9046,7 +9056,7 @@ function flushLocalSave(){
   clearTimeout(localSaveDebounceTimer);
   if(!localSavePending) return;
   try{
-    localStorage.setItem(LS_KEY, JSON.stringify({ students, scores, studentIdCounter, attendance, approvedLeave, teachers, teacherIdCounter, deletedTeacherIds, savedAt: new Date().toISOString() }));
+    localStorage.setItem(LS_KEY, JSON.stringify({ students, scores, studentIdCounter, attendance, approvedLeave, teachers, teacherIdCounter, deletedTeacherIds, gradeChangeHistory, scheduledReports, savedAt: new Date().toISOString() }));
     localSavePending = false;
   }catch(err){ console.warn('Auto-save failed', err); }
 }
@@ -9064,6 +9074,8 @@ function loadState(){
     teachers = payload.teachers || [];
     teacherIdCounter = payload.teacherIdCounter || 1;
     deletedTeacherIds = payload.deletedTeacherIds || [];
+    gradeChangeHistory = Array.isArray(payload.gradeChangeHistory) ? payload.gradeChangeHistory : [];
+    scheduledReports = Array.isArray(payload.scheduledReports) ? payload.scheduledReports : [];
   }catch(err){ console.warn('Auto-load failed', err); }
 }
 
@@ -9321,6 +9333,8 @@ async function pushMetaDoc(){
       const merged = {
         studentIdCounter: Math.max(remote.studentIdCounter||1, studentIdCounter||1),
         activityLog: mergeActivityLogEntries(remote.activityLog, activityLog),
+        gradeChangeHistory: mergeGradeHistory(remote.gradeChangeHistory, gradeChangeHistory),
+        scheduledReports: mergeScheduledReports(remote.scheduledReports, scheduledReports),
         termMonthDates: termMonthDates || remote.termMonthDates || null,
         examSchedules: examSchedules || remote.examSchedules || null,
         examSeatAssignments: examSeatAssignments || remote.examSeatAssignments || null,
@@ -9598,7 +9612,7 @@ window.addEventListener('beforeunload', function(e){
 });
 
 function downloadBackup(){
-  const payload = { students, scores, studentIdCounter, attendance, approvedLeave, teachers, teacherIdCounter, deletedTeacherIds, termMonthDates, examSchedules, examSeatAssignments, bellTimes, adminStructure, gradeEntryLockRules: normalizeGradeEntryLockRules(gradeEntryLockRules), reportCardReleases, examScheduleReleases, savedAt: new Date().toISOString() };
+  const payload = { students, scores, studentIdCounter, attendance, approvedLeave, teachers, teacherIdCounter, deletedTeacherIds, termMonthDates, examSchedules, examSeatAssignments, bellTimes, adminStructure, gradeEntryLockRules: normalizeGradeEntryLockRules(gradeEntryLockRules), reportCardReleases, examScheduleReleases, gradeChangeHistory, scheduledReports, savedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -10117,7 +10131,7 @@ function renderDatabaseNow(){
       ${isDbColumnVisible('notes') ? `<td>
         <input type="text" class="db-edit-select" value="${(s.notes||'').replace(/"/g,'&quot;')}" placeholder="Notes" title="${(s.notes||'').replace(/"/g,'&quot;')}" onchange="flashInlineSaved(this);updateStudentField('${s.classKey}','${s.id}','notes',this.value)">
       </td>` : ''}
-      <td><button class="del-btn" onclick="deleteStudentFromDb('${s.classKey}','${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
+      <td class="student-actions"><button class="profile-btn" onclick="openStudentProfile('${s.classKey}','${s.id}')" title="Student profile">Profile</button><button class="del-btn" onclick="deleteStudentFromDb('${s.classKey}','${s.id}')" title="Delete" aria-label="Delete student">✕</button></td>
     </tr>`;
   }).join('');
 
@@ -17795,6 +17809,8 @@ function applyMetaPayload(payload){
     activityLog = Object.values(map).sort((a,b)=> b.ts-a.ts).slice(0, ACTIVITY_LOG_MAX);
     saveActivityLogLocalOnly();
   }
+  if(Array.isArray(payload.gradeChangeHistory)) gradeChangeHistory = mergeGradeHistory(payload.gradeChangeHistory, gradeChangeHistory);
+  if(Array.isArray(payload.scheduledReports)) scheduledReports = mergeScheduledReports(payload.scheduledReports, scheduledReports);
   if(payload.termMonthDates && payload.termMonthDates.term1 && payload.termMonthDates.term2){
     termMonthDates = normalizeTermMonthDates(payload.termMonthDates);
     saveTermMonthDatesLocalOnly();
@@ -19383,4 +19399,108 @@ function downloadStatisticsExcel(){
 
 function downloadStatisticsPDF(){
   alert('PDF export is coming soon. For now, you can use the Print function (Ctrl+P or Cmd+P) to save as PDF.');
+}
+
+/* ================== STUDENT PROFILE, GRADE AUDIT & SCHEDULED REPORTS ==================
+   These tools deliberately reuse the existing students/scores/attendance data so the
+   school has one source of truth and no duplicate grade entry screens. */
+function getScoreMapKeyForHistory(){
+  try{ return subjKey(); }catch(err){ return ''; }
+}
+function currentActorName(){
+  return (currentUser && (currentUser.displayName || currentUser.username || currentUser.name)) || 'System user';
+}
+function mergeGradeHistory(remote, local){
+  const byId = {};
+  (remote||[]).concat(local||[]).forEach(item=>{ if(item && item.id) byId[item.id]=item; });
+  return Object.values(byId).sort((a,b)=>b.ts-a.ts).slice(0, GRADE_HISTORY_MAX);
+}
+function mergeScheduledReports(remote, local){
+  const byId = {};
+  (remote||[]).concat(local||[]).forEach(item=>{ if(item && item.id) byId[item.id]=item; });
+  return Object.values(byId).filter(item=>!item.deleted).sort((a,b)=>String(a.nextRun).localeCompare(String(b.nextRun)));
+}
+function recordGradeChange(studentId, field, previousValue, nextValue, subject, scoreKey){
+  const same = String(previousValue ?? '') === String(nextValue ?? '');
+  if(same) return;
+  const student = getRoster().find(s=>s.id===studentId) || allStudentsFlat().find(s=>s.id===studentId);
+  gradeChangeHistory.unshift({
+    id: 'gch_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,7), ts:Date.now(),
+    studentId, studentName:student ? student.name : 'Unknown student', classKey:student ? student.classKey : classKey(),
+    field, subject, scoreKey, previousValue, nextValue, actor:currentActorName()
+  });
+  if(gradeChangeHistory.length>GRADE_HISTORY_MAX) gradeChangeHistory.length=GRADE_HISTORY_MAX;
+}
+function studentAttendanceSummary(studentId){
+  let absent=0, sessions=0;
+  Object.values(attendance||{}).forEach(entry=>{
+    if(!entry) return;
+    sessions += (entry.dates||[]).length;
+    absent += Object.keys((entry.records||{})[studentId]||{}).length;
+  });
+  return { absent, sessions };
+}
+function studentScoreRows(student){
+  const prefix = `${student.classKey}|`;
+  const out=[];
+  Object.entries(scores||{}).forEach(([key,map])=>{
+    if(!key.startsWith(prefix) || !map || !map[student.id]) return;
+    const sc=map[student.id];
+    const values=Object.entries(sc).filter(([,v])=>v!==null && v!==undefined && v!=='' && v!=='P').map(([k,v])=>`${k}: ${v}`);
+    if(values.length) out.push({ key, values:values.join(' · ') });
+  });
+  return out.slice(0,24);
+}
+function openStudentProfile(classKey_, studentId){
+  const student=(students[classKey_]||[]).find(s=>s.id===studentId);
+  if(!student) return;
+  const attendanceSummary=studentAttendanceSummary(studentId);
+  const scoreRows=studentScoreRows(Object.assign({},student,{classKey:classKey_}));
+  const changes=gradeChangeHistory.filter(x=>x.studentId===studentId).slice(0,12);
+  const stageLabel=(STAGES[student.stageId||classKey_.split('|')[1]]||{}).label || classKey_.split('|')[1];
+  const gradeId=student.gradeId||classKey_.split('|')[2];
+  const gradeLabel=(STAGES[student.stageId||classKey_.split('|')[1]]||{}).grades?.find(g=>g.id===gradeId)?.label || gradeId;
+  showStudentFeatureModal('Student profile', `
+    <div class="profile-hero"><div><h2>${escapeHtml(student.name)}</h2><p>${escapeHtml(student.displayId||'No ID')} · ${escapeHtml(student.classroom||'No class')} · ${escapeHtml(stageLabel)} · ${escapeHtml(gradeLabel)}</p></div><span class="profile-avatar">${escapeHtml((student.name||'?').slice(0,1))}</span></div>
+    <div class="profile-stats"><div><b>${attendanceSummary.absent}</b><span>Absences</span></div><div><b>${attendanceSummary.sessions}</b><span>Recorded sessions</span></div><div><b>${changes.length}</b><span>Recent changes</span></div></div>
+    <h3>Academic record</h3>${scoreRows.length?`<div class="profile-list">${scoreRows.map(row=>`<div><b>${escapeHtml(row.key.split('|').slice(3).join(' · '))}</b><span>${escapeHtml(row.values)}</span></div>`).join('')}</div>`:'<p class="foot-note">No marks have been entered for this student yet.</p>'}
+    <h3>Grade-change audit</h3>${changes.length?`<div class="profile-list audit-list">${changes.map(c=>`<div><b>${escapeHtml(c.subject)} · ${escapeHtml(c.field)}</b><span>${escapeHtml(String(c.previousValue??'—'))} → ${escapeHtml(String(c.nextValue??'—'))} · ${escapeHtml(c.actor)} · ${new Date(c.ts).toLocaleString()}</span></div>`).join('')}</div>`:'<p class="foot-note">No grade changes have been recorded yet.</p>'}
+  `);
+}
+function showStudentFeatureModal(title, content){
+  let overlay=document.getElementById('studentFeatureOverlay');
+  if(!overlay){ overlay=document.createElement('div'); overlay.id='studentFeatureOverlay'; overlay.className='overlay-bg student-feature-overlay'; document.body.appendChild(overlay); }
+  overlay.innerHTML=`<div class="student-feature-modal"><button class="close-x" onclick="closeStudentFeatureModal()">✕</button><div class="student-feature-title">${escapeHtml(title)}</div>${content}</div>`;
+  overlay.classList.add('show');
+}
+function closeStudentFeatureModal(){ const el=document.getElementById('studentFeatureOverlay'); if(el) el.classList.remove('show'); }
+function openScheduledReports(){
+  const items=scheduledReports.map(r=>`<div class="schedule-row"><div><b>${escapeHtml(r.title)}</b><span>${escapeHtml(r.type)} · next run: ${escapeHtml(r.nextRun||'Not set')}</span></div><div><button class="btn btn-outline" onclick="downloadScheduledReport('${r.id}')">Download now</button><button class="modal-btn danger" onclick="deleteScheduledReport('${r.id}')">Remove</button></div></div>`).join('') || '<p class="foot-note">No scheduled reports yet.</p>';
+  showStudentFeatureModal('Scheduled reports', `<p class="foot-note">Reports become ready when this app is open. Background email delivery requires a secure server-side service.</p><div class="schedule-form"><input id="scheduledReportTitle" placeholder="Report name (e.g. Weekly attendance)"><select id="scheduledReportType"><option value="Attendance summary">Attendance summary</option><option value="Grade-change audit">Grade-change audit</option><option value="Student directory">Student directory</option></select><input id="scheduledReportDate" type="datetime-local"><button class="btn btn-gold" onclick="addScheduledReport()">Schedule report</button></div><div class="schedule-list">${items}</div>`);
+}
+function addScheduledReport(){
+  const title=(document.getElementById('scheduledReportTitle').value||'').trim();
+  const type=document.getElementById('scheduledReportType').value;
+  const nextRun=document.getElementById('scheduledReportDate').value;
+  if(!title || !nextRun){ alert('Enter a report name and a schedule date.'); return; }
+  scheduledReports.push({id:'sr_'+Date.now().toString(36), title, type, nextRun, createdBy:currentActorName(), createdAt:Date.now()});
+  saveStateLocalOnly();
+  if(typeof scheduleGithubPush==='function') scheduleGithubPush();
+  openScheduledReports();
+}
+function deleteScheduledReport(id){
+  scheduledReports=scheduledReports.filter(r=>r.id!==id);
+  saveStateLocalOnly();
+  if(typeof scheduleGithubPush==='function') scheduleGithubPush();
+  openScheduledReports();
+}
+function downloadScheduledReport(id){
+  const report=scheduledReports.find(r=>r.id===id); if(!report || typeof XLSX==='undefined') return;
+  let rows=[];
+  if(report.type==='Grade-change audit') rows=[['Student','Subject','Field','Previous','New','Changed by','Date'],...gradeChangeHistory.map(x=>[x.studentName,x.subject,x.field,x.previousValue??'',x.nextValue??'',x.actor,new Date(x.ts).toLocaleString()])];
+  else if(report.type==='Attendance summary') rows=[['Student','ID','Absences','Recorded sessions'],...allStudentsFlat().map(s=>{const a=studentAttendanceSummary(s.id);return[s.name,s.displayId||'',a.absent,a.sessions];})];
+  else rows=[['Student','ID','Section','Stage','Grade','Class'],...allStudentsFlat().map(s=>[s.name,s.displayId||'',s.section,s.stage,s.grade,s.classroom||''])];
+  const sheet=XLSX.utils.aoa_to_sheet(rows), book=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(book,sheet,'Report');
+  XLSX.writeFile(book,`${report.title.replace(/[^a-z0-9]+/gi,'_')}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  report.lastRun=new Date().toISOString(); saveStateLocalOnly(); if(typeof scheduleGithubPush==='function') scheduleGithubPush();
 }
