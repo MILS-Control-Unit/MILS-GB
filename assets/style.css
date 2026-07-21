@@ -1028,6 +1028,13 @@ body.dark-mode .exam-analysis-table th, body.dark-mode .exam-analysis-table td{ 
 }
 .gb-save-btn.saving .gb-save-spinner{display:inline-block;}
 @keyframes gbSpin{to{transform:rotate(360deg);}}
+/* --ink flips to near-white in dark mode for body text, but .btn-gold / .gb-save-btn
+   use it as TEXT on a gold background — in dark mode that becomes near-white text on
+   a light-gold background (same unreadable pattern as the Sign In button). Gold stays
+   gold in both themes, so pin these buttons to a fixed dark ink instead of following --ink. */
+body.dark-mode .btn-gold,body.dark-mode .gb-save-btn{color:#1B2A4A;}
+body.dark-mode .btn-gold:hover{background:var(--gold-deep);color:#1B2A4A;}
+body.dark-mode .gb-save-spinner{border-top-color:#1B2A4A;}
 /* Mark Entry Report refresh icon — spins briefly on click for feedback */
 #markEntryRefreshBtn.is-spinning{ pointer-events:none; opacity:.85; }
 #markEntryRefreshBtn.is-spinning .me-refresh-icon{
