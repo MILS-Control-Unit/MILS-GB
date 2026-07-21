@@ -986,15 +986,6 @@
       <div class="masthead-right-row">
         <button class="dark-toggle-btn" id="infoToggleBtn" onclick="toggleHeaderInfo()" title="Show clock, weather &amp; online users" style="display:none;">ⓘ</button>
         <button class="dark-toggle-btn" id="darkToggleBtn" onclick="toggleDarkMode()" title="Toggle dark mode">🌙</button>
-        <div class="birthday-widget" id="birthdayWidget" onclick="toggleBirthdayDropdown(event)" title="Students celebrating a birthday today" style="margin-inline-end:2px;">
-          <span class="birthday-icon">🎂</span>
-          <span id="birthdayCount">0</span>
-          <span class="birthday-label">Birthdays Today</span>
-          <div class="birthday-dropdown" id="birthdayDropdown">
-            <div class="birthday-dropdown-title">🎉 Birthdays Today</div>
-            <div id="birthdayList"><span class="birthday-chip-empty">Loading…</span></div>
-          </div>
-        </div>
         <div class="user-badge" id="userBadge">
           <span id="userBadgeName">—</span>
           <span class="u-role" id="userBadgeRole">—</span>
@@ -1036,15 +1027,6 @@
           <div class="qs-item qs-pending"><span class="qs-num" id="qsPending">—</span><span class="qs-label">Pending</span></div>
         </div>
         <button class="ghost-btn" id="notifyParentsBtn" style="display:none;" onclick="openNotifyParentsModal()" title="Send an in-app alert to Parent/Student accounts">📢</button>
-        <div class="notif-bell-wrap" id="notifBellWrap" style="display:none;">
-          <button class="notif-bell-btn" id="notifBellBtn" onclick="toggleNotifDropdown(event)" title="Notifications">
-            🔔<span class="notif-badge" id="notifBadge" style="display:none;">0</span>
-          </button>
-          <div class="notif-dropdown" id="notifDropdown">
-            <div class="notif-dropdown-title">Notifications</div>
-            <div id="notifList"><span class="notif-empty">Loading…</span></div>
-          </div>
-        </div>
       </div>
       <input type="file" id="restoreInput" accept=".json" onchange="restoreBackup(this.files[0])" style="display:none;">
     </div>
@@ -1091,6 +1073,24 @@
           <button class="opt-btn" onclick="switchView('database');closeDatabaseMenu();">🗂 Students Database</button>
           <button class="opt-btn" onclick="switchView('classLists');closeDatabaseMenu();">📋 Class Lists</button>
           <button class="opt-btn" onclick="switchView('statistics');closeDatabaseMenu();">📊 Statistics</button>
+        </div>
+      </div>
+      <div class="birthday-widget" id="birthdayWidget" onclick="toggleBirthdayDropdown(event)" title="Students celebrating a birthday today">
+        <span class="birthday-icon">🎂</span>
+        <span id="birthdayCount">0</span>
+        <span class="birthday-label">Birthdays Today</span>
+        <div class="birthday-dropdown" id="birthdayDropdown">
+          <div class="birthday-dropdown-title">🎉 Birthdays Today</div>
+          <div id="birthdayList"><span class="birthday-chip-empty">Loading…</span></div>
+        </div>
+      </div>
+      <div class="notif-bell-wrap" id="notifBellWrap" style="display:none;">
+        <button class="notif-bell-btn" id="notifBellBtn" onclick="toggleNotifDropdown(event)" title="Notifications">
+          🔔<span class="notif-badge" id="notifBadge" style="display:none;">0</span>
+        </button>
+        <div class="notif-dropdown" id="notifDropdown">
+          <div class="notif-dropdown-title">Notifications</div>
+          <div id="notifList"><span class="notif-empty">Loading…</span></div>
         </div>
       </div>
       <button class="nav-tab" data-view="attendance" id="navTabAttendance" title="Absence & Approved Leave" onclick="switchView('attendance')"><svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#icon-attendance"/></svg> Absence</button>
