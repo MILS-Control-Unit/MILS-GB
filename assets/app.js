@@ -5833,7 +5833,7 @@ function renderMarkEntryReport(){
   const stage = state.stage;
   const junior = isJuniorPrimary();
   const fields = markEntryFields(stage, junior);
-  const subjects = getSubjectsForGrade(stage, state.grade, state.section);
+  const subjects = getSubjectsForGrade(stage, state.grade, state.section).filter(s=>scopeSubjectAllowed(s));
   const term = state.termPeriod || 'term1';
   const ck = classKey();
 
@@ -7743,6 +7743,9 @@ function renderTableInner(preserveFocus){
   updateGradeBookSaveUI();
 
   if(footNote){
+    if(!currentUser || currentUser.role!=='admin'){
+      footNote.innerHTML = '';
+    } else {
     const langLine = isLanguageSubject(state.subject) ? `Only students whose Second Language is set to <b>${getDisplayLanguageForSubject(state.subject, state.section)}</b> are shown for this subject.<br>` : '';
     const religionLine = isReligionSubject(state.subject) ? `Only students whose Religion is set to <b>${state.subject==='Ch-Religion'?'Christian':'Muslim'}</b> are shown for this subject.<br>` : '';
     const saveLine = `Grades are saved to this browser automatically as you type — click "💾 Save" above to sync them to Firestore for every other device. You can still use "Full Backup" to save a copy to your device, or "Restore Backup" to load one later.`;
@@ -7774,6 +7777,7 @@ function renderTableInner(preserveFocus){
       footNote.innerHTML = `This screen records the <b>${cycleLabel}</b> score on its own (Max. 15) — Percentage and Grade are calculated automatically from it.<br>${langLine}${religionLine}${saveLine}`;
     } else {
       footNote.innerHTML = `Subject maximum grade is 100: Month 1 (10) + Month 2 (10) + Mid-Year (20) + Final Exam (60).<br>${langLine}${religionLine}${saveLine}`;
+    }
     }
   }
 
@@ -7842,12 +7846,16 @@ function renderExamPaperScreen(roster, scoreMap, holder, footNote){
   const screenLabel = markEntryLabel(state.termPeriod, state.academicTerm);
 
   if(footNote){
+    if(!currentUser || currentUser.role!=='admin'){
+      footNote.innerHTML = '';
+    } else {
     const langLine = isLanguageSubject(state.subject) ? `Only students whose Second Language is set to <b>${getDisplayLanguageForSubject(state.subject, state.section)}</b> are shown for this subject.<br>` : '';
     const religionLine = isReligionSubject(state.subject) ? `Only students whose Religion is set to <b>${state.subject==='Ch-Religion'?'Christian':'Muslim'}</b> are shown for this subject.<br>` : '';
     const saveLine = `Grades are saved to this browser automatically as you type — click "💾 Save" above to sync them to Firestore for every other device. You can still use "Full Backup" to save a copy to your device, or "Restore Backup" to load one later.`;
     footNote.innerHTML = junior
       ? `This screen shows the <b>Term Total</b> (Max. 100), Grade and Color from the Total Coursework calculation, plus <b>Initial Exam</b> and <b>Final Exam</b> (Pass/Fail, entered by hand) — independent of the Month 1, Month 2 and Total Coursework screens' own totals.<br>${langLine}${religionLine}${saveLine}`
       : `This screen records the <b>${screenLabel}</b> score on its own (Max. ${max}) — it is entered and saved independently of the Month 1, Month 2 and Total Coursework screens and their totals.<br>${langLine}${religionLine}${saveLine}`;
+    }
   }
 
   if(roster.length===0){
@@ -8008,8 +8016,12 @@ function renderG12AllSubjectsExamScreen(roster, holder, footNote){
   const englishOrFrench = state.section === 'fr' ? 'French' : 'English';
 
   if(footNote){
+    if(!currentUser || currentUser.role!=='admin'){
+      footNote.innerHTML = '';
+    } else {
     const saveLine = `Grades are saved to this browser automatically as you type — click "💾 Save" above to sync them to Firestore for every other device. You can still use "Full Backup" to save a copy to your device, or "Restore Backup" to load one later.`;
     footNote.innerHTML = `This screen records <b>${screenLabel}</b> for every subject at once, for the whole class (Max. per subject shown in each column header). <b>Math Total</b> = Pure Mathematics + Applied Mathematics. <b>Total</b> (Max. ${G12_TOTAL_MAX}) = Arabic + ${englishOrFrench} + Physics + Chemistry + Math Total — Biology, History, Geography and Statistics are recorded here but not counted toward this Total. <b>Religion (Max. 40)</b>, <b>Second Language (Max. 40)</b> and <b>Civics (Max. 10)</b> are recorded at the end of the table and are also not counted toward the Total — Religion additionally shows a Pass/Fail hint (pass mark: ${G12_RELIGION_PASS_MARK}).<br>${saveLine}`;
+    }
   }
 
   if(roster.length===0){
@@ -15531,7 +15543,7 @@ function getEffectivePermissions(user){
   if(role==='hos'){
     // HOS/Deputy: Can View their relevant Section and Stage - Can View or edit Grade Book, Can View or Edit Absence, Can View Certificates, Can View Dashboard, Can View Exam Analysis
     // HOS/Deputy is also one of only two roles (with Admin) allowed to record Approved Leave.
-    return { database:false, grades:true, attendance:true, approvedLeave:true, reports:true, dashboard:true, examsAnalysis:true, examSchedule:true, perfAlerts:true, classLists:false, settings:false, edit:true,
+    return { database:false, grades:true, attendance:true, approvedLeave:true, reports:true, dashboard:true, examsAnalysis:false, examSchedule:true, perfAlerts:true, classLists:false, settings:false, edit:true,
       sectionScope:user.section||null, stageScope:user.stages||[], gradeScope:null, classroomScope:null };
   }
   if(role==='hod'){
@@ -16293,7 +16305,7 @@ function canAccessTab(tab){
   if(tab==='teacherClasses') return currentUser.role === 'admin'; // Teachers and Classes only for Admin
   if(tab==='teacherStatistics') return currentUser.role === 'admin'; // Teachers Statistics only for Admin
   if(tab==='statistics') return currentUser.role === 'admin' || currentUser.role === 'hod'; // Statistics for Admin & HOD
-  if(tab==='certReports') return !!currentUser.effective.reports; // Certificates tab shares the Reports permission
+  if(tab==='certReports') return currentUser.role!=='hod' && !!currentUser.effective.reports; // Certificates tab shares the Reports permission, but is not available to HOD
   if(tab==='markEntryReport') return currentUser.role!=='parent' && !!currentUser.effective.reports; // Mark Entry Report shares the Reports permission, but is staff-only
   return !!currentUser.effective[tab];
 }
@@ -16327,7 +16339,7 @@ function applyPermissionsUI(){
   // canAccessTab()) but were never actually hidden here, so an account with that
   // permission off could still see and click into both tabs.
   const certReportsTab = document.getElementById('navTabCertReports');
-  if(certReportsTab) certReportsTab.style.display = eff.reports ? '' : 'none';
+  if(certReportsTab) certReportsTab.style.display = (eff.reports && currentUser.role!=='hod') ? '' : 'none';
   const markEntryReportTab = document.getElementById('navTabMarkEntryReport');
   if(markEntryReportTab) markEntryReportTab.style.display = (eff.reports && currentUser.role!=='parent') ? '' : 'none';
   document.getElementById('dashboardDropdownWrap').style.display = eff.dashboard ? '' : 'none';
