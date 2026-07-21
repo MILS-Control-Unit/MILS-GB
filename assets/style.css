@@ -3083,8 +3083,11 @@ table tbody tr:hover td{background:#f5f8ff!important;}
 
 /* All header controls sit in one compact horizontal toolbar on wide screens. */
 @media (min-width:1181px){
-  .masthead{gap:18px;padding:10px 18px;}
+  .masthead{grid-template-columns:1fr auto 1fr;gap:18px;padding:10px 18px;}
+  .masthead > div:first-of-type{grid-column:2;justify-self:center;justify-content:center!important;width:auto;}
   .masthead-right{
+    grid-column:3;
+    justify-self:end;
     flex-direction:row!important;
     align-items:center!important;
     gap:6px!important;
