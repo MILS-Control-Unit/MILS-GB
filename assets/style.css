@@ -2895,3 +2895,130 @@ body.dark-mode .login-quote{ background:rgba(0,0,0,0.18); }
 #markEntryTableHolder .mark-entry-table{table-layout:fixed!important;}
 #markEntryTableHolder .mark-entry-table thead th:nth-child(2){width:190px!important;min-width:190px!important;}
 #markEntryTableHolder .mark-entry-table td.me-item-cell{max-width:190px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+/* ======================================================================
+   PREMIUM APPLICATION SHELL
+   A presentation-only layer: all existing selectors, events, and workflows
+   remain intact while the interface adopts a focused enterprise SaaS visual
+   system.
+   ====================================================================== */
+:root{
+  --bg:#f5f7fb;
+  --paper:#ffffff;
+  --paper-2:#f8faff;
+  --ink:#17233f;
+  --ink-2:#273b63;
+  --ink-soft:#66738c;
+  --ink-solid:#17233f;
+  --border:#e3e9f3;
+  --gold:#f3b83f;
+  --gold-light:#fff4d8;
+  --gold-deep:#bc7a0b;
+  --blue:#2764d8;
+  --blue-bg:#edf3ff;
+  --green:#168458;
+  --green-bg:#e9f8f1;
+  --red:#ce455b;
+  --red-bg:#fff0f2;
+  --amber:#c77c12;
+  --amber-bg:#fff5e4;
+  --teal:#127b88;
+  --teal-bg:#e8f8fa;
+  --purple:#6e54c9;
+  --purple-bg:#f1edff;
+  --radius:16px;
+  --shadow:0 8px 24px rgba(29, 53, 96, .07);
+}
+body{
+  padding:20px 28px 48px;
+  font-family:'DM Sans','Tajawal',sans-serif;
+  background-color:var(--bg);
+  background-image:radial-gradient(circle at 92% -10%,rgba(76,130,255,.12),transparent 29%),radial-gradient(circle at 14% 100%,rgba(243,184,63,.10),transparent 25%);
+}
+body.dark-mode{
+  --bg:#111827;--paper:#182235;--paper-2:#1e2b42;--ink:#f4f7fc;--ink-2:#d8e2f4;--ink-soft:#9aaac2;--ink-solid:#1d2b45;--border:#2c3b55;
+  background-image:radial-gradient(circle at 92% -10%,rgba(73,129,255,.18),transparent 28%),radial-gradient(circle at 14% 100%,rgba(243,184,63,.08),transparent 25%);
+}
+.wrap{max-width:1440px;}
+#appWrap.wrap{margin-left:268px!important;margin-right:auto!important;}
+
+/* Header becomes a compact command centre rather than a decorative banner. */
+.masthead{
+  min-height:84px;padding:12px 22px;margin-bottom:16px;border:1px solid var(--border);border-top:0;border-radius:18px;
+  background:rgba(255,255,255,.88);box-shadow:0 3px 16px rgba(25,48,89,.05);backdrop-filter:blur(14px);
+}
+body.dark-mode .masthead{background:rgba(24,34,53,.88);}
+.masthead::before{content:'';width:4px;align-self:stretch;border-radius:8px;background:linear-gradient(180deg,#3d7bff,#7d5df4);order:-1;}
+.school-logo{height:54px;filter:none;mix-blend-mode:normal;}
+.logo-divider{height:42px;background:var(--border);}
+.masthead-text h1{font-family:'DM Sans','Tajawal',sans-serif;letter-spacing:-.035em;font-size:23px!important;}
+.masthead-text .sub,.masthead p{font-family:'DM Sans','Tajawal',sans-serif;}
+.dtw-widget,.quick-stats{background:var(--paper-2)!important;border:1px solid var(--border)!important;box-shadow:none!important;border-radius:12px!important;}
+.save-indicator{border-radius:999px!important;padding:6px 10px!important;}
+
+/* Navigation is deliberately quiet, highly scannable and always available. */
+.main-nav{
+  left:16px;top:16px;bottom:16px;width:232px;padding:18px 12px!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:20px!important;
+  color:#d7e1f4;background:linear-gradient(165deg,#152440 0%,#101a2e 100%)!important;box-shadow:0 18px 48px rgba(15,28,54,.22)!important;overflow-y:auto!important;overflow-x:visible!important;
+}
+.main-nav::before{content:'MILS  •  GRADEBOOK';display:block;color:#fff;font:700 10px/1 'DM Sans',sans-serif;letter-spacing:.16em;padding:4px 10px 16px;opacity:.72;}
+.nav-row-tabs{gap:4px!important;}
+.nav-group-label{background:rgba(211,225,249,.16);margin:10px 8px 7px;width:auto;}
+.nav-tab{height:40px;color:#aebdd5!important;border:1px solid transparent;border-radius:10px!important;font-family:'DM Sans','Tajawal',sans-serif;font-size:12.5px!important;font-weight:600!important;letter-spacing:.005em;transition:background .18s ease,color .18s ease,transform .18s ease!important;}
+.nav-tab svg{filter:none!important;width:17px!important;height:17px!important;stroke-width:1.8!important;}
+.nav-tab:hover{color:#fff!important;background:rgba(255,255,255,.08)!important;box-shadow:none!important;transform:translateX(2px);}
+.nav-tab:hover svg{transform:none!important;filter:none!important;}
+.nav-tab.active{color:#fff!important;background:linear-gradient(100deg,#3979ff,#6d5cf5)!important;box-shadow:0 7px 18px rgba(52,112,255,.28)!important;}
+.nav-tab.active::before{content:'';position:absolute;left:-13px;width:3px;height:20px;border-radius:0 5px 5px 0;background:#fff;}
+.nav-dropdown-menu{left:calc(100% + 12px);top:0;margin:0;min-width:230px;padding:8px;border:1px solid var(--border);border-radius:14px;background:var(--paper);box-shadow:0 16px 40px rgba(17,34,67,.18);}
+.opt-btn{font-family:'DM Sans','Tajawal',sans-serif!important;border-radius:8px!important;}
+.nav-row-config{margin-top:10px!important;padding-top:12px!important;border-top:1px solid rgba(211,225,249,.16)!important;}
+.gb-save-fab{border-color:rgba(211,225,249,.16)!important;}
+.gb-save-status{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.1);color:#b9c7dc;}
+.gb-save-btn{background:linear-gradient(100deg,#f5b940,#e89a24);border-radius:10px;box-shadow:0 8px 18px rgba(243,184,63,.2);}
+
+/* Content hierarchy, forms, data surfaces and actions. */
+.stepper,.classbar,.dashboard-hero{border-radius:16px!important;box-shadow:var(--shadow)!important;}
+.stepper{border:1px solid var(--border);background:var(--paper)!important;}
+.classbar{background:linear-gradient(105deg,#182b4b,#274979)!important;border:0!important;box-shadow:0 10px 26px rgba(25,52,98,.16)!important;}
+.classbar-count{font-family:'DM Sans','Tajawal',sans-serif;font-size:12px;background:rgba(255,255,255,.11);border-color:rgba(255,255,255,.18);padding:8px 13px;}
+.toolbar,.db-filters,.add-form,.db-children-switch{padding:14px 16px;border:1px solid var(--border);border-radius:16px;background:rgba(255,255,255,.82);box-shadow:var(--shadow);}
+body.dark-mode .toolbar,body.dark-mode .db-filters,body.dark-mode .add-form,body.dark-mode .db-children-switch{background:rgba(24,34,53,.82);}
+.btn{min-height:39px;border-radius:10px;padding:9px 14px;font-family:'DM Sans','Tajawal',sans-serif;font-size:12.5px;font-weight:700;box-shadow:none;transition:transform .16s ease,box-shadow .16s ease,background .16s ease!important;}
+.btn:hover{transform:translateY(-1px);box-shadow:0 7px 16px rgba(28,51,93,.12);filter:none!important;}
+.btn-gold{background:linear-gradient(100deg,#f5bd49,#e8a52f);color:#202b40;}
+.btn-ink{background:linear-gradient(100deg,#2559bc,#386fea);}
+.btn-outline{border-color:#d7e1f0;color:var(--ink);}
+.btn-outline:hover{border-color:#8faee8;background:var(--blue-bg);}
+.field label{font-family:'DM Sans','Tajawal',sans-serif;font-size:11px;letter-spacing:.025em;}
+.field input,.field select,.db-filters select,.modal-input,.modal-select,textarea{border:1px solid #dbe4f1!important;border-radius:9px!important;background:var(--paper)!important;color:var(--ink)!important;transition:border-color .15s ease,box-shadow .15s ease!important;}
+.field input:focus,.field select:focus,.db-filters select:focus,.modal-input:focus,.modal-select:focus,textarea:focus{border-color:#5d8ff0!important;box-shadow:0 0 0 3px rgba(74,125,235,.13)!important;}
+.table-card,#markEntryTableHolder,.db-stat-card,.db-chart-card{border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);}
+.table-card{background:var(--paper);}
+table thead th,.grade-table thead th{background:#f4f7fc!important;color:#61708b!important;font-family:'DM Sans','Tajawal',sans-serif;font-size:10.5px!important;letter-spacing:.045em;}
+table tbody tr{transition:background .14s ease;}
+table tbody tr:hover td{background:#f5f8ff!important;}
+.dashboard-hero{background:linear-gradient(115deg,#172a4a,#2c62bd 68%,#587af1)!important;}
+.db-stat-card,.db-chart-card{border-radius:16px!important;}
+.db-stat-num{font-family:'DM Sans','Tajawal',sans-serif;font-variant-numeric:tabular-nums;}
+.modal,.users-modal,.config-modal{border:1px solid var(--border);border-radius:18px!important;box-shadow:0 24px 70px rgba(12,30,63,.24)!important;}
+
+@media (max-width:1100px){
+  #appWrap.wrap{margin-left:90px!important;}
+  .main-nav{width:66px;left:12px;top:12px;bottom:12px;padding:14px 6px!important;border-radius:16px!important;}
+  .main-nav::before{content:'M';font-size:13px;text-align:center;padding:3px 0 14px;letter-spacing:0;color:#fff;}
+  .nav-group-label{margin:9px 10px 6px;}.nav-tab{width:46px;height:44px;font-size:0!important;padding:0!important;justify-content:center;margin:0 auto;}
+  .nav-tab.active::before{left:-7px;}.nav-dropdown-menu{left:calc(100% + 10px);}
+}
+@media (max-width:640px){
+  body{padding:10px 10px 28px;}
+  #appWrap.wrap{margin-left:0!important;margin-bottom:78px!important;}
+  .main-nav{left:10px;right:10px;top:auto;bottom:10px;width:auto;height:58px;min-height:58px;display:block!important;padding:6px!important;border-radius:16px!important;overflow-x:auto!important;overflow-y:hidden!important;}
+  .main-nav::before,.nav-group-label,.nav-row-config,.gb-save-fab{display:none!important;}
+  .nav-row-tabs{display:flex!important;flex-direction:row!important;width:max-content!important;gap:2px!important;}
+  .nav-tab{width:46px!important;height:44px!important;flex:0 0 46px!important;}
+  .nav-dropdown-menu{position:fixed;left:12px;right:12px;top:auto;bottom:76px;min-width:0;}
+  .masthead{padding:11px 13px;min-height:66px;}.masthead::before{display:none;}.school-logo{height:42px;}.quick-stats,.dtw-widget{display:none!important;}
+  .toolbar,.db-filters,.add-form{padding:12px;}.btn{flex:1 1 auto;}.classbar{padding:14px;}
+}
+@media (prefers-reduced-motion:reduce){.nav-tab,.btn,table tbody tr{transition:none!important;}}
