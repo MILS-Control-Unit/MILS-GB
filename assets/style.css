@@ -3080,3 +3080,29 @@ table tbody tr:hover td{background:#f5f8ff!important;}
   .masthead-right{width:100%;align-items:flex-start!important;}
   .masthead-right-row{justify-content:flex-start!important;}
 }
+
+/* All header controls sit in one compact horizontal toolbar on wide screens. */
+@media (min-width:1181px){
+  .masthead{gap:18px;padding:10px 18px;}
+  .masthead-right{
+    flex-direction:row!important;
+    align-items:center!important;
+    gap:6px!important;
+    white-space:nowrap;
+  }
+  .masthead-right-row{
+    min-height:0;
+    gap:5px!important;
+    flex-wrap:nowrap!important;
+  }
+  .masthead-info{gap:5px!important;}
+  .dtw-widget{padding:4px 8px!important;}
+  .dtw-clock{font-size:14px;padding:2px 4px;}
+  .dtw-date{font-size:8px!important;}
+  .dtw-temp{font-size:11px;}
+  .dtw-cond{font-size:8px;}
+  .user-badge{padding:5px 8px!important;}
+  .quick-stats{gap:3px!important;}
+  .qs-item{padding:3px 6px;}
+  .save-indicator{padding:5px 7px!important;font-size:11px!important;}
+}
