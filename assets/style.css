@@ -1073,6 +1073,8 @@ body.dark-mode .exam-analysis-table th, body.dark-mode .exam-analysis-table td{ 
 .btn-gold:hover{background:var(--gold-deep);color:#fff;}
 .btn-ink,.login-card .btn-login{background:var(--ink);color:#fff;}
 .btn-ink:hover,.login-card .btn-login:hover{background:var(--ink-2);}
+body.dark-mode .btn-ink,body.dark-mode .login-card .btn-login{background:#2A3B63;color:#fff;}
+body.dark-mode .btn-ink:hover,body.dark-mode .login-card .btn-login:hover{background:#3A4E80;}
 .btn-outline{background:var(--paper);color:var(--ink);border:1.5px solid var(--border);}
 .btn-outline:hover{border-color:var(--ink);}
 input[type=file]{display:none;}
@@ -2585,6 +2587,7 @@ body.dark-mode .login-card{box-shadow:var(--glass-shadow);}
 .login-card .btn-login:hover{transform:translateY(-1px);box-shadow:0 10px 24px rgba(156,124,21,0.30);}
 .login-card .btn-login:active{transform:translateY(0);}
 .login-card .btn-login:disabled{opacity:.75;cursor:default;transform:none;}
+
 .login-card .btn-login .spinner{
   width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,0.4);
   border-top-color:#fff;animation:loginSpin .7s linear infinite;display:none;

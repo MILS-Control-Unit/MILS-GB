@@ -1069,6 +1069,13 @@ function positionFixedNavMenu(wrap, menu){
   const rect = wrap.getBoundingClientRect();
   menu.style.position = 'fixed';
   menu.style.margin = '0';
+  // Some menus (birthday/notification dropdowns) have a stylesheet default of
+  // bottom:0/right:auto meant for their normal position:absolute anchoring.
+  // Left uncleared, that bottom:0 keeps applying alongside the top we set below,
+  // stretching the fixed box's height to the viewport edge instead of sizing to
+  // its content — which made the panel's height/scroll shift with scroll position.
+  menu.style.bottom = 'auto';
+  menu.style.right = 'auto';
   const menuWidth = Math.max(menu.offsetWidth, 230);
   let left = rect.right + 8;
   if(left + menuWidth > window.innerWidth - 8){
@@ -1103,9 +1110,14 @@ function positionFixedNavMenu(wrap, menu){
       // and the global document click handler closes menus on an outside click.
     });
     // Keep an open menu's position in sync with its button if the page scrolls/resizes
-    // while it's open (e.g. the horizontally-scrolling nav row itself).
+    // while it's open (e.g. the horizontally-scrolling nav row itself). Birthday/notification
+    // widgets are included here too since they're switched to position:fixed the same way.
+    const EXTRA_FIXED_DROPDOWNS = [
+      ['birthdayWidget','birthdayDropdown'],
+      ['notifBellWrap','notifDropdown']
+    ];
     const reposition = ()=>{
-      NAV_DROPDOWNS.forEach(([wrapId, menuId])=>{
+      NAV_DROPDOWNS.concat(EXTRA_FIXED_DROPDOWNS).forEach(([wrapId, menuId])=>{
         const wrap = document.getElementById(wrapId);
         const menu = document.getElementById(menuId);
         if(wrap && menu && menu.classList.contains('open')) positionFixedNavMenu(wrap, menu);
