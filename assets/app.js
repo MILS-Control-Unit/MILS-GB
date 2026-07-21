@@ -160,6 +160,15 @@ function getPerfFilterState(){
 // Absence tab keeps its own independent selections (Academic Term / Section / Stage / Grade / Class),
 // completely separate from the Grade Book tab's selections above.
 let attState = { termPeriod:null, section:null, stage:null, grade:null, term:null, subject:null, academicTerm:null };
+// Which "category" of the Absence tab is currently open. 'subject' is the original
+// Absence (Subjects) table; 'general' / 'late' / 'misbehavior' are the extra tables added
+// under the new "General Absence, Late and Misbehavior" nav dropdown. They reuse the exact
+// same stepper, workspace and table-rendering code as Absence (Subjects) — attClassKey()/
+// attClassLevelKey() below just prefix the storage key with the category (subject stays
+// unprefixed for backward compatibility with existing saved data), so each category keeps
+// its own fully independent set of tables instead of colliding with Absence (Subjects).
+let attCategory = 'subject';
+const ATT_CATEGORY_LABELS = { subject:'Absence (Subjects)', general:'General Absence', late:'Late', misbehavior:'Misbehavior' };
 let openStep = null;
 let currentView = 'database';
 
@@ -233,7 +242,7 @@ let approvedLeave = {};
 // Which sub-tab of the "Absence (Subjects)" tab is currently showing — 'absence' (the
 // original attendance-taking table) or 'summary'. 'leave' (the Approved Leave table) used to
 // live here too as a third sub-tab, but Approved Leave now has its own separate top-level nav
-// item (see ensureApprovedLeaveNavTab/openApprovedLeaveTab below) — attSubView can still be set
+// item (see bindApprovedLeaveNavReset/openApprovedLeaveTab below) — attSubView can still be set
 // to 'leave' internally (renderAttendanceTable() still dispatches on it) since that's what
 // openApprovedLeaveTab() sets before rendering, it's just no longer reachable from the
 // Absence (Subjects) tab's own dropdown.
@@ -613,12 +622,23 @@ function resolveStudentIdToken(rawToken, index){
 }
 // Attendance is tracked per Class within its own Academic Term + Month selection (attState),
 // fully independent of the Grade Book tab. Each Term × Month combination is its own table.
-function attClassKey(){ return `${attState.section}|${attState.stage}|${attState.grade}|${attState.termPeriod}|${attState.term}|${attState.subject}|${attState.academicTerm}`; }
+function attClassKey(){
+  const subjectPart = attCategory==='subject' ? attState.subject : '';
+  const base = `${attState.section}|${attState.stage}|${attState.grade}|${attState.termPeriod}|${attState.term}|${subjectPart}|${attState.academicTerm}`;
+  // Category is appended as a trailing suffix (not a prefix) so section/stage/grade stay the
+  // first 3 pipe-segments — classKeyOfDataKey() (Firestore per-class doc sync) depends on that.
+  // 'subject' (the original Absence (Subjects) table) stays unsuffixed for backward compatibility
+  // with data already saved before this General Absence/Late/Misbehavior feature existed.
+  return attCategory==='subject' ? base : `${base}|${attCategory}`;
+}
 // Approved Leave is recorded ONCE per class (Section/Stage/Grade/Class/Term/Month) — NOT per
 // Subject like Absence is — so a day marked as Approved Leave shows up as a locked "L" in the
 // Absence table of EVERY subject for that class/month, not just the subject that was open when
 // it was recorded. This key deliberately omits attState.subject.
-function attClassLevelKey(){ return `${attState.section}|${attState.stage}|${attState.grade}|${attState.termPeriod}|${attState.term}|${attState.academicTerm}`; }
+function attClassLevelKey(){
+  const base = `${attState.section}|${attState.stage}|${attState.grade}|${attState.termPeriod}|${attState.term}|${attState.academicTerm}`;
+  return attCategory==='subject' ? base : `${base}|${attCategory}`;
+}
 
 function classKeyLabels(ck){
   const [sec, stg, grd] = ck.split('|');
@@ -844,6 +864,23 @@ function attStepConfig(){
       const opts = typeof origOptions==='function' ? origOptions() : origOptions;
       return [...opts].sort((a,b)=> String(a.label).localeCompare(String(b.label), undefined, {numeric:true, sensitivity:'base'}));
     }};
+  }
+  // General Absence / Late / Misbehavior operate at the whole-CLASS level (like Approved
+  // Leave) — no Subject step, and the Month step no longer waits on a subject being picked.
+  if(attCategory!=='subject'){
+    const monthStepNoSubject = {
+      key:'academicTerm', title:'Month', state: attState,
+      getLabel:()=>{
+        const labels = { month1:'1st Month', month2:'2nd Month' };
+        return attState.academicTerm ? labels[attState.academicTerm] : null;
+      },
+      options: [
+        { id:'month1', label:'1st Month' },
+        { id:'month2', label:'2nd Month' }
+      ],
+      requires:['termPeriod','section','stage','grade','term']
+    };
+    return [...base, monthStepNoSubject];
   }
   // Absence is recorded per Subject (each subject has its own sessions/schedule), so the
   // Attendance tab picks a Subject right after Class, before the Month step.
@@ -1230,6 +1267,10 @@ document.addEventListener('click', (e)=>{
   if(!e.target.closest('#teachersDropdownWrap')){
     const tcm = document.getElementById('teachersMenu');
     if(tcm) tcm.classList.remove('open');
+  }
+  if(!e.target.closest('#disciplineDropdownWrap')){
+    const dsm = document.getElementById('disciplineMenu');
+    if(dsm) dsm.classList.remove('open');
   }
   if(!e.target.closest('.teacher-classes-dd')){
     document.querySelectorAll('.teacher-classes-panel').forEach(p=> p.classList.remove('open'));
@@ -7188,7 +7229,12 @@ function getAllAttClassTargets(subject){
 // within range, and re-syncs the "Beh. & Attend." grade link — for that subject only — for
 // every student in that class taking it.
 function applyAttendanceDateRangeToClass(section, stage, grade, term, subject, termPeriod, academicTerm, start, end, dates, excludedList){
-  const ck = `${section}|${stage}|${grade}|${termPeriod}|${term}|${subject}|${academicTerm}`;
+  // General Absence/Late/Misbehavior (attCategory !== 'subject') get their own suffixed key and
+  // are fully independent of Approved Leave and the Beh. & Attend. grade link — both of those
+  // only interplay with the original Absence (Subjects) table. See attCategory/attClassKey().
+  const isSubjectCategory = attCategory==='subject';
+  const base = `${section}|${stage}|${grade}|${termPeriod}|${term}|${subject}|${academicTerm}`;
+  const ck = isSubjectCategory ? base : `${base}|${attCategory}`;
   // Approved Leave lives at the CLASS level (no subject) — one set of records shared by every
   // subject's Absence table for this class/term/month. Multiple subjects each calling this
   // function will redundantly trim it to the same date set; that's harmless (idempotent).
@@ -7198,14 +7244,14 @@ function applyAttendanceDateRangeToClass(section, stage, grade, term, subject, t
 
   // Trim Approved Leave records to the same (possibly new) date range first, so we know which
   // days are "closed" by Approved Leave before rebuilding the Absence records below.
-  const prevLeaveRecords = (approvedLeave[classLevelKey] && approvedLeave[classLevelKey].records) || {};
+  const prevLeaveRecords = isSubjectCategory ? ((approvedLeave[classLevelKey] && approvedLeave[classLevelKey].records) || {}) : {};
   const newLeaveRecords = {};
   Object.keys(prevLeaveRecords).forEach(studentId=>{
     const kept = {};
     Object.keys(prevLeaveRecords[studentId]).forEach(d=>{ if(dateSet.has(d)) kept[d]=true; });
     if(Object.keys(kept).length) newLeaveRecords[studentId] = kept;
   });
-  approvedLeave[classLevelKey] = { records: newLeaveRecords };
+  if(isSubjectCategory) approvedLeave[classLevelKey] = { records: newLeaveRecords };
 
   const newRecords = {};
   Object.keys(prevRecords).forEach(studentId=>{
@@ -7250,10 +7296,12 @@ function applyAttendanceDateRangeToClass(section, stage, grade, term, subject, t
   } else if(subject === 'Religion'){
     roster = roster.filter(s=> s.religion === 'Muslim');
   }
-  roster.forEach(s=>{
-    const total = Object.keys(newRecords[s.id] || {}).length;
-    applyAttendanceToGrades(section, stage, grade, termPeriod, academicTerm, s.id, total, subject);
-  });
+  if(isSubjectCategory){
+    roster.forEach(s=>{
+      const total = Object.keys(newRecords[s.id] || {}).length;
+      applyAttendanceToGrades(section, stage, grade, termPeriod, academicTerm, s.id, total, subject);
+    });
+  }
 }
 
 function renderAttendanceWorkspace(){
@@ -7261,7 +7309,9 @@ function renderAttendanceWorkspace(){
   const intro = document.getElementById('attendanceIntroState');
   if(!ws || !intro) return;
   const cfgs = attStepConfig();
-  const ready = !!(attState.termPeriod && attState.section && attState.stage && attState.grade && attState.term && attState.subject && attState.academicTerm);
+  const ready = attCategory==='subject'
+    ? !!(attState.termPeriod && attState.section && attState.stage && attState.grade && attState.term && attState.subject && attState.academicTerm)
+    : !!(attState.termPeriod && attState.section && attState.stage && attState.grade && attState.term && attState.academicTerm);
   ws.style.display = ready ? '' : 'none';
   intro.style.display = ready ? 'none' : '';
   // The Absence / Approved Leave sub-tab bar sits above BOTH the intro (stepper) state and the
@@ -7282,15 +7332,25 @@ function renderAttendanceWorkspace(){
   const gradeLabel = ATT_STAGES[attState.stage].grades.find(g=>g.id===attState.grade).label;
   const monthLabel = attState.academicTerm==='month1' ? '1st Month' : '2nd Month';
   const monthRange = formatTermMonthRange(attState.termPeriod, attState.academicTerm);
+  const categoryCrumb = attCategory==='subject' ? '' : `<span class="crumb subj">${ATT_CATEGORY_LABELS[attCategory]}</span>`;
+  const subjectCrumb = attCategory==='subject' ? `<span class="crumb subj">${subjectWithIcon(attState.subject)}</span>` : '';
   document.getElementById('attendanceCrumbs').innerHTML = `
+    ${categoryCrumb}
     <span class="crumb">${TERM_LABELS[attState.termPeriod]}</span>
     <span class="crumb">${ATT_SECTIONS[attState.section].label}</span>
     <span class="crumb stage-${attState.stage}">${ATT_STAGES[attState.stage].label}</span>
     <span class="crumb">${gradeLabel}</span>
     <span class="crumb">${attState.term}</span>
-    <span class="crumb subj">${subjectWithIcon(attState.subject)}</span>
+    ${subjectCrumb}
     <span class="crumb">${monthLabel}${monthRange ? ` <small style="opacity:.7;font-weight:600;">(${monthRange})</small>` : ''}</span>
   `;
+
+  const footNote = document.getElementById('attFootNote');
+  if(footNote){
+    footNote.innerHTML = attCategory==='subject'
+      ? 'Friday and Saturday are automatically excluded from every attendance table, along with any holiday dates you add above. Absence is recorded separately for each Subject — tick a box to mark a student absent on that day — the Total column adds up all recorded absence days for this Month, and automatically updates that student\'s "Beh. &amp; Attend." grade for that same Subject, for the matching Term and Month in the Grade Book. You can still edit that grade by hand afterwards at any time. Checking "Apply to ALL Sections, Stages, Grades &amp; Classes" before creating/updating the table sets the same date range and excluded days for every class that teaches this Subject at once, instead of one class at a time.'
+      : `Friday and Saturday are automatically excluded from every table, along with any holiday dates you add above. This ${ATT_CATEGORY_LABELS[attCategory]} table is independent from Absence (Subjects) — tick a box to record it for that day; the Total column adds up all recorded days for this Month. It does not affect any grade in the Grade Book.`;
+  }
 
   ensureAttSubTabsBar();
   updateAttSubTabsActive();
@@ -7312,7 +7372,8 @@ function autoCreateAttendanceFromGlobalRange(globalRange, hasGlobalRange){
   const holidays = globalRange.holidays || [];
   const dates = generateAttendanceDates(globalRange.start, globalRange.end, new Set(holidays));
   if(!dates || !dates.length) return false;
-  applyAttendanceDateRangeToClass(attState.section, attState.stage, attState.grade, attState.term, attState.subject, attState.termPeriod, attState.academicTerm, globalRange.start, globalRange.end, dates, holidays);
+  const subjectArg = attCategory==='subject' ? attState.subject : '';
+  applyAttendanceDateRangeToClass(attState.section, attState.stage, attState.grade, attState.term, subjectArg, attState.termPeriod, attState.academicTerm, globalRange.start, globalRange.end, dates, holidays);
   pushAttendanceChangeNow();
   return true;
 }
@@ -7336,45 +7397,17 @@ function pushAttendanceChangeNow(){
 function canUseApprovedLeave(){
   return !!(currentUser && currentUser.effective && currentUser.effective.approvedLeave);
 }
-// Creates (or refreshes) the "Absence" / "Summary" sub-tab dropdown as a small submenu in the
-// SIDEBAR, directly under the "Absence (Subjects)" nav button itself (#navTabAttendance) — not
-// in the tab's content area — matching the collapsible-group look of the sidebar's other nav
-// items. Only shown while the Absence (Subjects) tab is the active view (so it doesn't clutter
-// the sidebar while some other tab is open), and only for roles that can use Approved
-// Leave/Summary (Admin/HOS-Deputy) — everyone else just gets the plain Absence table, no
-// submenu, exactly as before. Approved Leave itself is no longer an option here — it has its
-// own separate top-level nav item now (see ensureApprovedLeaveNavTab/openApprovedLeaveTab).
-// Rebuilt on every call (cheap) so a role switch (e.g. re-login as a Teacher) or a tab switch
-// removes the dropdown immediately rather than leaving a stale one in the DOM — called both
-// from renderAttendanceWorkspace() and from the end of switchView().
+// The small "Absence" / "Summary" dropdown that used to sit under the "Absence (Subjects)" nav
+// button has been removed — the tab now always opens straight to the plain Absence table.
+// This is kept as a no-op stub (rather than deleted outright) since it's still called from
+// renderAttendanceWorkspace() and the end of switchView(); it just tears down any leftover bar
+// from an older session and forces attSubView back to 'absence' so the Summary table (still
+// implemented in renderAbsenceSummaryTable(), just no longer reachable from the UI) doesn't get
+// stuck showing.
 function ensureAttSubTabsBar(){
-  const navTab = document.getElementById('navTabAttendance');
-  if(!navTab || !navTab.parentNode) return;
-  const canLeave = canUseApprovedLeave();
-  if(!canLeave && attSubView==='summary') attSubView = 'absence';
-  let bar = document.getElementById('attSubTabsBar');
-  const show = canLeave && currentView==='attendance';
-  if(!show){
-    if(bar) bar.remove();
-    return;
-  }
-  if(!bar){
-    bar = document.createElement('div');
-    bar.id = 'attSubTabsBar';
-    bar.className = 'att-subtabs att-subtabs-sidebar';
-    navTab.insertAdjacentElement('afterend', bar);
-  } else if(bar.previousElementSibling !== navTab){
-    // Bar exists but sits in the old position from a previous render — move it back to
-    // directly under the nav button.
-    navTab.insertAdjacentElement('afterend', bar);
-  }
-  bar.innerHTML = `
-    <select id="attSubTabsSelect" class="att-subtab-select" onchange="switchAttSubView(this.value)">
-      <option value="absence">Absence</option>
-      <option value="summary">Summary</option>
-    </select>
-  `;
-  updateAttSubTabsActive();
+  if(attSubView==='summary') attSubView = 'absence';
+  const bar = document.getElementById('attSubTabsBar');
+  if(bar) bar.remove();
 }
 function updateAttSubTabsActive(){
   const sel = document.getElementById('attSubTabsSelect');
@@ -7392,50 +7425,26 @@ function switchAttSubView(view){
   if(leaveTab) leaveTab.classList.remove('active');
 }
 
-// Approved Leave now lives as its own separate top-level sidebar nav item instead of a sub-tab
-// under "Absence (Subjects)". Since its markup isn't in this file (the sidebar HTML lives in
-// the main HTML file, not app.js — see renameAttendanceNavTab's comment below for the same
-// constraint), it's built here by cloning the existing #navTabAttendance button so it inherits
-// the exact same styling/icon, then re-pointed at its own click handler. Called once at
-// startup (see the bottom of this file) — idempotent, so safe to call again if ever needed.
-function ensureApprovedLeaveNavTab(){
-  if(document.getElementById('navTabApprovedLeave')) return;
+// Approved Leave now lives as its own separate top-level sidebar nav item (#navTabApprovedLeave)
+// instead of a sub-tab under "Absence (Subjects)" — its markup lives as a real static button in
+// the HTML file, right after #navTabAttendance. This just wires up the one-time bits that can't
+// be expressed as a plain onclick attribute: making #navTabAttendance reset back to the Absence
+// sub-view (and clear Approved Leave's active-highlight) whenever it's clicked directly, since
+// both buttons share the same underlying currentView==='attendance'. Called once at startup.
+function bindApprovedLeaveNavReset(){
   const src = document.getElementById('navTabAttendance');
-  if(!src || !src.parentNode) return;
-  const clone = src.cloneNode(true);
-  clone.id = 'navTabApprovedLeave';
-  clone.removeAttribute('onclick');
-  // A distinct (non-view) dataset.view value keeps switchView()'s generic
-  // `.nav-tab[data-view===view]` active-class toggle from ever touching this button — its
-  // active state is managed by hand in openApprovedLeaveTab()/the reset listener below instead.
-  clone.dataset.view = 'approvedLeave';
-  clone.classList.remove('active');
-  clone.title = 'Approved Leave';
-  clone.querySelectorAll('[id]').forEach(el=> el.removeAttribute('id'));
-  let textNode = null;
-  for(let i=clone.childNodes.length-1;i>=0;i--){
-    const n = clone.childNodes[i];
-    if(n.nodeType===3 && n.textContent.trim()){ textNode = n; break; }
-  }
-  if(textNode) textNode.textContent = (textNode.textContent.match(/^\s*/)||[''])[0] + 'Approved Leave';
-  else clone.textContent = 'Approved Leave';
-  clone.addEventListener('click', openApprovedLeaveTab);
-  src.insertAdjacentElement('afterend', clone);
-
-  // Clicking back onto the main "Absence (Subjects)" tab should always land on the Absence
-  // sub-view (never leave Approved Leave's active-highlight stuck on) — the inline onclick
-  // already on #navTabAttendance runs switchView('attendance') first; this listener, attached
-  // after, runs next and fixes up attSubView + the two buttons' active state.
-  if(!src.dataset.leaveResetBound){
-    src.dataset.leaveResetBound = '1';
-    src.addEventListener('click', ()=>{
-      if(attSubView==='leave') attSubView = 'absence';
-      updateAttSubTabsActive();
-      const leaveTab = document.getElementById('navTabApprovedLeave');
-      if(leaveTab) leaveTab.classList.remove('active');
-      if(currentView==='attendance') renderAttendanceTable();
-    });
-  }
+  if(!src || src.dataset.leaveResetBound) return;
+  src.dataset.leaveResetBound = '1';
+  src.addEventListener('click', ()=>{
+    if(attSubView==='leave') attSubView = 'absence';
+    attCategory = 'subject';
+    updateAttSubTabsActive();
+    const leaveTab = document.getElementById('navTabApprovedLeave');
+    if(leaveTab) leaveTab.classList.remove('active');
+    const disciplineTab = document.getElementById('navTabDiscipline');
+    if(disciplineTab) disciplineTab.classList.remove('active');
+    if(currentView==='attendance') renderAttendanceWorkspace();
+  });
 }
 
 // Click handler for the separate "Approved Leave" nav button: opens the same underlying
@@ -7443,16 +7452,49 @@ function ensureApprovedLeaveNavTab(){
 // pre-selects the 'leave' sub-view, and manages the two buttons' active-highlight by hand since
 // they share one underlying currentView==='attendance'.
 function openApprovedLeaveTab(){
+  attCategory = 'subject';
   switchView('attendance');
   attSubView = canUseApprovedLeave() ? 'leave' : 'absence';
   updateAttSubTabsActive();
   renderAttendanceTable();
   const mainTab = document.getElementById('navTabAttendance');
   const leaveTab = document.getElementById('navTabApprovedLeave');
+  const disciplineTab = document.getElementById('navTabDiscipline');
+  if(disciplineTab) disciplineTab.classList.remove('active');
   if(attSubView==='leave'){
     if(mainTab) mainTab.classList.remove('active');
     if(leaveTab) leaveTab.classList.add('active');
   }
+}
+
+// ---- General Absence / Late / Misbehavior nav dropdown ----
+// These reuse the exact same Absence (Subjects) stepper/workspace/table (renderAbsenceTable,
+// attStepConfig, etc.) — only attCategory changes, which attClassKey()/attClassLevelKey() use to
+// keep each category's tables in their own separate storage. See attCategory above.
+function toggleDisciplineMenu(e){
+  e.stopPropagation();
+  const menu = document.getElementById('disciplineMenu');
+  if(!menu) return;
+  if(!menu.classList.contains('open')) positionFixedNavMenu(document.getElementById('disciplineDropdownWrap'), menu);
+  menu.classList.toggle('open');
+}
+function closeDisciplineMenu(){
+  const dm = document.getElementById('disciplineMenu');
+  if(dm) dm.classList.remove('open');
+}
+function openDisciplineCategory(category){
+  attCategory = category;
+  attState.subject = null;
+  attSubView = 'absence';
+  switchView('attendance');
+  updateAttSubTabsActive();
+  renderAttendanceTable();
+  const mainTab = document.getElementById('navTabAttendance');
+  const leaveTab = document.getElementById('navTabApprovedLeave');
+  const disciplineTab = document.getElementById('navTabDiscipline');
+  if(mainTab) mainTab.classList.remove('active');
+  if(leaveTab) leaveTab.classList.remove('active');
+  if(disciplineTab) disciplineTab.classList.add('active');
 }
 
 // Dispatcher — kept under the original name since it's called from many places (workspace
@@ -7777,7 +7819,8 @@ function toggleAttDayOpen(dateStr, checked){
 
   saveState();
   renderAttendanceTable();
-  logActivity('edit', `${checked?'Opened':'Closed'} ${dateStr} for Absence recording (${subjectWithIcon(attState.subject)})`);
+  const openLogNote = attCategory==='subject' ? subjectWithIcon(attState.subject) : ATT_CATEGORY_LABELS[attCategory];
+  logActivity('edit', `${checked?'Opened':'Closed'} ${dateStr} for Absence recording (${openLogNote})`);
 }
 
 function toggleAttendance(studentId, dateStr, checked){
@@ -7799,11 +7842,14 @@ function toggleAttendance(studentId, dateStr, checked){
   const cell = document.getElementById('attTotal-'+studentId);
   if(cell) cell.textContent = total;
 
-  applyAttendanceToGrades(attState.section, attState.stage, attState.grade, attState.termPeriod, attState.academicTerm, studentId, total, attState.subject);
+  if(attCategory==='subject'){
+    applyAttendanceToGrades(attState.section, attState.stage, attState.grade, attState.termPeriod, attState.academicTerm, studentId, total, attState.subject);
+  }
 
   saveState();
   const stu = getAttRoster().find(s=>s.id===studentId);
-  logActivity('edit', `Marked ${stu?stu.name:'a student'} as ${checked?'absent':'present'} on ${dateStr} — auto-updated Beh. & Attend. (${subjectWithIcon(attState.subject)})`);
+  const categoryNote = attCategory==='subject' ? ` — auto-updated Beh. & Attend. (${subjectWithIcon(attState.subject)})` : ` (${ATT_CATEGORY_LABELS[attCategory]})`;
+  logActivity('edit', `Marked ${stu?stu.name:'a student'} as ${checked?'absent':'present'} on ${dateStr}${categoryNote}`);
 }
 
 // Toggles a day as Approved Leave (excused absence) for a student, recorded ONCE for the whole
@@ -12121,10 +12167,14 @@ function regenerateAttendanceForGlobalMonth(termPeriod, monthKey){
   if(!dates) return;
   Object.keys(attendance).forEach(ck=>{
     const parts = ck.split('|');
-    if(parts.length!==7) return;
+    if(parts.length!==7 && parts.length!==8) return;
     const [section, stage, grade, tp, term, subject, at] = parts;
     if(tp!==termPeriod || at!==monthKey) return;
+    const category = parts.length===8 ? parts[7] : 'subject';
+    const savedCategory = attCategory;
+    attCategory = category;
     applyAttendanceDateRangeToClass(section, stage, grade, term, subject, tp, at, range.start, range.end, dates, range.holidays||[]);
+    attCategory = savedCategory;
   });
 }
 
@@ -16591,7 +16641,7 @@ function applyPermissionsUI(){
   document.getElementById('teachersDropdownWrap').style.display = ((eff.settings && currentUser.role==='admin') || currentUser.role==='hos') ? '' : 'none';
   document.getElementById('navTabGrades').style.display = eff.grades ? '' : 'none';
   document.getElementById('navTabAttendance').style.display = eff.attendance ? '' : 'none';
-  // Approved Leave's own separate nav button (see ensureApprovedLeaveNavTab) follows the same
+  // Approved Leave's own separate nav button (see bindApprovedLeaveNavReset) follows the same
   // "attendance" permission as Absence (Subjects), plus the extra Admin/HOS-Deputy-only
   // approvedLeave permission that already gated it as a sub-tab.
   const leaveTab = document.getElementById('navTabApprovedLeave');
@@ -18662,26 +18712,11 @@ loadLastGradebookSelection();
 // switchView() already renders each table on demand the moment its tab is actually
 // opened (see the 'database'/'teachers' cases above). Removing them here noticeably
 // speeds up the time the login screen becomes responsive.
-renameAttendanceNavTab();
-ensureApprovedLeaveNavTab();
-// Renames the "Absence" nav tab button to "Absence (Subjects)" — Approved Leave used to be
-// bundled into this same tab's name/dropdown, but now has its own separate nav item (built by
-// ensureApprovedLeaveNavTab() above) — preserving any leading icon element inside the button
-// (only the trailing text node is replaced) since the button's exact markup lives in the HTML
-// file, not here.
-function renameAttendanceNavTab(){
-  const tab = document.getElementById('navTabAttendance');
-  if(!tab) return;
-  const NEW_LABEL = 'Absence (Subjects)';
-  let textNode = null;
-  for(let i=tab.childNodes.length-1; i>=0; i--){
-    const n = tab.childNodes[i];
-    if(n.nodeType===3 && n.textContent.trim()){ textNode = n; break; }
-  }
-  if(textNode) textNode.textContent = (textNode.textContent.match(/^\s*/)||[''])[0] + NEW_LABEL;
-  else tab.textContent = NEW_LABEL;
-  tab.title = NEW_LABEL;
-}
+// The "Absence (Subjects)" / "Approved Leave" nav buttons are now both real static HTML
+// (index.html) — no more runtime label rename or button cloning needed. Just wire up the
+// small bit of behavior that can't be a plain onclick attribute (see bindApprovedLeaveNavReset
+// above, in the Attendance section of this file).
+bindApprovedLeaveNavReset();
 /* ================== DATE / TIME / WEATHER WIDGET ================== */
 function dtwUpdateClock(){
   const now = new Date();
