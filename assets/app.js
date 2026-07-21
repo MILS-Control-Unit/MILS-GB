@@ -11081,7 +11081,7 @@ function renderTeachersAndClasses(){
   const holder = document.getElementById('teacherClassesTableHolder');
   const count = document.getElementById('teacherClassesCount');
   if(!holder || !count) return;
-  if(!currentUser || currentUser.role !== 'admin'){
+  if(!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'hos')){
     holder.innerHTML = '<p style="color: var(--red); padding: 20px; text-align: center;">⛔ Access Denied - Teachers and Classes is only available to Administrators.</p>';
     return;
   }
