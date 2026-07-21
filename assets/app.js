@@ -11065,6 +11065,42 @@ function renderTeachersDatabase(){
 }
 
 /* ================== TEACHERS AND CLASSES MATRIX ================== */
+// Teachers and Classes was Admin-only until HOS/Deputy access was added, so its
+// Section/Stage dropdowns were always static, unfiltered HTML options — nothing enforced
+// scope here. Now that HOS/Deputy (whose account is tied to one Section and a set of
+// Stages) can open this screen, hide any option outside their scope and, if the current
+// selection falls outside it, snap to the first allowed one instead.
+function applyTeacherClassesScopeFilters(){
+  const sectionSelect = document.getElementById('teacherClassesSection');
+  const stageSelect = document.getElementById('teacherClassesStage');
+  if(!sectionSelect || !stageSelect) return;
+  Array.from(sectionSelect.options).forEach(opt=>{
+    const allowed = scopeSectionAllowed(opt.value);
+    opt.hidden = !allowed;
+    opt.disabled = !allowed;
+  });
+  if(!scopeSectionAllowed(sectionSelect.value)){
+    const firstAllowed = Array.from(sectionSelect.options).find(o=>scopeSectionAllowed(o.value));
+    if(firstAllowed) sectionSelect.value = firstAllowed.value;
+  }
+  Array.from(stageSelect.options).forEach(opt=>{
+    const allowed = scopeStageAllowed(opt.value);
+    opt.hidden = !allowed;
+    opt.disabled = !allowed;
+  });
+  if(!scopeStageAllowed(stageSelect.value)){
+    const firstAllowed = Array.from(stageSelect.options).find(o=>scopeStageAllowed(o.value));
+    if(firstAllowed){
+      stageSelect.value = firstAllowed.value;
+      const gradeSelect = document.getElementById('teacherClassesGrade');
+      const stageData = STAGES[firstAllowed.value];
+      if(gradeSelect && stageData){
+        gradeSelect.innerHTML = stageData.grades.map(g=>
+          `<option value="${g.id}">${escapeHtml(g.label)}</option>`).join('');
+      }
+    }
+  }
+}
 function handleTeacherClassesFilterChange(changed){
   const stageSelect = document.getElementById('teacherClassesStage');
   const gradeSelect = document.getElementById('teacherClassesGrade');
@@ -11085,9 +11121,14 @@ function renderTeachersAndClasses(){
     holder.innerHTML = '<p style="color: var(--red); padding: 20px; text-align: center;">⛔ Access Denied - Teachers and Classes is only available to Administrators.</p>';
     return;
   }
+  applyTeacherClassesScopeFilters();
 
   const section = document.getElementById('teacherClassesSection').value;
   const stage = document.getElementById('teacherClassesStage').value;
+  if(!scopeSectionAllowed(section) || !scopeStageAllowed(stage)){
+    holder.innerHTML = '<p style="color: var(--red); padding: 20px; text-align: center;">⛔ Access Denied - this Section/Stage is outside your assigned scope.</p>';
+    return;
+  }
   const gradeSelect = document.getElementById('teacherClassesGrade');
   if(!gradeSelect.options.length) handleTeacherClassesFilterChange('stage');
   const grade = gradeSelect.value;
