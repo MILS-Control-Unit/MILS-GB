@@ -318,11 +318,11 @@ body.dark-mode .masthead-text h1{
   animation:birthdayWiggle 1.6s ease-in-out infinite;
 }
 .birthday-dropdown{
-  display:block;position:absolute;top:0;left:100%;right:auto;margin-top:0;margin-inline-start:10px;min-width:260px;max-width:340px;
+  display:block;position:absolute;bottom:0;top:auto;left:100%;right:auto;margin-top:0;margin-inline-start:10px;min-width:260px;max-width:340px;
   max-height:360px;overflow-y:auto;
   background:var(--paper);border:1px solid var(--border);border-radius:10px;
   box-shadow:0 12px 30px rgba(0,0,0,0.14);padding:10px;z-index:250;cursor:default;
-  opacity:0;visibility:hidden;transform:translateY(-8px);pointer-events:none;
+  opacity:0;visibility:hidden;transform:translateY(8px);pointer-events:none;
   transition:opacity .18s ease, transform .18s ease, visibility .18s;
 }
 .birthday-dropdown.open{opacity:1;visibility:visible;transform:translateY(0);pointer-events:auto;}
@@ -376,10 +376,10 @@ body.dark-mode .masthead-text h1{
   box-shadow:0 0 0 2px var(--paper);
 }
 .notif-dropdown{
-  display:block;position:absolute;top:0;left:100%;right:auto;margin-top:0;margin-inline-start:10px;min-width:300px;max-width:330px;
+  display:block;position:absolute;bottom:0;top:auto;left:100%;right:auto;margin-top:0;margin-inline-start:10px;min-width:300px;max-width:330px;
   background:var(--paper);border:1px solid var(--border);border-radius:10px;
   box-shadow:0 12px 30px rgba(0,0,0,0.14);padding:10px;z-index:9999;cursor:default;
-  opacity:0;visibility:hidden;transform:translateY(-8px);pointer-events:none;
+  opacity:0;visibility:hidden;transform:translateY(8px);pointer-events:none;
   transition:opacity .18s ease, transform .18s ease, visibility .18s;
   max-height:360px;overflow-y:auto;
 }
