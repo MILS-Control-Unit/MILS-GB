@@ -171,12 +171,15 @@
 
 <!-- ================= WELCOME MODAL ================= -->
 <div class="overlay" id="welcomeOverlay">
-  <div class="modal" style="text-align:center;">
-    <h3 style="font-size:22px;">Welcome, <span id="welcomeName">—</span>!</h3>
-    <p style="margin:6px 0 4px;">You are signed in as</p>
-    <p style="margin:0 0 18px;"><span class="perm-pill" id="welcomeRole">—</span></p>
-    <div class="modal-actions" style="justify-content:center;">
-      <button class="btn btn-gold" onclick="closeWelcomeModal()">Get Started</button>
+  <div class="modal welcome-modal" style="text-align:center;">
+    <img src="assets/images/mils-logo-flat.jpg" alt="Madinaty Integrated Language Schools" class="welcome-logo" id="welcomeLogo">
+    <div class="welcome-note" id="welcomeNote">
+      <h3 style="font-size:22px;">Welcome, <span id="welcomeName">—</span>!</h3>
+      <p style="margin:6px 0 4px;">You are signed in as</p>
+      <p style="margin:0 0 18px;"><span class="perm-pill" id="welcomeRole">—</span></p>
+      <div class="modal-actions" style="justify-content:center;">
+        <button class="btn btn-gold" onclick="closeWelcomeModal()">Get Started</button>
+      </div>
     </div>
   </div>
 </div>
