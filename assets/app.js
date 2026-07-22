@@ -865,6 +865,9 @@ function attStepConfig(){
       return [...opts].sort((a,b)=> String(a.label).localeCompare(String(b.label), undefined, {numeric:true, sensitivity:'base'}));
     }};
   }
+  // Student Discipline Tracker covers the whole Term (both Months combined), so it stops at
+  // Class — no Month step to pick.
+  if(attCategory==='tracker') return base;
   // General Absence / Late / Misbehavior operate at the whole-CLASS level (like Approved
   // Leave) — no Subject step, and the Month step no longer waits on a subject being picked.
   if(attCategory!=='subject'){
@@ -7315,8 +7318,14 @@ function applyAttendanceDateRangeToClass(section, stage, grade, term, subject, t
   if(isSubjectCategory){
     roster.forEach(s=>{
       const total = Object.keys(newRecords[s.id] || {}).length;
-      applyAttendanceToGrades(section, stage, grade, termPeriod, academicTerm, s.id, total, subject);
+      applyAttendanceToGrades(section, stage, grade, termPeriod, academicTerm, s.id, total, subject, term);
     });
+  }
+  // A shrunk/moved date range can also change every student's Late/Misbehavior day count, which
+  // (unlike Absence above) affects EVERY subject's Beh. & Attend., not just this one — recompute
+  // them all so the grade link stays correct even if nobody re-opens this class's Absence tab.
+  if((attCategory==='late' || attCategory==='misbehavior') && attState.section===section && attState.stage===stage && attState.grade===grade && attState.termPeriod===termPeriod && attState.term===term && attState.academicTerm===academicTerm){
+    roster.forEach(s=> recomputeBehAttendAllSubjectsForStudent(s.id));
   }
 }
 
@@ -7514,10 +7523,11 @@ function openDisciplineCategory(category){
 }
 
 // "Student Discipline Tracker" — a read-only chart combining General Absence, Late and
-// Misbehavior counts per student for the currently selected Class/Month. It doesn't have its
-// own attendance data: attCategory is set to 'tracker' just so attStepConfig() picks the
-// no-Subject stepper (same as General Absence/Late/Misbehavior), and renderAttendanceTable()
-// below routes it straight to renderDisciplineTrackerChart() instead of any records table.
+// Misbehavior counts per student across BOTH Months of the currently selected Term. It doesn't
+// have its own attendance data: attCategory is set to 'tracker' just so attStepConfig() stops
+// the stepper at Class (see the attCategory==='tracker' branch there — no Subject, no Month,
+// since the tracker always covers the whole Term), and renderAttendanceTable() below routes it
+// straight to renderDisciplineTrackerChart() instead of any records table.
 function openDisciplineTracker(){
   attCategory = 'tracker';
   attState.subject = null;
@@ -7533,29 +7543,43 @@ function openDisciplineTracker(){
   if(disciplineTab) disciplineTab.classList.add('active');
 }
 
-// Reads the same General Absence / Late / Misbehavior tables the three dropdown items above
-// write to (see attClassKey()), but directly by key rather than via attCategory/attClassKey(),
-// since attCategory here is 'tracker' rather than one of those three.
-function disciplineTrackerCountFor(studentId, category){
-  const base = `${attState.section}|${attState.stage}|${attState.grade}|${attState.termPeriod}|${attState.term}||${attState.academicTerm}`;
-  const month = attendance[`${base}|${category}`];
-  if(!month || !month.records || !month.records[studentId]) return 0;
-  return Object.keys(month.records[studentId]).length;
+// Returns every recorded date for a student in one category, across BOTH Months of the Term —
+// each entry is { date, comment }; comment is only ever populated for 'misbehavior' (see
+// misbehaviorNoteBtn/editMisbehaviorComment above, which write to month.comments).
+function disciplineTrackerRecordsFor(studentId, category){
+  const out = [];
+  ['month1','month2'].forEach(academicTerm=>{
+    const base = `${attState.section}|${attState.stage}|${attState.grade}|${attState.termPeriod}|${attState.term}||${academicTerm}`;
+    const month = attendance[`${base}|${category}`];
+    if(!month || !month.records || !month.records[studentId]) return;
+    Object.keys(month.records[studentId]).forEach(ds=>{
+      const comment = category==='misbehavior' ? ((month.comments && month.comments[studentId] && month.comments[studentId][ds]) || '') : '';
+      out.push({ date: ds, comment });
+    });
+  });
+  out.sort((a,b)=> a.date.localeCompare(b.date));
+  return out;
+}
+
+function fmtTrackerDate(ds){
+  const d = new Date(ds+'T00:00:00');
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
+// One line per recorded date; Misbehavior entries append their comment (if any) after a dash.
+function trackerCellHtml(records){
+  if(records.length===0) return '<span class="att-empty-dash">—</span>';
+  return records.map(r=>{
+    const dateLabel = fmtTrackerDate(r.date);
+    return r.comment
+      ? `<div class="tracker-date-line">${dateLabel} <span class="tracker-date-comment">— ${escapeHtml(r.comment)}</span></div>`
+      : `<div class="tracker-date-line">${dateLabel}</div>`;
+  }).join('');
 }
 
 function renderDisciplineTrackerChart(){
   const holder = document.getElementById('attTableHolder');
   if(!holder) return;
-
-  if(!attState.academicTerm){
-    holder.innerHTML = `
-      <div class="empty-state">
-        <div class="seal-lg">—</div>
-        <h3>Pick a Month</h3>
-        <p>Select this Term's Month above to see the Discipline chart for this class.</p>
-      </div>`;
-    return;
-  }
 
   const roster = getAttClassRosterFull();
   if(roster.length===0){
@@ -7569,16 +7593,16 @@ function renderDisciplineTrackerChart(){
   }
 
   const rows = roster.map(s=>{
-    const general = disciplineTrackerCountFor(s.id, 'general');
-    const late = disciplineTrackerCountFor(s.id, 'late');
-    const misbehavior = disciplineTrackerCountFor(s.id, 'misbehavior');
-    return { student: s, general, late, misbehavior, total: general+late+misbehavior };
+    const general = disciplineTrackerRecordsFor(s.id, 'general');
+    const late = disciplineTrackerRecordsFor(s.id, 'late');
+    const misbehavior = disciplineTrackerRecordsFor(s.id, 'misbehavior');
+    return { student: s, general, late, misbehavior, total: general.length+late.length+misbehavior.length };
   });
 
   const totals = {
-    general: rows.reduce((a,r)=>a+r.general,0),
-    late: rows.reduce((a,r)=>a+r.late,0),
-    misbehavior: rows.reduce((a,r)=>a+r.misbehavior,0)
+    general: rows.reduce((a,r)=>a+r.general.length,0),
+    late: rows.reduce((a,r)=>a+r.late.length,0),
+    misbehavior: rows.reduce((a,r)=>a+r.misbehavior.length,0)
   };
   const grandTotal = totals.general + totals.late + totals.misbehavior;
   const DOUGHNUT_DEFS = [
@@ -7601,15 +7625,15 @@ function renderDisciplineTrackerChart(){
     <tr>
       <td>${i+1}</td>
       <td class="name-col att-name-col" title="${escapeHtml(r.student.name)}">${escapeHtml(r.student.name)}</td>
-      <td class="att-day-col">${r.general}</td>
-      <td class="att-day-col">${r.late}</td>
-      <td class="att-day-col">${r.misbehavior}</td>
+      <td class="att-day-col tracker-dates-col">${trackerCellHtml(r.general)}</td>
+      <td class="att-day-col tracker-dates-col">${trackerCellHtml(r.late)}</td>
+      <td class="att-day-col tracker-dates-col">${trackerCellHtml(r.misbehavior)}</td>
       <td class="total-cell att-total-col">${r.total}</td>
     </tr>`).join('');
 
   holder.innerHTML = `
     <div class="table-container">
-      <p style="margin:0 0 10px;font-size:12.5px;font-weight:600;color:#667085;">Combined General Absence / Late / Misbehavior counts recorded so far for this Term's Month, per student.</p>
+      <p style="margin:0 0 10px;font-size:12.5px;font-weight:600;color:#667085;">Combined General Absence / Late / Misbehavior counts recorded across both Months of this Term, per student.</p>
       <div style="margin-bottom:20px;">${chartHtml}</div>
       <table class="att-table">
         <thead>
@@ -8008,7 +8032,9 @@ function toggleAttendance(studentId, dateStr, checked){
   if(cell) cell.textContent = total;
 
   if(attCategory==='subject'){
-    applyAttendanceToGrades(attState.section, attState.stage, attState.grade, attState.termPeriod, attState.academicTerm, studentId, total, attState.subject);
+    applyAttendanceToGrades(attState.section, attState.stage, attState.grade, attState.termPeriod, attState.academicTerm, studentId, total, attState.subject, attState.term);
+  } else if(attCategory==='late' || attCategory==='misbehavior'){
+    recomputeBehAttendAllSubjectsForStudent(studentId);
   }
 
   saveState();
@@ -8055,7 +8081,7 @@ function toggleApprovedLeave(studentId, dateStr, checked){
         const subj = ck2.slice(prefix.length, ck2.length - suffix.length);
         absenceCancelledSubjects.push(subj);
         const absTotal = Object.keys(month.records[studentId] || {}).length;
-        applyAttendanceToGrades(attState.section, attState.stage, attState.grade, attState.termPeriod, attState.academicTerm, studentId, absTotal, subj);
+        applyAttendanceToGrades(attState.section, attState.stage, attState.grade, attState.termPeriod, attState.academicTerm, studentId, absTotal, subj, attState.term);
       }
     });
   }else{
@@ -8080,7 +8106,16 @@ function toggleApprovedLeave(studentId, dateStr, checked){
 //   Primary Stage (incl. the extended Grade 1-6 mark-entry layouts): Max. 5, −0.5 per 3 absence days.
 //   Grade 7-8 Prep / Grade 10-11 Secondary: Max. 10, −1 per 3 absence days.
 //   Other grades (e.g. Grade 9 Prep, Grade 12 Secondary) have no Beh. & Attend. field — skipped.
-function applyAttendanceToGrades(section, stage, grade, termPeriod, monthKey, studentId, absenceDays, subject){
+// Late & Misbehavior are recorded once for the WHOLE CLASS, not per Subject (see attClassKey()),
+// so — unlike Absence above, whose deduction only ever hits the one subject it was recorded
+// against — their deduction is applied identically to every subject's Beh. & Attend. for that
+// student/month. Their rule is steeper than Absence's "every 3 days" rule: the first 3 recorded
+// days together cost one `per3` unit, then EACH further day costs one more full `per3` unit.
+function disciplineDeductionDays(days, per3){
+  if(!days || days<=0) return 0;
+  return days<=3 ? per3 : per3*(days-2);
+}
+function applyAttendanceToGrades(section, stage, grade, termPeriod, monthKey, studentId, absenceDays, subject, term){
   if(monthKey!=='month1' && monthKey!=='month2') return;
   if(!subject) return;
   const field = monthKey==='month1' ? 'm1Beh' : 'm2Beh';
@@ -8092,8 +8127,20 @@ function applyAttendanceToGrades(section, stage, grade, termPeriod, monthKey, st
 
   const max = primaryStage ? 5 : 10;
   const per3 = primaryStage ? 0.5 : 1;
-  const deduction = Math.floor((absenceDays||0)/3) * per3;
-  const finalScore = Math.max(0, Math.round((max - deduction)*100)/100);
+  const absenceDeduction = Math.floor((absenceDays||0)/3) * per3;
+
+  let lateDeduction = 0, misbehaviorDeduction = 0;
+  if(term){
+    const base = `${section}|${stage}|${grade}|${termPeriod}|${term}||${monthKey}`;
+    ['late','misbehavior'].forEach(cat=>{
+      const monthData = attendance[`${base}|${cat}`];
+      const days = (monthData && monthData.records && monthData.records[studentId]) ? Object.keys(monthData.records[studentId]).length : 0;
+      const ded = disciplineDeductionDays(days, per3);
+      if(cat==='late') lateDeduction = ded; else misbehaviorDeduction = ded;
+    });
+  }
+
+  const finalScore = Math.max(0, Math.round((max - absenceDeduction - lateDeduction - misbehaviorDeduction)*100)/100);
 
   const classKey_ = `${section}|${stage}|${grade}`;
   const sk = `${classKey_}|${termPeriod}|${subject}`;
@@ -8108,6 +8155,22 @@ function applyAttendanceToGrades(section, stage, grade, termPeriod, monthKey, st
   scores[sk][studentId][field] = finalScore;
 }
 
+// Late/Misbehavior toggles don't know which one Subject to update (they aren't subject-specific
+// — see attClassKey()); this recomputes Beh. & Attend. for EVERY subject the student takes in
+// the current Section/Stage/Grade/Class/Term Period/Month, pulling each subject's own Absence
+// count fresh from `attendance` so that figure isn't disturbed by the Late/Misbehavior change.
+function recomputeBehAttendAllSubjectsForStudent(studentId){
+  if(attState.academicTerm!=='month1' && attState.academicTerm!=='month2') return;
+  const subjects = getSubjectsForStageAndSection(attState.stage, attState.section, attState.grade)
+    .filter(s=>scopeSubjectAllowedForClassroom(s, attState.term));
+  subjects.forEach(subj=>{
+    const subjKey = `${attState.section}|${attState.stage}|${attState.grade}|${attState.termPeriod}|${attState.term}|${subj}|${attState.academicTerm}`;
+    const subjMonth = attendance[subjKey];
+    const absTotal = (subjMonth && subjMonth.records && subjMonth.records[studentId]) ? Object.keys(subjMonth.records[studentId]).length : 0;
+    applyAttendanceToGrades(attState.section, attState.stage, attState.grade, attState.termPeriod, attState.academicTerm, studentId, absTotal, subj, attState.term);
+  });
+}
+
 // Recomputes the Beh. & Attend. link for every student in the current Attendance selection —
 // used after the date range changes, since that can shift every student's absence total at once.
 function recomputeAttendanceLinksForCurrentClass(){
@@ -8117,7 +8180,7 @@ function recomputeAttendanceLinksForCurrentClass(){
   roster.forEach(s=>{
     const rec = (month && month.records && month.records[s.id]) || {};
     const total = Object.keys(rec).length;
-    applyAttendanceToGrades(attState.section, attState.stage, attState.grade, attState.termPeriod, attState.academicTerm, s.id, total, attState.subject);
+    applyAttendanceToGrades(attState.section, attState.stage, attState.grade, attState.termPeriod, attState.academicTerm, s.id, total, attState.subject, attState.term);
   });
 }
 

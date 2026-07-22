@@ -1598,6 +1598,11 @@ body.dark-mode .att-table tbody tr:hover .att-name-col{ background:var(--paper-2
 }
 .att-note-btn:hover{ border-color:var(--gold); }
 .att-note-btn.has-note{ background:var(--amber-bg); border-color:var(--amber); color:var(--amber); }
+.tracker-dates-col{ text-align:left !important; vertical-align:top; min-width:150px; padding:8px 10px !important; }
+.tracker-date-line{ font-size:12.5px; white-space:nowrap; padding:1px 0; }
+.tracker-date-line + .tracker-date-line{ margin-top:2px; border-top:1px dashed var(--border); padding-top:3px; }
+.tracker-date-comment{ color:var(--ink-soft); font-weight:500; white-space:normal; }
+.att-empty-dash{ color:var(--ink-soft); opacity:.5; }
 @media print{
   .att-add-month, .att-month-del, .att-excl-chips{ display:none !important; }
 }
