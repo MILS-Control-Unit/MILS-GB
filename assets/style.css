@@ -1486,6 +1486,33 @@ td:has(> .score-input){background:var(--bg);}
 .modal h3{font-family:'Aref Ruqaa',serif;margin:0 0 10px;font-size:20px;color:var(--ink);}
 .modal p{font-size:13.5px;color:var(--ink-soft);line-height:1.8;margin:0 0 16px;}
 .modal-actions{display:flex;gap:10px;justify-content:flex-end;}
+/* Welcome modal: the school logo shows alone first (vertically centered), then — once
+   .revealed is added by showWelcomeModal() — it shrinks/nudges up and the Welcome note
+   underneath expands into view, growing from zero height rather than just fading in place. */
+.welcome-modal{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:260px;
+}
+.welcome-logo{
+  width:110px;height:110px;object-fit:contain;border-radius:22px;background:#fff;
+  padding:10px;box-shadow:0 10px 30px rgba(17,34,67,.18);
+  transition:transform .65s cubic-bezier(.22,1,.36,1), margin-bottom .65s cubic-bezier(.22,1,.36,1);
+  margin-bottom:0;
+}
+.welcome-note{
+  width:100%;opacity:0;max-height:0;overflow:hidden;
+  transition:opacity .5s ease .15s, max-height .55s cubic-bezier(.22,1,.36,1);
+}
+.welcome-modal.revealed .welcome-logo{
+  transform:translateY(-4px) scale(.92);
+  margin-bottom:16px;
+}
+.welcome-modal.revealed .welcome-note{
+  opacity:1;max-height:280px;
+}
+@media (prefers-reduced-motion:reduce){
+  .welcome-logo,.welcome-note{transition:none!important;}
+}
 @media (max-width:640px){
   .masthead{padding:16px 16px;}
   .masthead .seal{width:52px;height:52px;font-size:24px;}

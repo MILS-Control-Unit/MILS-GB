@@ -15775,7 +15775,17 @@ function showWelcomeModal(user){
   const roleEl = document.getElementById('welcomeRole');
   if(nameEl) nameEl.textContent = user.displayName || user.username;
   if(roleEl) roleEl.textContent = ROLE_LABELS[user.role] || user.role;
-  document.getElementById('welcomeOverlay').classList.add('show');
+  const overlay = document.getElementById('welcomeOverlay');
+  const modal = overlay ? overlay.querySelector('.welcome-modal') : null;
+  if(modal) modal.classList.remove('revealed'); // reset in case this modal was shown before
+  overlay.classList.add('show');
+  // Let the school logo sit alone for a beat first, then animate it up and reveal the
+  // Welcome note underneath it (see .welcome-logo/.welcome-note in style.css).
+  if(modal){
+    requestAnimationFrame(()=>{
+      setTimeout(()=> modal.classList.add('revealed'), 700);
+    });
+  }
 }
 function closeWelcomeModal(){
   document.getElementById('welcomeOverlay').classList.remove('show');
