@@ -7770,10 +7770,10 @@ function renderAbsenceTable(){
       const checked = !!rec[ds];
       if(checked) total++;
       const isOpen = !!openDays[ds];
-      // A day that hasn't been opened yet AND has no existing record is inactive — no checkbox,
-      // just a placeholder — until it's opened from the header toggle above. If it somehow has a
-      // record already (e.g. migrated data) but got closed again, keep showing it as a disabled
-      // checked checkbox rather than hiding the data.
+      // A day that hasn't been opened yet has no checkbox — just a placeholder — until it's
+      // opened from the header toggle above. Closing a previously-open day now clears whatever
+      // was recorded on it too (see clearAttDayRecords/toggleAttDayOpen), so a closed day and an
+      // unopened one look and behave the same way here.
       if(!isOpen && !checked){
         return `<td class="att-day-col${weekEndCls} att-closed-cell" title="Day not opened yet">–</td>`;
       }
@@ -7979,11 +7979,47 @@ function renderAbsenceSummaryTable(){
     </div>`;
 }
 
+// Removes every student's record (and Misbehavior comment, if any) for one date in one
+// category's table — used when a day gets closed again, so a closed day never keeps a stale
+// tick behind it. `month` is the attendance[ck] object for that category.
+function clearAttDayRecords(month, dateStr){
+  if(month.records){
+    Object.keys(month.records).forEach(studentId=>{
+      if(month.records[studentId] && month.records[studentId][dateStr]) delete month.records[studentId][dateStr];
+    });
+  }
+  if(month.comments){
+    Object.keys(month.comments).forEach(studentId=>{
+      if(month.comments[studentId]) delete month.comments[studentId][dateStr];
+    });
+  }
+}
+
+// Opens/closes one date in one category's table for the CURRENT Section/Stage/Grade/Class/
+// Term/Month — creating that category's table first (cloning the date range from `cloneFrom`,
+// typically General Absence's own table) if it doesn't exist yet, so General Absence can open a
+// day in Late/Misbehavior even before anyone has opened those tabs at all.
+function setAttDayOpenForCategory(category, dateStr, checked, cloneFrom){
+  const base = `${attState.section}|${attState.stage}|${attState.grade}|${attState.termPeriod}|${attState.term}||${attState.academicTerm}`;
+  const key = `${base}|${category}`;
+  if(!attendance[key]){
+    if(!cloneFrom) return;
+    attendance[key] = { start: cloneFrom.start, end: cloneFrom.end, dates: cloneFrom.dates, excluded: cloneFrom.excluded, records: {}, openDays: {} };
+  }
+  const month = attendance[key];
+  if(!month.openDays) month.openDays = {};
+  if(checked) month.openDays[dateStr] = true;
+  else { delete month.openDays[dateStr]; clearAttDayRecords(month, dateStr); }
+}
+
 // Opens or closes a single day in the current class/subject/month's Absence table. A CLOSED
 // day has no working checkboxes for any student (it's simply not an attendance-taking day yet
 // for this subject); an OPEN day is one the teacher has confirmed the class actually met, so
-// absence can be recorded for it. Closing a day again does NOT delete any absences already
-// recorded on it — see renderAbsenceTable, which keeps those visible as disabled checked boxes.
+// absence can be recorded for it. Closing a day again now clears any absences already recorded
+// on it (see clearAttDayRecords above) rather than leaving them behind as disabled ticks.
+// General Absence additionally mirrors its open/close state straight into Late & Misbehavior
+// (one-directional — toggling Late/Misbehavior on its own doesn't touch General Absence or each
+// other), so the teacher only has to open/close a day once instead of three separate times.
 function toggleAttDayOpen(dateStr, checked){
   if(isCurrentUserGradeEntryLocked(attState.academicTerm)){ gradeEntryLockAlert(attState.academicTerm); renderAttendanceTable(); return; }
   const canEdit = !!(currentUser && currentUser.effective && currentUser.effective.edit);
@@ -7993,7 +8029,26 @@ function toggleAttDayOpen(dateStr, checked){
   if(!month) return;
   if(!month.openDays) month.openDays = {};
   if(checked) month.openDays[dateStr] = true;
-  else delete month.openDays[dateStr];
+  else { delete month.openDays[dateStr]; clearAttDayRecords(month, dateStr); }
+
+  if(attCategory==='general'){
+    setAttDayOpenForCategory('late', dateStr, checked, month);
+    setAttDayOpenForCategory('misbehavior', dateStr, checked, month);
+  }
+
+  // Late/Misbehavior deduct from every subject's Beh. & Attend. (see applyAttendanceToGrades) —
+  // closing a day can wipe records that fed into that, and General propagating to those two can
+  // do the same, so recompute for the whole roster whenever any of the three might have changed.
+  if(attCategory==='general' || attCategory==='late' || attCategory==='misbehavior'){
+    getAttClassRosterFull().forEach(s=> recomputeBehAttendAllSubjectsForStudent(s.id));
+  } else if(attCategory==='subject' && !checked){
+    // Closing a Subject-Absence day may have just cleared some students' recorded absences —
+    // recompute this one subject's Beh. & Attend. for everyone so it reflects the new totals.
+    getAttRoster().forEach(s=>{
+      const total = Object.keys((month.records[s.id])||{}).length;
+      applyAttendanceToGrades(attState.section, attState.stage, attState.grade, attState.termPeriod, attState.academicTerm, s.id, total, attState.subject, attState.term);
+    });
+  }
 
   saveState();
   renderAttendanceTable();
