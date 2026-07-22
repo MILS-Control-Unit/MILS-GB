@@ -3050,9 +3050,13 @@ table tbody tr:hover td{background:#f5f8ff!important;}
 }
 @media (prefers-reduced-motion:reduce){.nav-tab,.btn,table tbody tr{transition:none!important;}}
 
-/* Sidebar should read as a single app rail, never as a scrollable panel. */
+/* Sidebar should read as a single app rail — but when its content (nav items + widgets +
+   the Save button) ends up taller than the viewport, it must scroll WITHIN its own frame
+   instead of spilling past its bottom edge (which pushed .gb-save-fab outside the sidebar
+   entirely). overflow-x stays visible so flyout dropdown menus (.nav-dropdown-menu, positioned
+   to the right of the rail) aren't clipped sideways. */
 .main-nav{
-  overflow:visible!important;
+  overflow-y:auto!important;overflow-x:visible!important;
   scrollbar-width:none;
 }
 .main-nav::-webkit-scrollbar{display:none;}
@@ -3066,11 +3070,11 @@ table tbody tr:hover td{background:#f5f8ff!important;}
 .gb-save-btn{height:34px;}
 .nav-row-config{margin-top:6px!important;padding-top:8px!important;}
 @media (max-width:1100px){
-  .main-nav{overflow:visible!important;}
+  .main-nav{overflow-y:auto!important;overflow-x:visible!important;}
   .nav-tab{height:40px;}
 }
 @media (max-width:640px){
-  .main-nav{overflow:visible!important;}
+  .main-nav{overflow-x:auto!important;overflow-y:hidden!important;}
   .nav-row-tabs{overflow:visible!important;width:100%!important;justify-content:space-around;}
   .nav-tab{flex:0 0 42px!important;width:42px!important;}
 }
