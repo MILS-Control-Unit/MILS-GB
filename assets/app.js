@@ -4155,9 +4155,14 @@ function svgDoughnut(percent, color){
   const pct = Math.max(0, Math.min(100, percent||0));
   const circumference = 2*Math.PI*r;
   const dash = (pct/100)*circumference;
+  // stroke-linecap="round" still paints a small dot for a zero-length dash, so only draw the
+  // colored arc at all once there's an actual non-zero share to show.
+  const arc = pct>0
+    ? `<circle class="db-anim-slice" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${dash.toFixed(1)} ${circumference.toFixed(1)}" transform="rotate(-90 ${cx} ${cy})"></circle>`
+    : '';
   return `<svg viewBox="0 0 ${size} ${size}" style="width:100%;max-width:190px;display:block;margin:0 auto;">
     <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--border)" stroke-width="${stroke}"></circle>
-    <circle class="db-anim-slice" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${dash.toFixed(1)} ${circumference.toFixed(1)}" transform="rotate(-90 ${cx} ${cy})"></circle>
+    ${arc}
     <text x="${cx}" y="${cy+8}" text-anchor="middle" font-size="26" font-weight="800" fill="var(--ink)">${Math.round(pct)}%</text>
   </svg>`;
 }
@@ -7546,6 +7551,19 @@ function openDisciplineTracker(){
 // Returns every recorded date for a student in one category, across BOTH Months of the Term —
 // each entry is { date, comment }; comment is only ever populated for 'misbehavior' (see
 // misbehaviorNoteBtn/editMisbehaviorComment above, which write to month.comments).
+// Total number of days the Section/Stage/Grade/Class's <category> table was opened for
+// (checkbox column exists/enabled), summed across both Months of the Term. Used as the
+// doughnut denominator — see renderDisciplineTrackerChart below.
+function disciplineOpenDaysCount(category){
+  let total = 0;
+  ['month1','month2'].forEach(academicTerm=>{
+    const base = `${attState.section}|${attState.stage}|${attState.grade}|${attState.termPeriod}|${attState.term}||${academicTerm}`;
+    const month = attendance[`${base}|${category}`];
+    if(month && month.openDays) total += Object.keys(month.openDays).filter(d=>month.openDays[d]).length;
+  });
+  return total;
+}
+
 function disciplineTrackerRecordsFor(studentId, category){
   const out = [];
   ['month1','month2'].forEach(academicTerm=>{
@@ -7604,19 +7622,27 @@ function renderDisciplineTrackerChart(){
     late: rows.reduce((a,r)=>a+r.late.length,0),
     misbehavior: rows.reduce((a,r)=>a+r.misbehavior.length,0)
   };
-  const grandTotal = totals.general + totals.late + totals.misbehavior;
+  // Denominator is that category's own total OPEN days (both Months of the Term combined) —
+  // e.g. "3 Late marks out of 10 days the Late table was opened for" — NOT a share of the 3
+  // categories' combined incident count.
+  const openDaysTotals = {
+    general: disciplineOpenDaysCount('general'),
+    late: disciplineOpenDaysCount('late'),
+    misbehavior: disciplineOpenDaysCount('misbehavior')
+  };
   const DOUGHNUT_DEFS = [
     { key:'general', label:'General Absence', color:'var(--red)' },
     { key:'late', label:'Late', color:'var(--amber)' },
     { key:'misbehavior', label:'Misbehavior', color:'var(--purple)' }
   ];
   const doughnutsHtml = DOUGHNUT_DEFS.map(d=>{
-    const pct = grandTotal>0 ? (totals[d.key]/grandTotal)*100 : 0;
+    const openDays = openDaysTotals[d.key];
+    const pct = openDays>0 ? (totals[d.key]/openDays)*100 : 0;
     return `
       <div class="db-chart-card" style="text-align:center;">
         <h4>${d.label}</h4>
         ${svgDoughnut(pct, d.color)}
-        <div style="margin-top:8px;font-size:12.5px;font-weight:600;color:var(--ink-soft);">${totals[d.key]} of ${grandTotal||0} recorded ${grandTotal===1?'day':'days'}</div>
+        <div style="margin-top:8px;font-size:12.5px;font-weight:600;color:var(--ink-soft);">${totals[d.key]} of ${openDays||0} open ${openDays===1?'day':'days'}</div>
       </div>`;
   }).join('');
   const chartHtml = `<div class="db-charts-grid" style="grid-template-columns:repeat(3,1fr);">${doughnutsHtml}</div>`;
