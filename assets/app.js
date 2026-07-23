@@ -2663,7 +2663,7 @@ function renderDashboardFilters(){
     const filtered = roster.filter(s=> !state.dashboardClassroom || (s.classroom||'').trim()===state.dashboardClassroom)
       .slice().sort((a,b)=>a.name.localeCompare(b.name));
     studentOpts = filtered.length
-      ? filtered.map(s=>`<option value="${s.id}" ${state.dashboardStudent===s.id?'selected':''}>${s.name}${s.classroom?` (${s.classroom})`:''}</option>`).join('')
+      ? filtered.map(s=>`<option value="${s.id}" ${state.dashboardStudent===s.id?'selected':''}>${escapeHtml(s.name)}${s.classroom?` (${escapeHtml(s.classroom)})`:''}</option>`).join('')
       : `<option value="" disabled>No students found for this class</option>`;
   }
 
@@ -8563,7 +8563,7 @@ function renderG12ExamAllSubjectsRowHtml(s, i, subjectsList, readOnly){
       <tr data-row-id="${s.id}">
         <td>${i+1}</td>
         <td><span class="seat-badge">${s.displayId||'—'}</span></td>
-        <td class="name-col">${s.name}</td>
+        <td class="name-col">${escapeHtml(s.name)}</td>
         <td>${s.classroom ? `<span class="seat-badge">${escapeHtml(s.classroom)}</span>` : '—'}</td>
         ${cellsHtml}
         <td class="total-cell"><b>${grandTotal===null?'—':grandTotal}</b></td>
@@ -8673,7 +8673,7 @@ function renderStandardTableRowHtml(s, i, sc){
         <td><input type="checkbox" name="studentCheckbox" value="${s.id}" style="cursor:pointer;"></td>
         <td>${i+1}</td>
         <td><span class="seat-badge">${s.displayId||'—'}</span></td>
-        <td class="name-col">${s.name}</td>
+        <td class="name-col">${escapeHtml(s.name)}</td>
         <td>${s.classroom ? `<span class="seat-badge">${s.classroom}</span>` : '—'}</td>
         <td>${s.lang2 && s.lang2!=='-' ? s.lang2 : '—'}</td>
         <td>${scoreInputHtml(s.id,'m1',sc.m1,10)}</td>
@@ -8775,7 +8775,7 @@ function primaryIdCellsHtml(s, i){
   return `
         <td>${i+1}</td>
         <td><span class="seat-badge">${s.displayId||'—'}</span></td>
-        <td class="name-col">${s.name}</td>
+        <td class="name-col">${escapeHtml(s.name)}</td>
         <td>${s.classroom ? `<span class="seat-badge">${s.classroom}</span>` : '—'}</td>
         <td>${s.lang2 && s.lang2!=='-' ? s.lang2 : '—'}</td>`;
 }
@@ -10644,7 +10644,7 @@ function renderDatabaseNow(){
     <tr>
       <td><input type="checkbox" class="dbStudentCheckbox" value="${s.classKey}::${s.id}"></td>
       <td><span class="seat-badge">${s.displayId||'—'}</span></td>
-      <td class="name-col">${s.name}${birthdayNameFlag(s.dob)}</td>
+      <td class="name-col">${escapeHtml(s.name)}${birthdayNameFlag(s.dob)}</td>
       <td>
         <input type="text" class="db-edit-select" dir="rtl" value="${(s.nameAr||'').replace(/"/g,'&quot;')}" title="${(s.nameAr||'').replace(/"/g,'&quot;')}" placeholder="اسم الطالب" onchange="flashInlineSaved(this);updateStudentField('${s.classKey}','${s.id}','nameAr',this.value)">
       </td>
@@ -15806,6 +15806,71 @@ function openChangePasswordModal(){
 function closeChangePasswordModal(){
   document.getElementById('changePasswordOverlay').classList.remove('show');
 }
+// ========== PASSWORD HASHING (Web Crypto: PBKDF2-SHA256, per-user salt) ==========
+// Passwords are never stored or compared as plaintext. Every user gets a unique random
+// salt; verifying re-derives the hash with that same salt and compares the result.
+// This does NOT touch Firebase/localStorage structure beyond swapping the `password`
+// field for `passwordHash` + `passwordSalt` on the user object.
+const PBKDF2_ITERATIONS = 150000;
+
+function randomSaltHex(byteLen = 16) {
+  const bytes = new Uint8Array(byteLen);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function derivePasswordHash(password, saltHex) {
+  const enc = new TextEncoder();
+  const saltBytes = new Uint8Array(saltHex.match(/.{2}/g).map(h => parseInt(h, 16)));
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: saltBytes, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    keyMaterial,
+    256
+  );
+  return Array.from(new Uint8Array(bits), b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Hashes `plaintextPassword` onto `user` (passwordHash + passwordSalt) and removes any
+// legacy plaintext `password` field. Caller is responsible for calling saveUsers() after.
+async function setUserPassword(user, plaintextPassword) {
+  const salt = randomSaltHex();
+  user.passwordHash = await derivePasswordHash(plaintextPassword, salt);
+  user.passwordSalt = salt;
+  delete user.password;
+}
+
+// Verifies a plaintext password against a user record. If the account still has the old
+// plaintext `password` field (pre-hashing accounts) and it matches, it is transparently
+// upgraded to a hash right here and saved — so a legacy password is never re-written to
+// storage in plaintext after its very first successful login post-upgrade.
+async function verifyUserPassword(user, plaintextPassword) {
+  if (!user) return false;
+  if (user.passwordHash && user.passwordSalt) {
+    const candidate = await derivePasswordHash(plaintextPassword, user.passwordSalt);
+    return candidate === user.passwordHash;
+  }
+  if (user.password !== undefined) {
+    const matches = user.password === plaintextPassword;
+    if (matches) {
+      await setUserPassword(user, plaintextPassword);
+      saveUsers();
+    }
+    return matches;
+  }
+  return false;
+}
+
+// ========== USERNAME VALIDATION ==========
+// Defense-in-depth alongside the output-side escaping fixes: usernames can never contain
+// characters that are dangerous in an HTML or inline-JS-attribute context in the first
+// place. Letters (incl. non-Latin), digits, and . _ @ - are allowed; anything with quotes,
+// angle brackets, backslashes, parens, semicolons, etc. is rejected outright.
+const USERNAME_PATTERN = /^[\p{L}\p{N}._@-]{2,40}$/u;
+function isValidUsername(username){
+  return USERNAME_PATTERN.test(username||'');
+}
+
 // ========== PASSWORD VALIDATION ==========
 const PASSWORD_RULES = {
   minLength: 8,
@@ -15961,7 +16026,7 @@ function validatePasswordMatch() {
   }
 }
 
-function submitChangePassword(e){
+async function submitChangePassword(e){
   e.preventDefault();
   const errEl = document.getElementById('cpError');
   const showError = msg => { errEl.textContent = msg; errEl.classList.add('show'); };
@@ -15975,8 +16040,8 @@ function submitChangePassword(e){
   const next = document.getElementById('cpNewPassword').value;
   const confirm = document.getElementById('cpConfirmPassword').value;
 
-  // Verify current password
-  if(user.password !== current){ 
+  // Verify current password (hash-based; transparently upgrades legacy plaintext accounts)
+  if(!(await verifyUserPassword(user, current))){
     showError('Current password is incorrect.');
     document.getElementById('cpCurrentPasswordError').textContent = 'Current password is incorrect';
     return false; 
@@ -16002,9 +16067,8 @@ function submitChangePassword(e){
     return false; 
   }
 
-  // Update password
-  user.password = next;
-  currentUser.password = next;
+  // Update password (stored as a salted hash, never plaintext)
+  await setUserPassword(user, next);
   if (!user.passwordChangedAt) user.passwordChangedAt = new Date().toISOString();
   saveUsers();
   logActivity('password_change', 'Changed password - strong password security applied');
@@ -16554,7 +16618,7 @@ function validateResetPasswordMatch() {
   }
 }
 
-function handlePasswordReset(event) {
+async function handlePasswordReset(event) {
   event.preventDefault();
   const btn = event.target.querySelector('button[type="submit"]');
   const resetPassword = document.getElementById('resetPassword').value;
@@ -16587,8 +16651,8 @@ function handlePasswordReset(event) {
     const user = findUser(window.resetContext.username);
     if (!user) throw new Error('User not found');
 
-    // Update password
-    user.password = resetPassword;
+    // Update password (stored as a salted hash, never plaintext)
+    await setUserPassword(user, resetPassword);
     user.passwordChangedAt = new Date().toISOString();
 
     // Mark token as used
@@ -16697,7 +16761,7 @@ function updateLockoutUI(){
   if(btn) btn.disabled = false;
   return false;
 }
-function handleLogin(e){
+async function handleLogin(e){
   e.preventDefault();
   if(updateLockoutUI()) return false;
   const btn = document.getElementById('loginSubmitBtn');
@@ -16706,7 +16770,7 @@ function handleLogin(e){
   const password = document.getElementById('loginPassword').value;
   const user = findUser(username);
   const errEl = document.getElementById('loginError');
-  if(!user || user.password !== password){
+  if(!user || !(await verifyUserPassword(user, password))){
     let state = getLoginLockoutState();
     state.count = (state.count || 0) + 1;
     if(state.count >= LOGIN_MAX_ATTEMPTS){
@@ -16897,10 +16961,26 @@ function logoutUser(){
   logActivity('logout', 'Signed out');
   stopPresenceTracking();
   stopClassAlertWatcher();
+  // Snapshot this BEFORE clearing REMEMBER_LS_KEY below, so we know whether the person
+  // ever opted into "Remember me" on this browser — that's the signal that this is their
+  // own trusted device (keep the offline cache) vs. a shared/public one (wipe it).
+  let wasRemembered = false;
+  try{ wasRemembered = !!localStorage.getItem(REMEMBER_LS_KEY); }catch(err){}
   currentUser = null;
   try{
     sessionStorage.removeItem(SESSION_LS_KEY);
     localStorage.removeItem(REMEMBER_LS_KEY);
+    // On a device nobody marked as "Remember me", don't leave the full student database
+    // (names, National IDs, scores, attendance) sitting in this browser's localStorage in
+    // plaintext after the session ends — a shared school-lab computer is the realistic risk
+    // here, not just a remote attacker. It re-populates automatically from Firebase (via the
+    // live onSnapshot listeners) the next time someone actually logs in on this device.
+    // Login credentials (USERS_LS_KEY) are left alone — passwords are already hashed, and
+    // wiping the account list here could momentarily strand the login screen before the
+    // next reconnect if the device is offline.
+    if(!wasRemembered){
+      localStorage.removeItem(LS_KEY);
+    }
   }catch(err){}
   document.getElementById('appWrap').style.display = 'none';
   document.getElementById('loginOverlay').style.display = 'flex';
@@ -17350,6 +17430,7 @@ function resetUserForm(){
   document.getElementById('ufUsername').disabled = false;
   document.getElementById('ufDisplayName').value = '';
   document.getElementById('ufPassword').value = '';
+  document.getElementById('ufPassword').placeholder = '';
   document.getElementById('ufRole').value = (currentUser && currentUser.role==='hod') ? 'teacher' : 'admin';
   document.getElementById('ufSection').value = (currentUser && currentUser.role==='hod') ? currentUser.section : 'en';
   buildClassroomOptions([]);
@@ -17379,7 +17460,11 @@ function editUser(username){
   document.getElementById('ufUsername').value = user.username;
   document.getElementById('ufUsername').disabled = true;
   document.getElementById('ufDisplayName').value = user.displayName || '';
-  document.getElementById('ufPassword').value = user.password || '';
+  // Never pre-fill the actual password (it's hashed anyway, and showing an existing
+  // password back to an admin is bad practice). Leaving this blank on edit means
+  // "keep the current password unchanged" — see saveUserFromForm().
+  document.getElementById('ufPassword').value = '';
+  document.getElementById('ufPassword').placeholder = 'Leave blank to keep current password';
   document.getElementById('ufRole').value = user.role;
   document.getElementById('ufSection').value = user.section !== undefined ? user.section : 'en';
   // Legacy fallback: an account saved before classroomSubjects existed only has the old
@@ -17420,7 +17505,7 @@ function removeUfEditingBanner(){
   const el = document.getElementById('ufEditingBanner');
   if(el) el.remove();
 }
-function saveUserFromForm(){
+async function saveUserFromForm(){
   const editing = document.getElementById('editingUsername').value;
   const username = document.getElementById('ufUsername').value.trim();
   const displayName = document.getElementById('ufDisplayName').value.trim();
@@ -17432,7 +17517,14 @@ function saveUserFromForm(){
   const stages = getUfSelectedStages();
 
   if(!username){ alert('Please enter a username.'); return; }
-  if(!password){ alert('Please enter a password.'); return; }
+  if(!isValidUsername(username)){ alert('Username can only contain letters, numbers, and . _ @ - (2-40 characters) — no spaces, quotes, or symbols.'); return; }
+  // Password is required for a brand-new account; when editing, an empty field means
+  // "keep the current password" (see editUser()'s placeholder), so it's optional there.
+  if(!editing && !password){ alert('Please enter a password.'); return; }
+  if(password){
+    const pwCheck = validatePasswordStrength(password, username);
+    if(!pwCheck.valid){ alert('Password does not meet the security requirements (min 8 chars, upper/lower/digit/special character).'); return; }
+  }
   if(currentUser.role==='hod' && (role==='admin' || role==='hod' || role==='hos')){ alert('You can only create Teacher or Parent/Student accounts.'); return; }
   // Surfaces the exact mistake that used to cause a Parent/Student account to silently keep
   // showing the full manual Section/Stage/Grade/Class stepper forever: saving with no student
@@ -17443,7 +17535,7 @@ function saveUserFromForm(){
     if(!confirm('No student is checked for this account — it will show the full manual Term/Section/Stage/Grade stepper instead of jumping straight to their child\'s certificate. Save anyway?')) return;
   }
 
-  const userObj = { username, displayName, password, role };
+  const userObj = { username, displayName, role };
   if(role==='teacher' || role==='hod' || role==='hos') userObj.section = section;
   if(role==='hos'){ userObj.stages = stages; }
   // `subjects` here is the flat department-oversight list (who this HOD oversees) — kept
@@ -17476,6 +17568,7 @@ function saveUserFromForm(){
     if(!user) return;
     const previousRole = user.role;
     Object.assign(user, userObj);
+    if(password){ await setUserPassword(user, password); }
     
     // Auto-sync the Teachers Database whenever this account is (or becomes) a Teacher or a
     // Head of Department. Match primarily by the linked username (reliable even if the name
@@ -17527,6 +17620,7 @@ function saveUserFromForm(){
     // the moment saveUsers()'s debounced push (or the live sync listener) round-trips it,
     // making it look like the brand-new user was "auto-deleted right after saving".
     deletedUsernames = deletedUsernames.filter(u=> u!==username);
+    await setUserPassword(userObj, password);
     users.push(userObj);
     
     // Auto-import Teacher/HOD accounts to Teachers Database, filling Section & Subject from
@@ -17673,16 +17767,16 @@ function renderUsersTable(){
     }
     return `${groupHeader}${subjectHeader}
       <tr>
-        <td>${isProtected ? '' : `<input type="checkbox" class="user-row-cb" value="${u.username}" onchange="updateUsersBulkCount()">`}</td>
-        <td><b>${u.username}</b></td>
-        <td>${u.displayName||'—'}</td>
+        <td>${isProtected ? '' : `<input type="checkbox" class="user-row-cb" value="${escapeHtml(u.username)}" onchange="updateUsersBulkCount()">`}</td>
+        <td><b>${escapeHtml(u.username)}</b></td>
+        <td>${escapeHtml(u.displayName||'—')}</td>
         <td><span class="perm-pill">${ROLE_LABELS[u.role]||u.role}</span></td>
         <td>${sectionLabel}</td>
         <td>${scopeInfo}</td>
         <td>${escapeHtml(linkedStudentNames)}</td>
         <td class="row-actions">
-          <button class="edit-a" onclick="editUser('${u.username}')">Edit</button>
-          <button class="del-a" onclick="deleteUserRow('${u.username}')">Delete</button>
+          <button class="edit-a" data-username="${escapeHtml(u.username)}" onclick="editUser(this.dataset.username)">Edit</button>
+          <button class="del-a" data-username="${escapeHtml(u.username)}" onclick="deleteUserRow(this.dataset.username)">Delete</button>
         </td>
       </tr>`;
   }).join('');
@@ -17898,7 +17992,7 @@ function importParentLinksExcel(file){
 function importUsersExcel(file){
   if(!file) return;
   const reader = new FileReader();
-  reader.onload = function(e){
+  reader.onload = async function(e){
     try{
       const data = new Uint8Array(e.target.result);
       const wb = XLSX.read(data, {type:'array'});
@@ -17931,7 +18025,7 @@ function importUsersExcel(file){
       // needing a separate "Link Parent Accounts" import afterwards.
       const idIndex = buildStudentIdIndex(allStudentsFlat());
 
-      rows.forEach((row, idx)=>{
+      for(const [idx, row] of rows.entries()){
         // Each row is now isolated in its own try/catch. Previously the entire
         // rows.forEach ran inside ONE try block shared with saveUsers()/saveState()
         // below — if any single row threw an unexpected error, the exception would
@@ -17955,21 +18049,23 @@ function importUsersExcel(file){
           const classesRaw = getField(row, ['Classes','Class']);
           const studentIdsRaw = getField(row, ['Student ID(s)','Student IDs','Student ID','StudentIDs']);
 
-          if(!username){ return; } // skip fully blank helper rows
-          if(!password){ problems.push(`${username}: missing password`); return; }
-          if(findUser(username)){ problems.push(`${username}: username already exists`); return; }
-          if(currentUser.role==='hod'){ problems.push(`${username}: bulk import is only available to Admin`); return; }
+          if(!username){ continue; } // skip fully blank helper rows
+          if(!isValidUsername(username)){ problems.push(`${username}: username can only contain letters, numbers, and . _ @ - (2-40 characters)`); continue; }
+          if(!password){ problems.push(`${username}: missing password`); continue; }
+          if(findUser(username)){ problems.push(`${username}: username already exists`); continue; }
+          if(currentUser.role==='hod'){ problems.push(`${username}: bulk import is only available to Admin`); continue; }
 
           const role = findRoleId(roleLabel);
-          if(!role){ problems.push(`${username}: unrecognized "Role" value ("${roleLabel}")`); return; }
+          if(!role){ problems.push(`${username}: unrecognized "Role" value ("${roleLabel}")`); continue; }
 
           let sectionId = null;
           if(role!=='admin'){
             sectionId = findSectionId(sectionLabel);
-            if(!sectionId){ problems.push(`${username}: unrecognized "Section" value ("${sectionLabel}")`); return; }
+            if(!sectionId){ problems.push(`${username}: unrecognized "Section" value ("${sectionLabel}")`); continue; }
           }
 
-          const userObj = { username, displayName, password, role };
+          const userObj = { username, displayName, role };
+          await setUserPassword(userObj, password);
           if(sectionId) userObj.section = sectionId;
           if(role==='teacher' || role==='hod'){
             userObj.subjects = splitMulti(subjectsRaw);
@@ -18024,7 +18120,7 @@ function importUsersExcel(file){
           console.warn('Row import failed', row, rowErr);
           problems.push(`Row ${idx+2}: unexpected error, skipped (${rowErr && rowErr.message ? rowErr.message : rowErr})`);
         }
-      });
+      }
 
       const savedOk = saveUsers();
       saveState(); // Save teachers as well
