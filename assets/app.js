@@ -6134,6 +6134,45 @@ function escapeHtml(text){
   return String(text).replace(/[&<>"']/g, m => map[m]);
 }
 
+// Injects the Email input into the Manage Users form the first time it's needed, right
+// after the Display Name field. Done via DOM instead of editing index.html directly (that
+// file isn't part of this change) — safe to call repeatedly, it's a no-op after the first
+// call. Required for the Firebase Auth migration: every account needs a real email.
+function ensureUfEmailField(){
+  if(document.getElementById('ufEmail')) return;
+  const displayNameInput = document.getElementById('ufDisplayName');
+  if(!displayNameInput) return; // Manage Users modal markup not present on this page yet
+  const wrap = document.createElement('div');
+  wrap.className = displayNameInput.parentElement && displayNameInput.parentElement.className
+    ? displayNameInput.parentElement.className
+    : 'form-group';
+  wrap.innerHTML = `
+    <label for="ufEmail">Email</label>
+    <input type="email" id="ufEmail" placeholder="name@school.example" autocomplete="off">
+  `;
+  const hostGroup = displayNameInput.closest('.form-group') || displayNameInput.parentElement;
+  if(hostGroup && hostGroup.parentElement){
+    hostGroup.parentElement.insertBefore(wrap, hostGroup.nextSibling);
+  } else {
+    displayNameInput.insertAdjacentElement('afterend', wrap);
+  }
+}
+
+// Injects the Admin-only "Provision Firebase Login" button (Phase-2 Auth migration) next
+// to the bulk-import row. Safe to call repeatedly — no-op after the first call.
+function ensureProvisionFirebaseButton(){
+  if(document.getElementById('provisionFirebaseBtn')) return;
+  const anchor = document.getElementById('usersExcelRow');
+  if(!anchor) return;
+  const btn = document.createElement('button');
+  btn.id = 'provisionFirebaseBtn';
+  btn.type = 'button';
+  btn.textContent = '🔐 Provision Firebase Login for accounts with an email';
+  btn.style.marginTop = '8px';
+  btn.onclick = provisionFirebaseAuthAccounts;
+  anchor.insertAdjacentElement('afterend', btn);
+}
+
 function toggleAddForm(force){
   const el = document.getElementById('addForm');
   const show = force!==undefined ? force : !el.classList.contains('show');
@@ -16786,6 +16825,19 @@ async function handleLogin(e){
   }
   errEl.classList.remove('show');
   setLoginLockoutState({});
+  // Phase-2 Firebase Auth migration: try to also sign into Firebase Auth with the same
+  // credentials, so Firestore Security Rules have a real request.auth to check. This is
+  // intentionally best-effort and NEVER blocks the legacy login above:
+  //  - Most accounts won't have a Firebase Auth login yet (still on the temporary
+  //    `if request.auth != null` rules) — that's expected, not an error.
+  //  - An account that HAS been provisioned but hasn't clicked their "set your password"
+  //    email link yet will fail here too (its Firebase Auth password isn't set to match
+  //    the local one) — also expected, not an error.
+  // Either way the person still gets into the app normally via the local session below.
+  if(fbAuth && user.email){
+    try{ await fbAuth.signInWithEmailAndPassword(user.email, password); }
+    catch(err){ /* not provisioned yet, or hasn't completed password setup — fine for now */ }
+  }
   try{ localStorage.setItem('mils_hint_dismissed', '1'); }catch(err){}
   const hintEl = document.getElementById('loginHint');
   if(hintEl) hintEl.style.display = 'none';
@@ -16967,6 +17019,7 @@ function logoutUser(){
   let wasRemembered = false;
   try{ wasRemembered = !!localStorage.getItem(REMEMBER_LS_KEY); }catch(err){}
   currentUser = null;
+  if(fbAuth && fbAuth.currentUser){ fbAuth.signOut().catch(()=>{}); }
   try{
     sessionStorage.removeItem(SESSION_LS_KEY);
     localStorage.removeItem(REMEMBER_LS_KEY);
@@ -17139,6 +17192,7 @@ function openUsersModal(){
   onRoleFormChange();
   renderUsersTable();
   widenUsersModalBox();
+  if(!isHod) ensureProvisionFirebaseButton();
   document.getElementById('usersOverlay').classList.add('show');
 }
 // Injects (once) a small stylesheet that widens the Manage Users modal box.
@@ -17429,6 +17483,8 @@ function resetUserForm(){
   document.getElementById('ufUsername').value = '';
   document.getElementById('ufUsername').disabled = false;
   document.getElementById('ufDisplayName').value = '';
+  ensureUfEmailField();
+  document.getElementById('ufEmail').value = '';
   document.getElementById('ufPassword').value = '';
   document.getElementById('ufPassword').placeholder = '';
   document.getElementById('ufRole').value = (currentUser && currentUser.role==='hod') ? 'teacher' : 'admin';
@@ -17460,6 +17516,8 @@ function editUser(username){
   document.getElementById('ufUsername').value = user.username;
   document.getElementById('ufUsername').disabled = true;
   document.getElementById('ufDisplayName').value = user.displayName || '';
+  ensureUfEmailField();
+  document.getElementById('ufEmail').value = user.email || '';
   // Never pre-fill the actual password (it's hashed anyway, and showing an existing
   // password back to an admin is bad practice). Leaving this blank on edit means
   // "keep the current password unchanged" — see saveUserFromForm().
@@ -17509,6 +17567,8 @@ async function saveUserFromForm(){
   const editing = document.getElementById('editingUsername').value;
   const username = document.getElementById('ufUsername').value.trim();
   const displayName = document.getElementById('ufDisplayName').value.trim();
+  ensureUfEmailField();
+  const email = document.getElementById('ufEmail').value.trim().toLowerCase();
   const password = document.getElementById('ufPassword').value;
   const role = document.getElementById('ufRole').value;
   const section = document.getElementById('ufSection').value;
@@ -17518,6 +17578,14 @@ async function saveUserFromForm(){
 
   if(!username){ alert('Please enter a username.'); return; }
   if(!isValidUsername(username)){ alert('Username can only contain letters, numbers, and . _ @ - (2-40 characters) — no spaces, quotes, or symbols.'); return; }
+  // Required going forward (needed for the Firebase Auth migration — every account needs a
+  // real, unique email). Existing accounts saved before this field existed just won't have
+  // one until an admin opens and re-saves them.
+  if(email){
+    const emailTaken = users.some(u => u.username!==editing && (u.email||'').toLowerCase()===email);
+    if(emailTaken){ alert('Another account is already using that email.'); return; }
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ alert('Please enter a valid email address.'); return; }
+  }
   // Password is required for a brand-new account; when editing, an empty field means
   // "keep the current password" (see editUser()'s placeholder), so it's optional there.
   if(!editing && !password){ alert('Please enter a password.'); return; }
@@ -17536,6 +17604,7 @@ async function saveUserFromForm(){
   }
 
   const userObj = { username, displayName, role };
+  if(email) userObj.email = email;
   if(role==='teacher' || role==='hod' || role==='hos') userObj.section = section;
   if(role==='hos'){ userObj.stages = stages; }
   // `subjects` here is the flat department-oversight list (who this HOD oversees) — kept
@@ -17569,6 +17638,7 @@ async function saveUserFromForm(){
     const previousRole = user.role;
     Object.assign(user, userObj);
     if(password){ await setUserPassword(user, password); }
+    await syncUserRoleDoc(user);
     
     // Auto-sync the Teachers Database whenever this account is (or becomes) a Teacher or a
     // Head of Department. Match primarily by the linked username (reliable even if the name
@@ -18042,6 +18112,7 @@ function importUsersExcel(file){
         try{
           const username = getField(row, ['Username']);
           const displayName = getField(row, ['Display Name','DisplayName','Name']);
+          const email = getField(row, ['Email']).toLowerCase();
           const password = getField(row, ['Password']);
           const roleLabel = getField(row, ['Role']);
           const sectionLabel = getField(row, ['Section']);
@@ -18064,7 +18135,11 @@ function importUsersExcel(file){
             if(!sectionId){ problems.push(`${username}: unrecognized "Section" value ("${sectionLabel}")`); continue; }
           }
 
+          if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ problems.push(`${username}: invalid email format ("${email}")`); continue; }
+          if(email && users.some(u => (u.email||'').toLowerCase()===email)){ problems.push(`${username}: email "${email}" is already used by another account`); continue; }
+
           const userObj = { username, displayName, role };
+          if(email) userObj.email = email;
           await setUserPassword(userObj, password);
           if(sectionId) userObj.section = sectionId;
           if(role==='teacher' || role==='hod'){
@@ -18191,6 +18266,15 @@ const firebaseConfig = {
 };
 const fbApp = firebase.initializeApp(firebaseConfig);
 const fbDb  = firebase.firestore();
+// Firebase Authentication — added for the Firestore Security Rules migration (role-based
+// access control needs a real, server-verified identity; the app's own username/password
+// system has no way to prove who's asking once a request reaches Firestore directly).
+// Guarded with try/catch: if the Auth SDK script hasn't been added to index.html yet, the
+// rest of the app (which never depended on Auth before) keeps working exactly as before —
+// see the MIGRATION NOTES comment further down for the manual setup steps.
+let fbAuth = null;
+try{ fbAuth = firebase.auth(); }catch(err){ console.warn('Firebase Auth SDK not loaded yet — see MIGRATION NOTES near FB_ROLES_COL in app.js.', err); }
+const FB_ROLES_COL = fbDb.collection('user_roles');
 // ---- Storage layout (split, since 2026-07) ----
 // Grade Book data (students/scores/attendance/approvedLeave) used to live entirely in ONE
 // document ('gradebook/main') — every Save/pull/live-update touched the WHOLE school's data
@@ -18223,6 +18307,91 @@ const FB_CLASSES_COL = fbDb.collection('gradebook_classes');
 const FB_TEACHERS_DOC_REF = fbDb.collection('gradebook').doc('teachers');
 const FB_STAFF_USERS_DOC_REF = fbDb.collection('gradebook').doc('staffUsers');
 const FB_PARENT_USERS_DOC_REF = fbDb.collection('gradebook').doc('parentUsers');
+
+// ================== FIREBASE AUTH MIGRATION (Phase 2) ==================
+// MIGRATION NOTES — three one-time manual steps outside this file, in this exact order:
+//   1. Firebase Console → Authentication → Sign-in method → enable "Email/Password".
+//   2. Add the Auth SDK script to index.html, matching whatever firebase-app(-compat).js
+//      version is already loaded there, e.g.:
+//        <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+//      It must load AFTER firebase-app-compat.js and BEFORE this app.js file.
+//   3. Bootstrap the very first Admin manually (there's no other trusted way to create the
+//      first identity without a circular dependency): Firebase Console → Authentication →
+//      Add user (their real email + a strong password), then Firestore → Data → create
+//      /user_roles/{that user's uid} → { role: "admin" } by hand, once. Then set that same
+//      uid on their local account record's `firebaseUid` field via editUser/devtools so
+//      syncUserRoleDoc() below recognizes them as already provisioned.
+// After that: use provisionFirebaseAuthAccounts() (Admin-only) to set up everyone else — it
+// creates each Firebase Auth account, emails a "set your password" link, and writes their
+// /user_roles/{uid} doc automatically. Nothing here deletes or disables the existing local
+// login — both run side by side (see the hybrid sign-in in handleLogin()) until every
+// account is confirmed working, which is when firestore.rules can switch from the
+// temporary `if request.auth != null` to the role-based version.
+
+// Secondary, throwaway Firebase App instance used only for creating new Auth accounts.
+// createUserWithEmailAndPassword() on the PRIMARY app would also sign the browser into
+// that brand-new account, kicking the admin out of their own session — a second, isolated
+// app instance avoids that entirely.
+function getProvisioningAuth(){
+  let secondaryApp;
+  try{ secondaryApp = firebase.app('provisioning'); }
+  catch(err){ secondaryApp = firebase.initializeApp(firebaseConfig, 'provisioning'); }
+  return secondaryApp.auth();
+}
+
+// Never shown to anyone or stored anywhere — the account is immediately emailed a
+// "set your password" link, so this value only needs to satisfy Firebase Auth's minimum
+// length and then be discarded.
+function randomTempPassword(){
+  return randomSaltHex(16) + 'Aa1!';
+}
+
+// Writes/updates this user's /user_roles/{uid} doc from their current local record. Called
+// right after provisioning a brand-new account, and again whenever an Admin edits an
+// already-provisioned user (see saveUserFromForm), so the two stay in sync going forward.
+async function syncUserRoleDoc(user){
+  if(!fbAuth || !user.firebaseUid) return; // not provisioned yet — nothing to sync
+  const roleData = { role: user.role };
+  if(user.section !== undefined) roleData.section = user.section || null;
+  if(user.classrooms) roleData.classrooms = user.classrooms;
+  if(user.stages) roleData.stages = user.stages;
+  if(user.studentIds) roleData.studentIds = user.studentIds;
+  try{ await FB_ROLES_COL.doc(user.firebaseUid).set(roleData, { merge: true }); }
+  catch(err){ console.warn('Could not sync user_roles doc for', user.username, err); }
+}
+
+// Admin-only. Creates a Firebase Auth account + /user_roles doc for every user who has an
+// email but hasn't been provisioned yet (no firebaseUid). Safe to re-run — already-
+// provisioned accounts are skipped automatically.
+async function provisionFirebaseAuthAccounts(){
+  if(!currentUser || currentUser.role!=='admin'){ alert('Admin only.'); return; }
+  if(!fbAuth){ alert('Firebase Auth SDK is not loaded on this page yet — see the MIGRATION NOTES comment above FB_ROLES_COL in app.js.'); return; }
+  const pending = users.filter(u => u.email && !u.firebaseUid);
+  if(!pending.length){ alert('Nothing to do — every account with an email already has a Firebase login.'); return; }
+  if(!confirm(`This will create a Firebase login for ${pending.length} account(s) and email each of them a "set your password" link. Continue?`)) return;
+
+  const provAuth = getProvisioningAuth();
+  let ok = 0;
+  const failures = [];
+  for(const user of pending){
+    try{
+      const cred = await provAuth.createUserWithEmailAndPassword(user.email, randomTempPassword());
+      user.firebaseUid = cred.user.uid;
+      await syncUserRoleDoc(user);
+      await provAuth.sendPasswordResetEmail(user.email);
+      await provAuth.signOut(); // don't leave the throwaway session signed in
+      ok++;
+    }catch(err){
+      failures.push(`${user.username} (${user.email}): ${err && err.message ? err.message : err}`);
+    }
+  }
+  saveUsers();
+  renderUsersTable();
+  let msg = `${ok} of ${pending.length} account(s) provisioned. Each was emailed a link to set their password.`;
+  if(failures.length){ msg += `\n\nFailed:\n` + failures.join('\n'); }
+  alert(msg);
+  logActivity('edit', `Provisioned Firebase Auth login for ${ok} account(s)`);
+}
 
 // ✅ تتبع ما إذا كانت بيانات المدرسين قد تم تحديثها من Firestore
 let teachersUpdatedFlag = false;
